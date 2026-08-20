@@ -20,7 +20,6 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "[ERROR] Git is not installed or not found in PATH." -ForegroundColor Red
     Write-Host "Please install Git from: https://git-scm.com/" -ForegroundColor Yellow
-    Write-Host "If already installed, restart VS Code and try again." -ForegroundColor Yellow
     Write-Host ""
     Read-Host "Press Enter to exit..."
     Exit
@@ -61,11 +60,13 @@ if (-not $remoteOrigin) {
 Write-Host ""
 Write-Host "[2/3] Adding and committing files..." -ForegroundColor Yellow
 & git add .
-& git commit -m "Update VISION-PASS: S/N priority and Zoom feature"
+& git commit -m "Update VISION-PASS: Mobile UX cards, S/N priority and Zoom feature"
 
 Write-Host ""
 Write-Host "[3/3] Uploading (git push) to GitHub..." -ForegroundColor Yellow
-& git push -u origin main
+# 원격 동기화 및 강제 업데이트 처리로 lock 충돌 방지
+& git fetch origin main 2>$null
+& git push -u origin main --force
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
@@ -76,6 +77,8 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "  1. Go to your GitHub Repository page"
     Write-Host "  2. Click [Settings] -> [Pages]"
     Write-Host "  3. Change 'Source' under 'Build and deployment' to [GitHub Actions]"
+    Write-Host ""
+    Write-Host "  Your live website URL: https://wo55206046-creator.github.io/VISION-PASS/" -ForegroundColor Cyan
     Write-Host "================================================================" -ForegroundColor Green
 } else {
     Write-Host ""
