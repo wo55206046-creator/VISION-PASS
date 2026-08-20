@@ -158,9 +158,6 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
               PJT List (프로젝트 목록 관리)
             </h2>
           </div>
-          <p className="mt-1 text-xs text-slate-400">
-            등록된 반도체 공정 설비 프로젝트의 사업장, Serial NO., 진행률을 가로 리스트로 확인하고 관리하세요.
-          </p>
         </div>
 
         {/* Right Controls: 검색창 + 프로젝트 개수 + 신규 PJT 추가 버튼 */}
