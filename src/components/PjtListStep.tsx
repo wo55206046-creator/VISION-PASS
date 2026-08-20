@@ -266,7 +266,7 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                   {isComplete ? (
                     <>
                       <CheckCircle2 className="h-3 w-3" />
-                      <span>검사완료 (100%)</span>
+                      <span>완료 (100%)</span>
                     </>
                   ) : (
                     <>
