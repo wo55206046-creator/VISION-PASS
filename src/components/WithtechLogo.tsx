@@ -2,71 +2,64 @@ import React from "react";
 
 interface WithtechLogoProps {
   className?: string;
-  showSubtitle?: boolean;
 }
 
 export const WithtechLogo: React.FC<WithtechLogoProps> = ({
-  className = "h-8 w-auto",
-  showSubtitle = true,
+  className = "h-6 sm:h-7 w-auto",
 }) => {
   return (
-    <div className="flex items-center gap-2.5 select-none cursor-pointer">
-      {/* WITHTECH Official SVG Vector Logo */}
+    <div className="inline-flex items-center rounded-xl bg-white px-2.5 py-1 sm:px-3 sm:py-1 shadow-md border border-slate-200/40 hover:bg-slate-50 transition-all select-none">
+      {/* Official WITHTECH Corporate Logo (Orange Diamond + Navy Blue Wordmark) */}
       <svg
-        viewBox="0 0 172 44"
+        viewBox="0 0 190 44"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         className={className}
       >
         <defs>
-          {/* Official WITHTECH Orange-Amber Gradient */}
           <linearGradient
-            id="wt-gradient"
+            id="wt-logo-orange"
             x1="2"
             y1="22"
             x2="42"
             y2="22"
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset="0%" stopColor="#FF3500" />
-            <stop offset="55%" stopColor="#FF7200" />
-            <stop offset="100%" stopColor="#FFA600" />
+            <stop offset="0%" stopColor="#FF3000" />
+            <stop offset="50%" stopColor="#FF6A00" />
+            <stop offset="100%" stopColor="#FFA200" />
           </linearGradient>
         </defs>
 
-        {/* 1. Rounded Diamond Icon */}
-        <g transform="translate(3, 3)">
-          {/* Rotated rounded square */}
+        {/* Orange Rounded Diamond Icon */}
+        <g transform="translate(2, 2)">
           <rect
             x="0"
             y="0"
-            width="27"
-            height="27"
+            width="26"
+            height="26"
             rx="5.5"
-            transform="rotate(45 19 8)"
-            fill="url(#wt-gradient)"
+            transform="rotate(45 18 8)"
+            fill="url(#wt-logo-orange)"
           />
-
-          {/* Inner Geometric 'W' and Triangle in pure white */}
           {/* Top Inverted Triangle */}
-          <polygon points="19,16 15,10.5 23,10.5" fill="#FFFFFF" />
-
-          {/* Stylized 'W' shape */}
+          <polygon points="18,15.5 14,9.5 22,9.5" fill="#FFFFFF" />
+          {/* Inner Stylized W Shape */}
           <path
-            d="M9.5 15 L19 30 L28.5 15 L24.5 15 L19 23.5 L13.5 15 Z"
+            d="M9 14.5 L18 29 L27 14.5 L23.5 14.5 L18 23 L12.5 14.5 Z"
             fill="#FFFFFF"
           />
         </g>
 
-        {/* 2. WITHTECH Wordmark in Crisp Clean White (High Contrast Dark Mode) */}
+        {/* Official WITHTECH Navy Blue Wordmark */}
         <text
-          x="46"
-          y="29.5"
-          fontFamily="'Pretendard', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          x="48"
+          y="31"
+          fontFamily="'Arial Black', 'Impact', 'Pretendard', 'Inter', -apple-system, sans-serif"
           fontWeight="900"
-          fontSize="23"
+          fontSize="24"
           letterSpacing="-0.8"
-          fill="#FFFFFF"
+          fill="#003876"
         >
           WITHTECH
         </text>
