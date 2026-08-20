@@ -227,12 +227,12 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
         </div>
 
         {/* 🔢 등록된 설비 Serial NO. 및 호기 선택 탭 (단일 통합) */}
-        <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80 flex flex-wrap items-center gap-2.5 text-xs">
-          <span className="text-slate-400 font-bold flex items-center gap-1.5 mr-1 shrink-0">
+        <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80 flex flex-col sm:flex-row sm:items-center gap-2.5 text-xs">
+          <span className="text-slate-400 font-bold flex items-center gap-1.5 shrink-0">
             <Barcode className="h-4 w-4 text-cyan-400" />
             <span>호기 선택 (Serial NO.) :</span>
           </span>
-          <div className="flex flex-wrap items-center gap-2 font-mono">
+          <div className="flex items-center gap-2 font-mono overflow-x-auto no-scrollbar py-0.5 scroll-smooth -mx-1 px-1">
             {project.equipmentUnits.map((u) => {
               const isCurrent = u.unitIndex === activeUnitIndex;
               const verified = u.parts.filter((p) => p.isVerified).length;
@@ -244,7 +244,7 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
                   key={u.unitIndex}
                   type="button"
                   onClick={() => setActiveUnitIndex(u.unitIndex)}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer flex items-center gap-2 transition-all shrink-0 ${
+                  className={`px-3 py-2 sm:py-1.5 rounded-lg border text-xs font-semibold cursor-pointer flex items-center gap-2 transition-all shrink-0 ${
                     isCurrent
                       ? "bg-cyan-500 text-slate-950 font-bold border-cyan-400 shadow-glow-cyan"
                       : "bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700"

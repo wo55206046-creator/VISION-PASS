@@ -8,7 +8,14 @@ import { PjtListStep } from "@/components/PjtListStep";
 import { ProjectMasterStep } from "@/components/ProjectMasterStep";
 import { EquipmentUnitStep } from "@/components/EquipmentUnitStep";
 import { TemplateManagerStep } from "@/components/TemplateManagerStep";
-import { ShieldCheck, Cpu } from "lucide-react";
+import {
+  ShieldCheck,
+  Cpu,
+  FolderKanban,
+  FileEdit,
+  Camera,
+  Layers,
+} from "lucide-react";
 
 const STORAGE_KEY = "VISION_PASS_PROJECTS_DATA_V6";
 
@@ -18,7 +25,9 @@ function loadSavedProjects(): ProjectMaster[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      const isUpToDate = parsed.some((p: ProjectMaster) => p.inspectorName && p.inspectorName.includes("김형태, 유병준"));
+      const isUpToDate = parsed.some(
+        (p: ProjectMaster) => p.inspectorName && p.inspectorName.includes("김형태, 유병준")
+      );
       if (isUpToDate && Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
       }
@@ -35,7 +44,9 @@ function loadSavedProjects(): ProjectMaster[] {
 export default function Home() {
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [projects, setProjects] = useState<ProjectMaster[]>(() => INITIAL_PROJECT_LIST);
-  const [currentProjectId, setCurrentProjectId] = useState<string>(() => INITIAL_PROJECT_LIST[0]?.id || "pjt-001");
+  const [currentProjectId, setCurrentProjectId] = useState<string>(
+    () => INITIAL_PROJECT_LIST[0]?.id || "pjt-001"
+  );
   const [draftProject, setDraftProject] = useState<ProjectMaster | null>(null);
 
   // 클라이언트 마운트 시 localStorage에서 복원
@@ -75,7 +86,7 @@ export default function Home() {
   const handleCreateNewProject = () => {
     const newPjt = createBlankProject();
     setDraftProject(newPjt);
-    setCurrentStep(2); // 2. PJT 입력 단계로 이동 (아직 목록에 등록되지 않음)
+    setCurrentStep(2); // 2. PJT 입력 단계로 이동
   };
 
   const handleSelectProject = (projectId: string, targetStep = 3) => {
@@ -131,8 +142,8 @@ export default function Home() {
         equipmentName={currentProject?.equipmentName}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      {/* Main Container (모바일 하단 내비게이션 바 여백 pb-24 확보) */}
+      <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 md:pb-8">
         {/* Step 1: PJT List (프로젝트 목록 전체 조회 & 선택) */}
         {currentStep === 1 && (
           <PjtListStep
@@ -142,7 +153,11 @@ export default function Home() {
             onCreateNewProject={handleCreateNewProject}
             onUpdateProject={(updatedPjt) => {
               setProjects((prev) =>
-                prev.map((p) => (p.id === updatedPjt.id ? { ...updatedPjt, updatedAt: new Date().toISOString() } : p))
+                prev.map((p) =>
+                  p.id === updatedPjt.id
+                    ? { ...updatedPjt, updatedAt: new Date().toISOString() }
+                    : p
+                )
               );
             }}
             onDuplicateProject={handleDuplicateProject}
@@ -195,8 +210,43 @@ export default function Home() {
         {currentStep === 4 && <TemplateManagerStep />}
       </main>
 
+      {/* Mobile Floating Bottom Navigation Dock (스마트폰 하단 엄지손가락 전용 내비게이션 바) */}
+      <nav className="fixed bottom-0 inset-x-0 z-40 md:hidden bg-slate-950/95 backdrop-blur-lg border-t border-slate-800 py-1.5 px-3 shadow-2xl safe-bottom">
+        <div className="grid grid-cols-4 gap-1">
+          {[
+            { num: 1, label: "PJT 목록", icon: FolderKanban },
+            { num: 2, label: "PJT 입력", icon: FileEdit },
+            { num: 3, label: "설비 OCR", icon: Camera },
+            { num: 4, label: "부품 양식", icon: Layers },
+          ].map((item) => {
+            const isActive = currentStep === item.num;
+            const Icon = item.icon;
+
+            return (
+              <button
+                key={item.num}
+                type="button"
+                onClick={() => setCurrentStep(item.num)}
+                className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all cursor-pointer ${
+                  isActive
+                    ? "bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Icon
+                  className={`h-4 w-4 ${
+                    isActive ? "text-cyan-400 scale-110" : "text-slate-400"
+                  }`}
+                />
+                <span className="text-[10px] mt-1 font-medium">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
       {/* Industrial Footer */}
-      <footer className="mt-auto border-t border-slate-800 bg-slate-950/90 py-6 text-xs text-slate-500">
+      <footer className="mt-auto border-t border-slate-800 bg-slate-950/90 py-6 text-xs text-slate-500 hidden md:block">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 text-slate-400 font-mono">

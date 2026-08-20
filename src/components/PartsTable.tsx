@@ -14,6 +14,7 @@ import {
   PackagePlus,
   Sparkles,
   Search,
+  CheckCheck,
 } from "lucide-react";
 
 interface PartsTableProps {
@@ -89,7 +90,9 @@ export const PartsTable: React.FC<PartsTableProps> = ({
 
   // 부품 삭제
   const deletePart = (partId: string) => {
-    onUpdateParts(parts.filter((p) => p.id !== partId));
+    if (confirm("이 부품을 목록에서 삭제하시겠습니까?")) {
+      onUpdateParts(parts.filter((p) => p.id !== partId));
+    }
   };
 
   // 신규 부품 수동 추가
@@ -129,11 +132,11 @@ export const PartsTable: React.FC<PartsTableProps> = ({
   return (
     <div className="space-y-4">
       {/* Action Toolbar & Progress Stats */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-2xl bg-slate-900/90 p-4 border border-slate-800 shadow-lg">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5 rounded-2xl bg-slate-900/90 p-4 border border-slate-800 shadow-lg">
         {/* Progress Bar & Stats */}
-        <div className="flex items-center gap-3">
-          <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-slate-950 border border-slate-800">
-            <span className="font-mono text-xs font-extrabold text-cyan-400">
+        <div className="flex items-center gap-3.5">
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-950 border border-slate-800">
+            <span className="font-mono text-sm font-extrabold text-cyan-400">
               {progressPercent}%
             </span>
           </div>
@@ -142,32 +145,32 @@ export const PartsTable: React.FC<PartsTableProps> = ({
               <span className="text-sm font-bold text-white">
                 {unitIndex}호기 부품 검증 진행률
               </span>
-              <span className="rounded bg-slate-800 px-2 py-0.5 text-[11px] font-mono text-cyan-300">
+              <span className="rounded-full bg-cyan-950 px-2 py-0.5 text-[11px] font-mono text-cyan-300 border border-cyan-800">
                 {verifiedCount} / {totalCount} 완료
               </span>
             </div>
-            <p className="text-xs text-slate-400">
-              카메라 스캔 또는 수동 입력을 통해 모든 부품의 시리얼을 검증하세요.
+            <p className="text-xs text-slate-400 mt-0.5">
+              카메라 스캔 또는 입력을 통해 부품 시리얼을 확인하세요.
             </p>
           </div>
         </div>
 
-        {/* Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Action Buttons (Mobile Wrap) */}
+        <div className="flex flex-wrap items-center gap-2 pt-1 sm:pt-0">
           <button
             type="button"
             onClick={onOpenPresetModal}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500/15 px-3.5 py-2 text-xs font-semibold text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/25 transition-all shadow-sm cursor-pointer"
-            title="모델별 표준 BOM 템플릿 불러오기 또는 엑셀(.xlsx) 파일 업로드"
+            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-xl bg-cyan-500/15 px-3.5 py-2.5 sm:py-2 text-xs font-semibold text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/25 transition-all shadow-sm cursor-pointer"
+            title="모델별 표준 BOM 템플릿 불러오기 또는 엑셀 업로드"
           >
             <PackagePlus className="h-4 w-4 text-cyan-400" />
-            <span>PJT 부품 양식 변경</span>
+            <span>양식 변경</span>
           </button>
 
           <button
             type="button"
             onClick={addNewEmptyPart}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-all border border-slate-700"
+            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-800 px-3.5 py-2.5 sm:py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-all border border-slate-700 cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             <span>부품 추가</span>
@@ -177,36 +180,231 @@ export const PartsTable: React.FC<PartsTableProps> = ({
             <button
               type="button"
               onClick={markAllVerified}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500/15 px-3.5 py-2 text-xs font-bold text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-all cursor-pointer"
               title="전체 항목을 검증 완료로 처리"
             >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              <span>전체 검증</span>
+              <CheckCheck className="h-4 w-4" />
+              <span>전체 일괄 검증</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Parts Table Card */}
-      <div className="overflow-hidden rounded-2xl bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-sm">
-        {/* Table Filter / Search */}
-        <div className="p-3.5 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between gap-3">
-          <div className="relative w-full max-w-sm">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
-            <input
-              type="text"
-              placeholder="모듈, 품명, 세부사항, 규격, 시리얼 검색..."
-              value={searchFilter}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchFilter(e.target.value)}
-              className="w-full rounded-xl bg-slate-900 border border-slate-700 pl-9 pr-4 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
-            />
-          </div>
-          <span className="text-xs font-mono text-slate-400 hidden sm:inline">
-            총 {filteredParts.length}개 항목
+      {/* Search Input Bar */}
+      <div className="relative">
+        <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-500" />
+        <input
+          type="text"
+          placeholder="품명, 규격, 세부사항, 시리얼 검색..."
+          value={searchFilter}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchFilter(e.target.value)}
+          className="w-full rounded-xl bg-slate-900 border border-slate-800 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none shadow-inner"
+        />
+        {searchFilter && (
+          <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-mono">
+            {filteredParts.length}건
           </span>
-        </div>
+        )}
+      </div>
 
-        {/* Table Content */}
+      {/* ========================================================================= */}
+      {/* 1. 모바일 전용 카드 뷰 (스마트폰 화면: sm:hidden) */}
+      {/* ========================================================================= */}
+      <div className="block sm:hidden space-y-3">
+        {filteredParts.map((part, index) => {
+          const isEditing = editingId === part.id;
+          const hasSerial = Boolean(part.detectedSerial?.trim());
+
+          // 카테고리 헤더
+          const prevPart = index > 0 ? filteredParts[index - 1] : null;
+          const showCategoryHeader = part.category && (!prevPart || prevPart.category !== part.category);
+
+          return (
+            <div key={part.id} className="space-y-2">
+              {showCategoryHeader && (
+                <div className="flex items-center gap-2 pt-2 pb-1 font-mono font-bold text-xs text-cyan-300">
+                  <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-glow-cyan" />
+                  <span>{part.category}</span>
+                </div>
+              )}
+
+              <div
+                className={`rounded-2xl border p-3.5 transition-all shadow-md ${
+                  part.isVerified
+                    ? "bg-slate-900/95 border-emerald-500/40 shadow-emerald-950/20"
+                    : hasSerial
+                    ? "bg-slate-900 border-cyan-500/30"
+                    : "bg-slate-900/90 border-slate-800"
+                }`}
+              >
+                {isEditing ? (
+                  /* 모바일 인라인 편집 모드 */
+                  <div className="space-y-2.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-mono text-cyan-400 font-bold">
+                        #{String(index + 1).padStart(2, "0")} 편집 중
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => saveEditing(part.id)}
+                        className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-500 text-slate-950 text-xs font-bold shadow-md cursor-pointer"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        <span>저장</span>
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-slate-400">품명</label>
+                      <input
+                        type="text"
+                        value={editPartName}
+                        onChange={(e) => setEditPartName(e.target.value)}
+                        className="w-full rounded-lg bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-white"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-slate-400">세부사항</label>
+                        <input
+                          type="text"
+                          value={editSubSpec}
+                          onChange={(e) => setEditSubSpec(e.target.value)}
+                          className="w-full rounded-lg bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400">규격</label>
+                        <input
+                          type="text"
+                          value={editSpec}
+                          onChange={(e) => setEditSpec(e.target.value)}
+                          className="w-full rounded-lg bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-white"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400">시리얼 번호</label>
+                      <input
+                        type="text"
+                        value={editSerial}
+                        onChange={(e) => setEditSerial(e.target.value.toUpperCase())}
+                        placeholder="시리얼 번호 직접 입력"
+                        className="w-full rounded-lg bg-slate-950 border border-cyan-500 px-2.5 py-1.5 text-xs font-mono font-bold text-cyan-300 uppercase"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  /* 모바일 일반 카드 뷰 */
+                  <div className="space-y-3">
+                    {/* 상단 품명 & 검증 상태 */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-0.5 flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-mono font-bold text-slate-500">
+                            #{String(index + 1).padStart(2, "0")}
+                          </span>
+                          <h4 className="text-sm font-bold text-white truncate">
+                            {part.partName}
+                          </h4>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400 font-mono">
+                          <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800 text-slate-300">
+                            {part.subSpec || "-"}
+                          </span>
+                          <span className="text-slate-400">
+                            {part.spec || "-"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 검증 토글 버튼 */}
+                      <button
+                        type="button"
+                        onClick={() => toggleVerify(part.id)}
+                        className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+                          part.isVerified
+                            ? "bg-emerald-500 text-slate-950 shadow-glow-emerald"
+                            : "bg-slate-800 text-slate-400 border border-slate-700"
+                        }`}
+                      >
+                        {part.isVerified ? (
+                          <>
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>검증완료</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="h-3.5 w-3.5 text-amber-400" />
+                            <span>미검증</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* 시리얼 번호 표시 & OCR 촬영 대형 액션 버튼 */}
+                    <div className="flex items-stretch gap-2 pt-1 border-t border-slate-800/80">
+                      {/* OCR 카메라 버튼 (엄지손가락으로 누르기 편한 크기) */}
+                      <button
+                        type="button"
+                        onClick={() => onOpenOcrModal(part)}
+                        className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 py-2.5 px-3 text-xs font-bold text-slate-950 shadow-glow-cyan active:scale-98 transition-all cursor-pointer"
+                      >
+                        <Camera className="h-4 w-4" />
+                        <span>📷 OCR 명판 스캔</span>
+                      </button>
+
+                      {/* 수정 & 삭제 */}
+                      <button
+                        type="button"
+                        onClick={() => startEditing(part)}
+                        className="px-3 rounded-xl bg-slate-800 text-slate-300 hover:text-white border border-slate-700 flex items-center justify-center cursor-pointer"
+                        title="직접 수정"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deletePart(part.id)}
+                        className="px-3 rounded-xl bg-slate-800 text-slate-500 hover:text-red-400 border border-slate-700 flex items-center justify-center cursor-pointer"
+                        title="삭제"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {/* 감지된 시리얼 표시 박스 */}
+                    <div className="rounded-xl bg-slate-950 px-3 py-2 border border-slate-800 flex items-center justify-between">
+                      <span className="text-[11px] text-slate-500 font-mono">S/N:</span>
+                      {hasSerial ? (
+                        <span className="font-mono font-bold text-sm tracking-wider text-cyan-300">
+                          {part.detectedSerial}
+                        </span>
+                      ) : (
+                        <span className="text-slate-600 text-xs italic font-mono">
+                          (스캔 전 - 미인식)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {filteredParts.length === 0 && (
+          <div className="rounded-2xl bg-slate-900 p-8 text-center text-slate-500 border border-slate-800 text-xs">
+            등록된 부품이 없습니다. 상단의 <strong>[양식 변경]</strong> 또는{" "}
+            <strong>[부품 추가]</strong> 버튼을 눌러주세요.
+          </div>
+        )}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 2. 데스크톱/태블릿 전용 고밀도 테이블 뷰 (sm:block) */}
+      {/* ========================================================================= */}
+      <div className="hidden sm:block overflow-hidden rounded-2xl bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
@@ -225,7 +423,6 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                 const isEditing = editingId === part.id;
                 const hasSerial = Boolean(part.detectedSerial?.trim());
 
-                // 이전 항목과 category가 다르면 모듈 구분 바 렌더링
                 const prevPart = index > 0 ? filteredParts[index - 1] : null;
                 const showCategoryHeader = part.category && (!prevPart || prevPart.category !== part.category);
 
