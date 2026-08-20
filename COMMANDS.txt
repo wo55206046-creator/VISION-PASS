@@ -1,0 +1,24 @@
+================================================================================
+  [VISION-PASS] Server Run, Sync & Android APK Build Commands
+================================================================================
+
+1. Run Local Dev Server (PC Browser Test)
+   npm.cmd run dev
+   -> Open http://localhost:3000
+
+2. Sync Latest Code to Android App (Most frequently used after code edits)
+   npm.cmd run android:sync
+
+3. Open Android Studio (To build/export APK file)
+   npx.cmd cap open android
+   -> Menu: [Build] -> [Build Bundle(s) / APK(s)] -> [Build APK(s)]
+
+★ Generated APK File Path:
+   android\app\build\outputs\apk\debug\app-debug.apk
+   (Full Path: C:\Users\USER\Desktop\VISION-PASS\android\app\build\outputs\apk\debug\app-debug.apk)
+
+4. [First Time Only] Add Android Platform Folder
+   npx.cmd cap add android
+
+5. 1-Click Batch Build
+   Double-click 'build-apk.bat'

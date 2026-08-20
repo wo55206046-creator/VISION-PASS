@@ -1,0 +1,51 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js build outputs
+/.next/
+/out/
+
+# production
+/build
+/dist
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# misc
+.DS_Store
+*.pem
+Thumbs.db
+
+# debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# local env files
+.env*.local
+.env
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# capacitor & android builds
+/android/.gradle/
+/android/app/build/
+/android/build/
+/android/captures/
+/android/.idea/
+*.apk

@@ -1,0 +1,3747 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Serial Report List | 설비 제작완료 보고서 & 인메모리 OCR</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            cleanroom: {
+              950: "#07090e",
+              900: "#0b0f19",
+              850: "#101626",
+              800: "#161e33",
+              700: "#1e2b48",
+            },
+            laser: {
+              cyan: "#00f0ff",
+              emerald: "#10b981",
+              amber: "#f59e0b",
+            }
+          },
+          boxShadow: {
+            'glow-cyan': '0 0 20px -5px rgba(0, 240, 255, 0.35)',
+            'glow-emerald': '0 0 20px -5px rgba(16, 185, 129, 0.35)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 & Babel CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Tesseract.js (Client-side In-Memory OCR) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <!-- ExcelJS (Lightweight Excel Generator) & SheetJS (Ultra-robust Excel Reader) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    body {
+      background: radial-gradient(circle at 50% 0%, rgba(0, 240, 255, 0.06) 0%, transparent 60%),
+        linear-gradient(to bottom, #07090e, #0b0f19);
+      min-height: 100vh;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #0b0f19;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #00f0ff;
+    }
+
+    @keyframes scan {
+      0% {
+        transform: translateY(-100%);
+      }
+
+      100% {
+        transform: translateY(800%);
+      }
+    }
+
+    .scan-line {
+      animation: scan 2s linear infinite;
+    }
+
+    /* Chrome, Safari, Edge, Opera: number spinner 숨김 */
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      appearance: none;
+      margin: 0;
+    }
+
+    /* Firefox and standard */
+    input[type=number] {
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+  </style>
+</head>
+
+<body class="selection:bg-cyan-500 selection:text-slate-950">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+    // --- 1. 유틸리티 및 기본 프리셋 데이터 (괄호 설명 없는 깔끔한 명칭) ---
+    // 표준 반도체/디스플레이 메인 사업장 목록 (중복 제거 및 최적화)
+    const DEFAULT_SITES = [
+      // 1. SK하이닉스 (SKH)
+      "SKH 이천 TSV",
+      "SKH 이천 M16",
+      "SKH 이천 M14",
+      "SKH 이천 M10C",
+      "SKH 이천 R3",
+      "SKH 이천 P&T4",
+      "SKH 이천",
+      "SKH 청주 M15X Ph-3",
+      "SKH 청주 M15X Ph-4",
+      "SKH 청주 M15X",
+      "SKH 청주 M11A",
+      "SKH 청주 M11B",
+      "SKH 청주 M11",
+      "SKH 청주 M8",
+      "SKH 청주",
+      "SKH 우시",
+      "SKH 용인",
+
+      // 2. 삼성 (SEC / SDC)
+      "SEC 평택",
+      "SEC 천안",
+      "SEC 화성",
+      "SEC 화성 M1L",
+      "SEC 화성 17L",
+      "SEC 데모",
+      "SDC 아산",
+
+      // 3. 글로벌 메모리 / 디스플레이 / 고객사
+      "Micron 대만",
+      "난야 대만",
+      "KIOXIA 일본",
+      "LGD_파주 P10",
+      "테크센드포토마스크",
+      "젬백스엔카엘",
+      "데모",
+    ];
+
+    const STANDARD_PRESETS = [
+      { id: "p1", category: "Gas & Flow", partName: "MFC (Mass Flow Controller) - SiH4", spec: "Horiba STEC / 0-500 sccm" },
+      { id: "p2", category: "Gas & Flow", partName: "MFC (Mass Flow Controller) - NF3", spec: "Brooks GF120 / 0-2000 sccm" },
+      { id: "p3", category: "Vacuum & Exhaust", partName: "Dry Vacuum Pump", spec: "Edwards iXH1820 / 1800 m3/h / 200V" },
+      { id: "p4", category: "Vacuum & Exhaust", partName: "Turbo Molecular Pump (TMP)", spec: "Shimadzu TMP-2003LM / Mag-lev" },
+      { id: "p5", category: "Vacuum & Exhaust", partName: "Baratron Capacitance Manometer", spec: "MKS 627D / 0.1 Torr / Heated" },
+      { id: "p6", category: "RF & Plasma", partName: "RF Generator (High Freq)", spec: "Advanced Energy / 13.56MHz 3kW" },
+      { id: "p7", category: "Thermal & Cooling", partName: "Recirculating Chiller Unit", spec: "SMC Thermo-chiller / -20~+80°C" },
+      { id: "p8", category: "Valves & Air", partName: "Pendulum Throttle Valve", spec: "VAT Series 65 / DN 250" },
+      { id: "p9", category: "Wafer Transfer", partName: "Atmospheric Dual-Arm Robot", spec: "Yaskawa SR100 / 300mm FOUP" },
+    ];
+
+    function generateId() {
+      return "id-" + Math.random().toString(36).substring(2, 9) + "-" + Date.now().toString(36);
+    }
+
+    function getToday() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // 사업장별 색상 스타일 결정:
+    // 1. SKH로 시작: 기존 주황색(Amber)
+    // 2. SEC로 시작: 블루(사진 속 난야 대만 색상)
+    // 3. 그 외 시작: 모두 옅은 빨강(Rose)
+    function getSiteBadgeStyle(site) {
+      const s = (site || "").trim().toUpperCase();
+      if (s.startsWith("SKH") || s.startsWith("SK")) {
+        return {
+          bg: "bg-amber-950/70 border-amber-600/70 text-amber-300",
+          icon: "text-amber-400"
+        };
+      } else if (s.startsWith("SEC")) {
+        return {
+          bg: "bg-blue-950/80 border-blue-600/80 text-blue-300",
+          icon: "text-blue-400"
+        };
+      } else {
+        return {
+          bg: "bg-rose-950/70 border-rose-600/70 text-rose-300",
+          icon: "text-rose-400"
+        };
+      }
+    }
+
+    function triggerScanFeedback() {
+      if (navigator.vibrate) navigator.vibrate([40, 30, 80]);
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.1);
+          setTimeout(() => ctx.close(), 150);
+        }
+      } catch (e) { }
+    }
+
+    // TM100L 표준 시리얼 리스트 BOM 템플릿 (8개 모듈 전체 43개 항목)
+    const TM100L_PARTS_TEMPLATE = [
+      // [ MAIN ]
+      { id: "tm-01", category: "[ MAIN ]", partName: "Syringe Pump", subSpec: "용액 자동화 장치", spec: "C3000, P/N 10013", detectedSerial: "673644", isVerified: true },
+      { id: "tm-02", category: "[ MAIN ]", partName: "Cleaning Pump", subSpec: "Thomas-P", spec: "2680CGUI44, 230V, 50/60Hz", detectedSerial: "092402204027", isVerified: true },
+
+      // [ MG ]
+      { id: "tm-03", category: "[ MG ]", partName: "HPLC Pump", subSpec: "흡수액 (10mL)", spec: "Series-2 (301)", detectedSerial: "Z0065234", isVerified: true },
+      { id: "tm-04", category: "[ MG ]", partName: "HPLC Pump", subSpec: "ELUENT (10mL)", spec: "Series-3 (426)", detectedSerial: "Z0065155", isVerified: true },
+      { id: "tm-05", category: "[ MG ]", partName: "Injector", subSpec: "-", spec: "C52-2346I", detectedSerial: "25X-0049H", isVerified: true },
+      { id: "tm-06", category: "[ MG ]", partName: "Switching Valve", subSpec: "-", spec: "C65Z-3186IA", detectedSerial: "25W-0296L", isVerified: true },
+      { id: "tm-07", category: "[ MG ]", partName: "MFC", subSpec: "-", spec: "M3030V, Air, 10SLPM", detectedSerial: "M26044740", isVerified: true },
+      { id: "tm-08", category: "[ MG ]", partName: "Vacuum Pump", subSpec: "838", spec: "PM28180-838 230V, 50/60Hz", detectedSerial: "25309826", isVerified: true },
+      { id: "tm-09", category: "[ MG ]", partName: "Vacuum Pump", subSpec: "830", spec: "PM27597-NMP830 12V", detectedSerial: "16.24893336", isVerified: true },
+      { id: "tm-10", category: "[ MG ]", partName: "Guard Column", subSpec: "DIONEX", spec: "AG14(2x50mm)", detectedSerial: "260518269", isVerified: true },
+      { id: "tm-11", category: "[ MG ]", partName: "Analysis Column", subSpec: "DIONEX", spec: "AS14(2x250mm)", detectedSerial: "250218316", isVerified: true },
+      { id: "tm-12", category: "[ MG ]", partName: "SRS", subSpec: "DIONEX", spec: "ADRS 600 2mm", detectedSerial: "260119092", isVerified: true },
+      { id: "tm-13", category: "[ MG ]", partName: "Syringe Pump", subSpec: "분석부", spec: "C3000, P/N 10013", detectedSerial: "673648", isVerified: true },
+      { id: "tm-14", category: "[ MG ]", partName: "FEP TUBE(1/8\")", subSpec: "샘플러 코일", spec: "FEP 3*2*100M", detectedSerial: "FF220207-13", isVerified: true },
+
+      // [ WOA-683 ]
+      { id: "tm-15", category: "[ WOA-683 ]", partName: "Delivery Pump", subSpec: "815", spec: "PM28238-815, 230V", detectedSerial: "25002481", isVerified: true },
+      { id: "tm-16", category: "[ WOA-683 ]", partName: "Calibration Pump", subSpec: "-", spec: "107CCD18-621", detectedSerial: "012600037067", isVerified: true },
+      { id: "tm-17", category: "[ WOA-683 ]", partName: "Ozone Analyzer", subSpec: "-", spec: "49i-B1NAA", detectedSerial: "CM26227022", isVerified: true },
+      { id: "tm-18", category: "[ WOA-683 ]", partName: "Calibration", subSpec: "-", spec: "49iPS-BZAA", detectedSerial: "CM26227052", isVerified: true },
+
+      // [ COSMOS-100 ]
+      { id: "tm-19", category: "[ COSMOS-100 ]", partName: "Delivery Pump", subSpec: "815", spec: "PM28238-815, 230V", detectedSerial: "25002467", isVerified: true },
+      { id: "tm-20", category: "[ COSMOS-100 ]", partName: "NH3 DETECTOR", subSpec: "DGtech", spec: "HEROS", detectedSerial: "KD26030201-013", isVerified: true },
+      { id: "tm-21", category: "[ COSMOS-100 ]", partName: "NH3 DETECTOR Pump", subSpec: "Vacuubrand", spec: "MD1", detectedSerial: "131279307", isVerified: true },
+
+      // [ MAIN(AutoSol) ]
+      { id: "tm-22", category: "[ MAIN(AutoSol) ]", partName: "Control Board", subSpec: "UCON-161", spec: "Main S/N", detectedSerial: "260225-09", isVerified: true },
+      { id: "tm-23", category: "[ MAIN(AutoSol) ]", partName: "Control Board", subSpec: "UCON-107", spec: "I/O S/N", detectedSerial: "251021-49", isVerified: true },
+
+      // [ COSMOS ]
+      { id: "tm-24", category: "[ COSMOS ]", partName: "PC", subSpec: "UNO-2484G", spec: "RAM16G, SSD 256G", detectedSerial: "NXTWH-Y993C-8MFGG-8BTK2-YKRC3", isVerified: true },
+      { id: "tm-25", category: "[ COSMOS ]", partName: "PC", subSpec: "UNO-2484G", spec: "WIN11 ENT LTSC", detectedSerial: "1 212003 031205", isVerified: true },
+      { id: "tm-26", category: "[ COSMOS ]", partName: "PC", subSpec: "UNO-2484G", spec: "LAN1 MAC", detectedSerial: "CC-82-7F-C7-10-BC", isVerified: true },
+      { id: "tm-27", category: "[ COSMOS ]", partName: "PC", subSpec: "UNO-2484G", spec: "LAN2 MAC", detectedSerial: "CC-82-7F-C7-10-BD", isVerified: true },
+      { id: "tm-28", category: "[ COSMOS ]", partName: "Control Board", subSpec: "UCON-161", spec: "Main S/N", detectedSerial: "260225-14", isVerified: true },
+      { id: "tm-29", category: "[ COSMOS ]", partName: "Control Board", subSpec: "UCON-107", spec: "I/O S/N", detectedSerial: "251021-48", isVerified: true },
+
+      // [ WOA ]
+      { id: "tm-30", category: "[ WOA ]", partName: "PC", subSpec: "UNO-2484G", spec: "RAM16G, SSD 256G", detectedSerial: "2MMMG-K6B88-V4X94-J9TPC-YKRC3", isVerified: true },
+      { id: "tm-31", category: "[ WOA ]", partName: "PC", subSpec: "UNO-2484G", spec: "WIN11 ENT LTSC", detectedSerial: "1 212003 031151", isVerified: true },
+      { id: "tm-32", category: "[ WOA ]", partName: "PC", subSpec: "UNO-2484G", spec: "LAN1 MAC", detectedSerial: "CC-82-7F-C7-11-D8", isVerified: true },
+      { id: "tm-33", category: "[ WOA ]", partName: "PC", subSpec: "UNO-2484G", spec: "LAN2 MAC", detectedSerial: "CC-82-7F-C7-11-D9", isVerified: true },
+      { id: "tm-34", category: "[ WOA ]", partName: "Control Board", subSpec: "UCON-161", spec: "Main S/N", detectedSerial: "260225-02", isVerified: true },
+      { id: "tm-35", category: "[ WOA ]", partName: "Control Board", subSpec: "UCON-107", spec: "I/O S/N", detectedSerial: "260226-04", isVerified: true },
+
+      // [ MG1 ]
+      { id: "tm-36", category: "[ MG1 ]", partName: "PC", subSpec: "UNO-2484G", spec: "RAM16G, SSD 256G", detectedSerial: "NX4XY-DHXMG-RPJDW-PR3T6-8T4C3", isVerified: true },
+      { id: "tm-37", category: "[ MG1 ]", partName: "PC", subSpec: "UNO-2484G", spec: "WIN11 ENT LTSC", detectedSerial: "1 212003 031106", isVerified: true },
+      { id: "tm-38", category: "[ MG1 ]", partName: "PC", subSpec: "UNO-2484G", spec: "LAN1 MAC", detectedSerial: "CC-82-7F-AD-5D-89", isVerified: true },
+      { id: "tm-39", category: "[ MG1 ]", partName: "PC", subSpec: "UNO-2484G", spec: "LAN2 MAC", detectedSerial: "CC-82-7F-AD-5D-8A", isVerified: true },
+      { id: "tm-40", category: "[ MG1 ]", partName: "Control Board", subSpec: "UCON-161", spec: "Main S/N", detectedSerial: "260225-16", isVerified: true },
+      { id: "tm-41", category: "[ MG1 ]", partName: "Control Board", subSpec: "UCON-107", spec: "I/O S/N", detectedSerial: "260226-08", isVerified: true },
+      { id: "tm-42", category: "[ MG1 ]", partName: "Detector", subSpec: "Analyzer", spec: "WCD-100", detectedSerial: "WCD1-TM1L-HK26-1002", isVerified: true },
+      { id: "tm-43", category: "[ MG1 ]", partName: "LABJACK", subSpec: "A/D Converter", spec: "U6-PRO", detectedSerial: "360025493", isVerified: true },
+    ];
+
+    // 모델별 표준 PJT 양식 템플릿 컬렉션
+    const PJT_MODEL_TEMPLATES = [
+      {
+        id: "tpl-tm100l",
+        modelName: "TM100L (NaVi-TM100L-0312)",
+        pjtCodeHint: "S26-15-10",
+        description: "사내 표준 TM100L 8개 모듈 전체 시리얼 리스트 양식",
+        moduleCount: 8,
+        partsCount: 43,
+        parts: TM100L_PARTS_TEMPLATE
+      },
+      {
+        id: "tpl-cosmos100",
+        modelName: "COSMOS-100 (COSMOS-100-0340)",
+        pjtCodeHint: "S26-15-12",
+        description: "40 Port 대구경 챔버 진공/칠러/제어 보드 표준 양식",
+        moduleCount: 4,
+        partsCount: 7,
+        parts: [
+          { id: "cos-1", category: "[ VACUUM ]", partName: "Turbo Molecular Pump (TMP)", subSpec: "Shimadzu", spec: "TMP-2003LM / Mag-lev", detectedSerial: "", isVerified: false },
+          { id: "cos-2", category: "[ VACUUM ]", partName: "Dry Vacuum Pump", subSpec: "Edwards", spec: "iXH1820 / 1800 m3/h", detectedSerial: "", isVerified: false },
+          { id: "cos-3", category: "[ VACUUM ]", partName: "Baratron Capacitance Manometer", subSpec: "MKS", spec: "627D / 0.1 Torr", detectedSerial: "", isVerified: false },
+          { id: "cos-4", category: "[ CHILLER ]", partName: "Recirculating Chiller Unit", subSpec: "SMC", spec: "Thermo-chiller 5kW", detectedSerial: "", isVerified: false },
+          { id: "cos-5", category: "[ VALVE ]", partName: "Pendulum Throttle Valve", subSpec: "VAT", spec: "Series 65 / DN 250", detectedSerial: "", isVerified: false },
+          { id: "cos-6", category: "[ CONTROL ]", partName: "Control Board", subSpec: "UCON-161", spec: "Main S/N", detectedSerial: "", isVerified: false },
+          { id: "cos-7", category: "[ CONTROL ]", partName: "Control Board", subSpec: "UCON-107", spec: "I/O S/N", detectedSerial: "", isVerified: false }
+        ]
+      },
+      {
+        id: "tpl-voice200",
+        modelName: "VOICE200ultra-SOT200S (VOICE200ultra-SOT200S-0124)",
+        pjtCodeHint: "S26-01-04",
+        description: "24 Port 가스 유량 및 고진공 배기계 표준 양식",
+        moduleCount: 3,
+        partsCount: 6,
+        parts: [
+          { id: "voi-1", category: "[ GAS FLOW ]", partName: "MFC (Mass Flow Controller) - SiH4", subSpec: "Horiba STEC", spec: "0-500 sccm / DeviceNet", detectedSerial: "", isVerified: false },
+          { id: "voi-2", category: "[ GAS FLOW ]", partName: "MFC (Mass Flow Controller) - Ar/N2", subSpec: "Unit Instruments", spec: "0-5000 sccm / RS485", detectedSerial: "", isVerified: false },
+          { id: "voi-3", category: "[ VACUUM ]", partName: "Dry Vacuum Pump", subSpec: "Edwards", spec: "iXH1820 / 1800 m3/h", detectedSerial: "", isVerified: false },
+          { id: "voi-4", category: "[ VACUUM ]", partName: "Pirani Vacuum Gauge", subSpec: "Inficon", spec: "PSG500 / 5x10-4 ~ 1000 mbar", detectedSerial: "", isVerified: false },
+          { id: "voi-5", category: "[ SENSOR ]", partName: "Baratron Capacitance Manometer", subSpec: "MKS", spec: "627D / 0.1 Torr", detectedSerial: "", isVerified: false },
+          { id: "voi-6", category: "[ CONTROL ]", partName: "Industrial PC", subSpec: "Advantech", spec: "UNO-2484G / Win11", detectedSerial: "", isVerified: false }
+        ]
+      },
+      {
+        id: "tpl-woa683",
+        modelName: "WOA-683 (WOA-683-0208)",
+        pjtCodeHint: "S26-01-05",
+        description: "8 Port 세정/분석 전달 펌프 및 오존 분석기 표준 양식",
+        moduleCount: 2,
+        partsCount: 6,
+        parts: [
+          { id: "woa-1", category: "[ WOA-683 ]", partName: "Delivery Pump", subSpec: "815", spec: "PM28238-815, 230V", detectedSerial: "", isVerified: false },
+          { id: "woa-2", category: "[ WOA-683 ]", partName: "Calibration Pump", subSpec: "-", spec: "107CCD18-621", detectedSerial: "", isVerified: false },
+          { id: "woa-3", category: "[ WOA-683 ]", partName: "Ozone Analyzer", subSpec: "-", spec: "49i-B1NAA", detectedSerial: "", isVerified: false },
+          { id: "woa-4", category: "[ WOA-683 ]", partName: "Calibration", subSpec: "-", spec: "49iPS-BZAA", detectedSerial: "", isVerified: false },
+          { id: "woa-5", category: "[ CONTROL ]", partName: "Control Board", subSpec: "UCON-161", spec: "Main S/N", detectedSerial: "", isVerified: false },
+          { id: "woa-6", category: "[ CONTROL ]", partName: "Control Board", subSpec: "UCON-107", spec: "I/O S/N", detectedSerial: "", isVerified: false }
+        ]
+      },
+      {
+        id: "tpl-mg200",
+        modelName: "NaVi-MG200 (NaVi-MG200)",
+        pjtCodeHint: "S26-45-01",
+        description: "초정밀 광학 검사 및 X-Y 스테이지 모션 컨트롤 표준 양식",
+        moduleCount: 3,
+        partsCount: 6,
+        parts: [
+          { id: "mg-1", category: "[ OPTICAL ]", partName: "Optical Inspection Camera", subSpec: "Basler", spec: "5MP GigE CMOS", detectedSerial: "", isVerified: false },
+          { id: "mg-2", category: "[ OPTICAL ]", partName: "Telecentric Lens", subSpec: "Moritex", spec: "2.0x / WD 110mm", detectedSerial: "", isVerified: false },
+          { id: "mg-3", category: "[ MOTION ]", partName: "X-Y Precision Stage", subSpec: "THK", spec: "Linear Motor / 300x300mm", detectedSerial: "", isVerified: false },
+          { id: "mg-4", category: "[ MOTION ]", partName: "Z-Axis Auto Focus Stage", subSpec: "Suruga", spec: "Micro Stepper / 0.1um", detectedSerial: "", isVerified: false },
+          { id: "mg-5", category: "[ CONTROLLER ]", partName: "Motion Controller", subSpec: "ACS", spec: "4-Axis EtherCAT", detectedSerial: "", isVerified: false },
+          { id: "mg-6", category: "[ CONTROLLER ]", partName: "Industrial PC", subSpec: "Advantech", spec: "i7-12700 / 32GB RAM", detectedSerial: "", isVerified: false }
+        ]
+      }
+    ];
+
+    // 엑셀 양식 기반 5개 표준 프로젝트 목록 (PJT List 용)
+    const INITIAL_PROJECTS = [
+      // 1. SKH 이천 TSV | S26-15-10 | TM100L (NaVi-TM100L-0312) | 수량: 1 | TM1L-HK26-1007 | 담당자: 김형태, 유병준
+      {
+        id: "pjt-001",
+        site: "SKH 이천 TSV",
+        pjtCode: "S26-15-10",
+        equipmentName: "TM100L (NaVi-TM100L-0312)",
+        quantity: 1,
+        inspectorName: "김형태, 유병준",
+        inspectionDate: getToday(),
+        notes: "TM100L 표준 시리얼 리스트 양식 (8개 모듈)",
+        updatedAt: new Date().toISOString(),
+        equipmentUnits: [
+          {
+            unitIndex: 1,
+            equipmentSerial: "TM1L-HK26-1007",
+            parts: TM100L_PARTS_TEMPLATE.map(p => ({ ...p, id: generateId() }))
+          }
+        ]
+      },
+      // 2. SKH 우시 | S26-15-12 | COSMOS-100 (COSMOS-100-0340) | 수량: 3 | COS1-HC26-0703 ~ 0705 | 담당자: 정재헌, 손홍렬
+      {
+        id: "pjt-002",
+        site: "SKH 우시",
+        pjtCode: "S26-15-12",
+        equipmentName: "COSMOS-100 (COSMOS-100-0340)",
+        quantity: 3,
+        inspectorName: "정재헌, 손홍렬",
+        inspectionDate: getToday(),
+        notes: "40 Port 대구경 챔버 / 진공 게이지 및 칠러 시리얼 스캔 진행 중",
+        updatedAt: new Date(Date.now() - 3600000).toISOString(),
+        equipmentUnits: [
+          {
+            unitIndex: 1,
+            equipmentSerial: "COS1-HC26-0703",
+            parts: [
+              { id: "p2-1-1", partName: "Turbo Molecular Pump (TMP)", spec: "Shimadzu TMP-2003LM", detectedSerial: "SHI-TMP-8831A", isVerified: true, scannedAt: new Date().toISOString(), confidence: 97 },
+              { id: "p2-1-2", partName: "Recirculating Chiller Unit", spec: "SMC Thermo-chiller 5kW", detectedSerial: "SMC-CHL-9921", isVerified: true, scannedAt: new Date().toISOString(), confidence: 93 },
+              { id: "p2-1-3", partName: "Pendulum Throttle Valve", spec: "VAT Series 65 / DN 250", detectedSerial: "", isVerified: false },
+            ]
+          },
+          {
+            unitIndex: 2,
+            equipmentSerial: "COS1-HC26-0704",
+            parts: [
+              { id: "p2-2-1", partName: "Turbo Molecular Pump (TMP)", spec: "Shimadzu TMP-2003LM", detectedSerial: "", isVerified: false },
+              { id: "p2-2-2", partName: "Recirculating Chiller Unit", spec: "SMC Thermo-chiller 5kW", detectedSerial: "", isVerified: false },
+            ]
+          },
+          {
+            unitIndex: 3,
+            equipmentSerial: "COS1-HC26-0705",
+            parts: [
+              { id: "p2-3-1", partName: "Turbo Molecular Pump (TMP)", spec: "Shimadzu TMP-2003LM", detectedSerial: "", isVerified: false },
+              { id: "p2-3-2", partName: "Recirculating Chiller Unit", spec: "SMC Thermo-chiller 5kW", detectedSerial: "", isVerified: false },
+            ]
+          }
+        ]
+      },
+      // 3. SEC 평택 | S26-01-04 | VOICE200ultra-SOT200S (VOICE200ultra-SOT200S-0124) | 수량: 3 | SOTSU-SK26-0701 ~ 0703 | 담당자: 정재헌, 손홍렬
+      {
+        id: "pjt-003",
+        site: "SEC 평택",
+        pjtCode: "S26-01-04",
+        equipmentName: "VOICE200ultra-SOT200S (VOICE200ultra-SOT200S-0124)",
+        quantity: 3,
+        inspectorName: "정재헌, 손홍렬",
+        inspectionDate: getToday(),
+        notes: "24 Port 3개 호기 연속 라인 설치 검수 완료",
+        updatedAt: new Date(Date.now() - 7200000).toISOString(),
+        equipmentUnits: [
+          {
+            unitIndex: 1,
+            equipmentSerial: "SOTSU-SK26-0701",
+            parts: [
+              { id: "p3-1-1", partName: "MFC (Mass Flow Controller) - SiH4", spec: "Horiba STEC / 0-500 sccm", detectedSerial: "STEC-2026-H8821", isVerified: true, scannedAt: new Date().toISOString(), confidence: 98 },
+              { id: "p3-1-2", partName: "Dry Vacuum Pump", spec: "Edwards iXH1820 / 1800 m3/h", detectedSerial: "EDW-IXH-99420A", isVerified: true, scannedAt: new Date().toISOString(), confidence: 96 },
+            ]
+          },
+          {
+            unitIndex: 2,
+            equipmentSerial: "SOTSU-SK26-0702",
+            parts: [
+              { id: "p3-2-1", partName: "MFC (Mass Flow Controller) - SiH4", spec: "Horiba STEC / 0-500 sccm", detectedSerial: "STEC-2026-H8822", isVerified: true, scannedAt: new Date().toISOString(), confidence: 97 },
+              { id: "p3-2-2", partName: "Dry Vacuum Pump", spec: "Edwards iXH1820 / 1800 m3/h", detectedSerial: "EDW-IXH-99421B", isVerified: true, scannedAt: new Date().toISOString(), confidence: 95 },
+            ]
+          },
+          {
+            unitIndex: 3,
+            equipmentSerial: "SOTSU-SK26-0703",
+            parts: [
+              { id: "p3-3-1", partName: "MFC (Mass Flow Controller) - SiH4", spec: "Horiba STEC / 0-500 sccm", detectedSerial: "STEC-2026-H8823", isVerified: true, scannedAt: new Date().toISOString(), confidence: 96 },
+              { id: "p3-3-2", partName: "Dry Vacuum Pump", spec: "Edwards iXH1820 / 1800 m3/h", detectedSerial: "EDW-IXH-99422C", isVerified: true, scannedAt: new Date().toISOString(), confidence: 94 },
+            ]
+          }
+        ]
+      },
+      // 4. SEC 평택 | S26-01-05 | WOA-683 (WOA-683-0208) | 수량: 2 | WOA-SK26-0703 ~ 0704 | 담당자: 정재헌, 손홍렬
+      {
+        id: "pjt-004",
+        site: "SEC 평택",
+        pjtCode: "S26-01-05",
+        equipmentName: "WOA-683 (WOA-683-0208)",
+        quantity: 2,
+        inspectorName: "정재헌, 손홍렬",
+        inspectionDate: getToday(),
+        notes: "8 Port 세정 시스템 / 부품 시리얼 검증 대기",
+        updatedAt: new Date(Date.now() - 10800000).toISOString(),
+        equipmentUnits: [
+          {
+            unitIndex: 1,
+            equipmentSerial: "WOA-SK26-0703",
+            parts: [
+              { id: "p4-1-1", partName: "Atmospheric Dual-Arm Robot", spec: "Yaskawa SR100 300mm", detectedSerial: "", isVerified: false },
+              { id: "p4-1-2", partName: "Recirculating Chiller Unit", spec: "SMC Thermo-chiller", detectedSerial: "", isVerified: false },
+              { id: "p4-1-3", partName: "Safety Interlock Controller", spec: "Pilz PNOZ Multi 2 / SIL 3", detectedSerial: "", isVerified: false },
+            ]
+          },
+          {
+            unitIndex: 2,
+            equipmentSerial: "WOA-SK26-0704",
+            parts: [
+              { id: "p4-2-1", partName: "Atmospheric Dual-Arm Robot", spec: "Yaskawa SR100 300mm", detectedSerial: "", isVerified: false },
+              { id: "p4-2-2", partName: "Recirculating Chiller Unit", spec: "SMC Thermo-chiller", detectedSerial: "", isVerified: false },
+            ]
+          }
+        ]
+      },
+      // 5. 난야 대만 | S26-45-01 | NaVi-MG200 (NaVi-MG200) | 수량: 1 | MG20-NT26-1102 | 담당자: 김형태, 유병준
+      {
+        id: "pjt-005",
+        site: "난야 대만",
+        pjtCode: "S26-45-01",
+        equipmentName: "NaVi-MG200 (NaVi-MG200)",
+        quantity: 1,
+        inspectorName: "김형태, 유병준",
+        inspectionDate: getToday(),
+        notes: "핸들러 설비 검수 준비",
+        updatedAt: new Date(Date.now() - 14400000).toISOString(),
+        equipmentUnits: [
+          {
+            unitIndex: 1,
+            equipmentSerial: "MG20-NT26-1102",
+            parts: [
+              { id: "p5-1", partName: "MFC (Mass Flow Controller) - NF3", spec: "Brooks GF120 / 0-2000 sccm", detectedSerial: "BRK-NF3-4410", isVerified: true, scannedAt: new Date().toISOString(), confidence: 95 },
+              { id: "p5-2", partName: "Fast Shut-off Gate Valve", spec: "VAT Series 12.1 / DN 200", detectedSerial: "", isVerified: false },
+              { id: "p5-3", partName: "Safety Interlock Controller", spec: "Pilz PNOZ Multi 2 / SIL 3", detectedSerial: "", isVerified: false },
+            ]
+          }
+        ]
+      }
+    ];
+
+    function createNewBlankProject() {
+      return {
+        id: generateId(),
+        site: "",
+        pjtCode: "",
+        equipmentName: "",
+        quantity: 1,
+        inspectorName: "",
+        inspectionDate: getToday(),
+        notes: "",
+        updatedAt: new Date().toISOString(),
+        equipmentUnits: [
+          {
+            unitIndex: 1,
+            equipmentSerial: "",
+            parts: [
+              { id: generateId(), partName: "MFC (Mass Flow Controller) - SiH4", spec: "Horiba STEC / 0-500 sccm", detectedSerial: "", isVerified: false },
+              { id: generateId(), partName: "Dry Vacuum Pump", spec: "Edwards iXH1820 / 1800 m3/h", detectedSerial: "", isVerified: false },
+            ]
+          }
+        ]
+      };
+    }
+
+    // --- 2. 스토리지 제로 인메모리 전처리 파이프라인 ---
+    function preprocessCanvas(sourceCanvas, options = { contrastStretch: true, adaptiveThreshold: true, invert: false }) {
+      const width = sourceCanvas.width;
+      const height = sourceCanvas.height;
+      const processed = document.createElement("canvas");
+      processed.width = width;
+      processed.height = height;
+      const ctx = processed.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return sourceCanvas;
+
+      ctx.drawImage(sourceCanvas, 0, 0, width, height);
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const data = imgData.data;
+      const totalPixels = width * height;
+
+      // 1. Grayscale
+      const gray = new Uint8Array(totalPixels);
+      for (let i = 0; i < totalPixels; i++) {
+        const idx = i * 4;
+        gray[i] = Math.round(0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]);
+      }
+
+      // 2. Min-Max Contrast Normalization (난반사 억제)
+      if (options.contrastStretch) {
+        const hist = new Int32Array(256);
+        for (let i = 0; i < totalPixels; i++) hist[gray[i]]++;
+        const lowCutoff = Math.floor(totalPixels * 0.02);
+        const highCutoff = Math.floor(totalPixels * 0.98);
+        let minVal = 0, maxVal = 255, accum = 0;
+        for (let i = 0; i < 256; i++) {
+          accum += hist[i];
+          if (accum >= lowCutoff) { minVal = i; break; }
+        }
+        accum = 0;
+        for (let i = 255; i >= 0; i--) {
+          accum += hist[i];
+          if (accum >= (totalPixels - highCutoff)) { maxVal = i; break; }
+        }
+        const range = maxVal - minVal || 1;
+        for (let i = 0; i < totalPixels; i++) {
+          let val = gray[i];
+          if (val < minVal) val = minVal;
+          if (val > maxVal) val = maxVal;
+          gray[i] = Math.round(((val - minVal) * 255) / range);
+        }
+      }
+
+      // 3. Adaptive Bradley-Roth Thresholding (적분 영상 기반 이진화)
+      if (options.adaptiveThreshold) {
+        const s = 21;
+        const s2 = Math.floor(s / 2);
+        const delta = 0.15;
+        const intImg = new Uint32Array((width + 1) * (height + 1));
+        const stride = width + 1;
+
+        for (let y = 0; y < height; y++) {
+          let rowSum = 0;
+          for (let x = 0; x < width; x++) {
+            rowSum += gray[y * width + x];
+            intImg[(y + 1) * stride + (x + 1)] = intImg[y * stride + (x + 1)] + rowSum;
+          }
+        }
+
+        for (let y = 0; y < height; y++) {
+          const y1 = Math.max(0, y - s2);
+          const y2 = Math.min(height - 1, y + s2);
+          for (let x = 0; x < width; x++) {
+            const x1 = Math.max(0, x - s2);
+            const x2 = Math.min(width - 1, x + s2);
+            const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+            const sum = intImg[(y2 + 1) * stride + (x2 + 1)] - intImg[y1 * stride + (x2 + 1)] - intImg[(y2 + 1) * stride + x1] + intImg[y1 * stride + x1];
+            const threshold = (sum / count) * (1 - delta);
+            gray[y * width + x] = gray[y * width + x] < threshold ? 0 : 255;
+          }
+        }
+      }
+
+      if (options.invert) {
+        for (let i = 0; i < totalPixels; i++) gray[i] = 255 - gray[i];
+      }
+
+      for (let i = 0; i < totalPixels; i++) {
+        const idx = i * 4;
+        const v = gray[i];
+        data[idx] = v; data[idx + 1] = v; data[idx + 2] = v; data[idx + 3] = 255;
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+      return processed;
+    }
+
+    function cropROI(canvas, roi) {
+      const crop = document.createElement("canvas");
+      crop.width = Math.max(1, Math.floor(roi.w));
+      crop.height = Math.max(1, Math.floor(roi.h));
+      const ctx = crop.getContext("2d");
+      if (ctx) ctx.drawImage(canvas, roi.x, roi.y, roi.w, roi.h, 0, 0, crop.width, crop.height);
+      return crop;
+    }
+
+    function disposeCanvas(canvas) {
+      if (!canvas) return;
+      try {
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        canvas.width = 1; canvas.height = 1;
+      } catch (e) { }
+    }
+
+    // --- 3. 엑셀 리포트 생성기 (사진 속 「3. 시리얼 리스트」 사내 표준 양식 100% 일치 & 다중 호기 시트별 자동 매칭) ---
+    async function exportToExcel(project) {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "WITHTECH Semiconductor Quality System";
+      wb.created = new Date();
+
+      const GRAY_HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+      const SUMMARY_HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFCBD5E1" } };
+      const MODULE_BAR_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD8DEE9" } };
+      const THIN_BORDER = {
+        top: { style: "thin", color: { argb: "FF000000" } },
+        left: { style: "thin", color: { argb: "FF000000" } },
+        bottom: { style: "thin", color: { argb: "FF000000" } },
+        right: { style: "thin", color: { argb: "FF000000" } }
+      };
+
+      const units = project.equipmentUnits && project.equipmentUnits.length > 0
+        ? project.equipmentUnits
+        : [{ unitIndex: 1, equipmentSerial: "", parts: [] }];
+
+      // 각 호기별 시트 생성 (1호기, 2호기, 3호기...)
+      units.forEach(unit => {
+        const sheetName = `${unit.unitIndex}호기`;
+
+        const ws = wb.addWorksheet(sheetName, {
+          views: [{ showGridLines: true }],
+          pageSetup: {
+            paperSize: 9, // A4
+            orientation: "portrait",
+            fitToPage: true,
+            fitToWidth: 1,
+            fitToHeight: 0
+          }
+        });
+
+        // 1. 컬럼 너비 설정
+        ws.columns = [
+          { width: 22 }, // 품명
+          { width: 20 }, // 세부 사항
+          { width: 26 }, // 규격
+          { width: 28 }  // Serial No.
+        ];
+
+        // 2. 대제목
+        ws.mergeCells("A2:D2");
+        const t = ws.getCell("A2");
+        t.value = "3. 시리얼 리스트";
+        t.font = { name: "Malgun Gothic", size: 16, bold: true, color: { argb: "FF000000" } };
+        t.alignment = { vertical: "middle", horizontal: "center" };
+        ws.getRow(2).height = 32;
+
+        // 3. 헤더 정보 박스 (사진 서식 일치: B4 메인 모델명, B5 괄호 서브 모델명 분리)
+        const eqName = (project.equipmentName || "").trim();
+        let modelMain = eqName;
+        let modelSub = "";
+
+        const parenMatch = eqName.match(/^(.*?)\s*(\(.*?\))\s*$/);
+        if (parenMatch) {
+          modelMain = parenMatch[1].trim();
+          modelSub = parenMatch[2].trim();
+        }
+
+        // A4:A5 병합: [ 모 델 명 ]
+        ws.mergeCells("A4:A5");
+        const mL = ws.getCell("A4");
+        mL.value = "모 델 명";
+        mL.font = { name: "Malgun Gothic", size: 10, bold: true };
+        mL.fill = GRAY_HEADER_FILL;
+        mL.alignment = { vertical: "middle", horizontal: "center" };
+        mL.border = THIN_BORDER;
+        ws.getCell("A5").border = THIN_BORDER;
+
+        // B4: 메인 모델명 (예: TM100L)
+        const mV1 = ws.getCell("B4");
+        mV1.value = modelMain || "-";
+        mV1.font = { name: "Malgun Gothic", size: 10, bold: true };
+        mV1.alignment = { vertical: "middle", horizontal: "center" };
+        mV1.border = THIN_BORDER;
+
+        // B5: 괄호 세부 모델명 (예: (NaVi-TM100L-0312))
+        const mV2 = ws.getCell("B5");
+        mV2.value = modelSub || "";
+        mV2.font = { name: "Malgun Gothic", size: 9.5, bold: true };
+        mV2.alignment = { vertical: "middle", horizontal: "center" };
+        mV2.border = THIN_BORDER;
+
+        // C4, D4: [ S/N ] [ 해당 호기 시리얼 ]
+        const sL = ws.getCell("C4");
+        sL.value = "S/N";
+        sL.font = { name: "Malgun Gothic", size: 10, bold: true };
+        sL.fill = GRAY_HEADER_FILL;
+        sL.alignment = { vertical: "middle", horizontal: "center" };
+        sL.border = THIN_BORDER;
+
+        const sV = ws.getCell("D4");
+        sV.value = unit.equipmentSerial || "-";
+        sV.font = { name: "Malgun Gothic", size: 10, bold: true };
+        sV.alignment = { vertical: "middle", horizontal: "center" };
+        sV.border = THIN_BORDER;
+
+        // C5, D5: [ 작 성 자 ] [ 검사자명 ]
+        const wL = ws.getCell("C5");
+        wL.value = "작 성 자";
+        wL.font = { name: "Malgun Gothic", size: 10, bold: true };
+        wL.fill = GRAY_HEADER_FILL;
+        wL.alignment = { vertical: "middle", horizontal: "center" };
+        wL.border = THIN_BORDER;
+
+        const wV = ws.getCell("D5");
+        wV.value = project.inspectorName || "-";
+        wV.font = { name: "Malgun Gothic", size: 10 };
+        wV.alignment = { vertical: "middle", horizontal: "center" };
+        wV.border = THIN_BORDER;
+
+        ws.getRow(4).height = 20;
+        ws.getRow(5).height = 20;
+
+        // 4. 모듈별 부품 그룹 테이블 렌더링
+        let r = 7;
+        const categoryGroups = [];
+        const partList = unit.parts || [];
+        partList.forEach(part => {
+          const cat = part.category || "[ MAIN ]";
+          const existing = categoryGroups.find(g => g.category === cat);
+          if (existing) {
+            existing.parts.push(part);
+          } else {
+            categoryGroups.push({ category: cat, parts: [part] });
+          }
+        });
+
+        categoryGroups.forEach(group => {
+          // 모듈 구분 바
+          ws.mergeCells(`A${r}:D${r}`);
+          const modCell = ws.getCell(`A${r}`);
+          modCell.value = group.category;
+          modCell.font = { name: "Malgun Gothic", size: 10, bold: true, color: { argb: "FF000000" } };
+          modCell.fill = MODULE_BAR_FILL;
+          modCell.alignment = { vertical: "middle", horizontal: "center" };
+          for (let c = 1; c <= 4; c++) ws.getRow(r).getCell(c).border = THIN_BORDER;
+          ws.getRow(r).height = 22;
+          r++;
+
+          // 4개 컬럼 타이틀
+          const colHeaders = ["품명", "세부 사항", "규격", "Serial No."];
+          colHeaders.forEach((th, cIdx) => {
+            const cell = ws.getRow(r).getCell(cIdx + 1);
+            cell.value = th;
+            cell.font = { name: "Malgun Gothic", size: 10, bold: true, color: { argb: "FF000000" } };
+            cell.fill = GRAY_HEADER_FILL;
+            cell.alignment = { vertical: "middle", horizontal: "center" };
+            cell.border = THIN_BORDER;
+          });
+          ws.getRow(r).height = 20;
+          r++;
+
+          // 부품 목록
+          const partStartRow = r;
+          group.parts.forEach(p => {
+            const row = ws.getRow(r);
+            row.height = 19;
+
+            const c1 = row.getCell(1);
+            c1.value = p.partName;
+            c1.font = { name: "Malgun Gothic", size: 9.5 };
+            c1.alignment = { vertical: "middle", horizontal: "center" };
+            c1.border = THIN_BORDER;
+
+            const c2 = row.getCell(2);
+            c2.value = p.subSpec || "-";
+            c2.font = { name: "Malgun Gothic", size: 9.5 };
+            c2.alignment = { vertical: "middle", horizontal: "center" };
+            c2.border = THIN_BORDER;
+
+            const c3 = row.getCell(3);
+            c3.value = p.spec || "-";
+            c3.font = { name: "Malgun Gothic", size: 9 };
+            c3.alignment = { vertical: "middle", horizontal: "center" };
+            c3.border = THIN_BORDER;
+
+            const c4 = row.getCell(4);
+            c4.value = p.detectedSerial || "";
+            c4.font = { name: "Malgun Gothic", size: 9.5, bold: Boolean(p.detectedSerial) };
+            c4.alignment = { vertical: "middle", horizontal: "center" };
+            c4.border = THIN_BORDER;
+
+            r++;
+          });
+
+          // 동일한 품명 및 세부사항 연속 행 자동 병합 (예: PC 4개 행, Control Board 2개 행)
+          let pMergeStart = partStartRow;
+          for (let i = 0; i < group.parts.length; i++) {
+            const currP = group.parts[i];
+            const nextP = i + 1 < group.parts.length ? group.parts[i + 1] : null;
+
+            if (!nextP || nextP.partName !== currP.partName) {
+              const pMergeEnd = partStartRow + i;
+              if (pMergeEnd > pMergeStart) {
+                ws.mergeCells(`A${pMergeStart}:A${pMergeEnd}`);
+                const mergedCell = ws.getCell(`A${pMergeStart}`);
+                mergedCell.alignment = { vertical: "middle", horizontal: "center" };
+              }
+              pMergeStart = pMergeEnd + 1;
+            }
+          }
+
+          let sMergeStart = partStartRow;
+          for (let i = 0; i < group.parts.length; i++) {
+            const currP = group.parts[i];
+            const nextP = i + 1 < group.parts.length ? group.parts[i + 1] : null;
+
+            const isSameSub =
+              Boolean(nextP) &&
+              nextP.partName === currP.partName &&
+              nextP.subSpec === currP.subSpec &&
+              currP.subSpec !== "-";
+
+            if (!isSameSub) {
+              const sMergeEnd = partStartRow + i;
+              if (sMergeEnd > sMergeStart && currP.subSpec !== "-") {
+                ws.mergeCells(`B${sMergeStart}:B${sMergeEnd}`);
+                const mergedCell = ws.getCell(`B${sMergeStart}`);
+                mergedCell.alignment = { vertical: "middle", horizontal: "center" };
+              }
+              sMergeStart = sMergeEnd + 1;
+            }
+          }
+        });
+
+        // 5. 하단 비고 란
+        const noteStartRow = r;
+        const noteEndRow = r + 4;
+        ws.mergeCells(`A${noteStartRow}:A${noteEndRow}`);
+        const nL = ws.getCell(`A${noteStartRow}`);
+        nL.value = "비 고";
+        nL.font = { name: "Malgun Gothic", size: 10, bold: true };
+        nL.fill = GRAY_HEADER_FILL;
+        nL.alignment = { vertical: "middle", horizontal: "center" };
+        for (let rowIdx = noteStartRow; rowIdx <= noteEndRow; rowIdx++) {
+          ws.getRow(rowIdx).getCell(1).border = THIN_BORDER;
+        }
+
+        ws.mergeCells(`B${noteStartRow}:D${noteEndRow}`);
+        const nV = ws.getCell(`B${noteStartRow}`);
+        nV.value = project.notes || "";
+        nV.font = { name: "Malgun Gothic", size: 9.5 };
+        nV.alignment = { vertical: "top", horizontal: "left", wrapText: true };
+        for (let rowIdx = noteStartRow; rowIdx <= noteEndRow; rowIdx++) {
+          for (let c = 2; c <= 4; c++) {
+            ws.getRow(rowIdx).getCell(c).border = THIN_BORDER;
+          }
+        }
+      });
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const sanitizedPjt = (project.pjtCode || "PJT").replace(/[^a-zA-Z0-9-_]/g, "_");
+      const sanitizedEq = (project.equipmentName || "EQ").replace(/[^a-zA-Z0-9-_]/g, "_");
+      const dateStr = (project.inspectionDate || getToday()).replace(/-/g, "");
+      const fileName = `[시리얼리스트]_${sanitizedPjt}_${sanitizedEq}_(${units.length}대)_${dateStr}.xlsx`;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    // 이전 호기 시리얼 기반 자동 +1 증가 헬퍼 (예: SOTSU-SK26-1002 -> SOTSU-SK26-1003)
+    function generateNextSerial(prevSerial, pjtCode = "S26-15-01", nextIndex = 1) {
+      if (prevSerial && prevSerial.trim()) {
+        const trimmed = prevSerial.trim();
+        const match = trimmed.match(/^(.*?)(\d+)$/);
+        if (match) {
+          const prefix = match[1];
+          const numStr = match[2];
+          const nextNum = parseInt(numStr, 10) + 1;
+          const paddedNextNum = String(nextNum).padStart(numStr.length, "0");
+          return `${prefix}${paddedNextNum}`;
+        }
+      }
+      return `SOTSU-SK26-100${nextIndex}`;
+    }
+
+    // 1호기 시리얼 변경 시 2호기 이후 호기 자동 연속 채번 (+1, +2...)
+    function cascadeSerialFromUnit1(baseSerial, unitIndex) {
+      if (unitIndex === 1) return baseSerial;
+      if (!baseSerial || !baseSerial.trim()) return "";
+      const trimmed = baseSerial.trim();
+      const match = trimmed.match(/^(.*?)(\d+)$/);
+      if (match) {
+        const prefix = match[1];
+        const numStr = match[2];
+        const baseNum = parseInt(numStr, 10);
+        const offset = unitIndex - 1;
+        const nextNum = baseNum + offset;
+        const padded = String(nextNum).padStart(numStr.length, "0");
+        return `${prefix}${padded}`;
+      }
+      return `${baseSerial}-U${String(unitIndex).padStart(2, "0")}`;
+    }
+
+    // 호기 시리얼을 단일 또는 연속 범위(예: TM1L-HK26-1007 ~ TM1L-HK26-1011)로 깔끔하게 요약 표기
+    function formatSerialRange(units = []) {
+      if (!units || units.length === 0) return "(미입력)";
+      const unit1Serial = units[0]?.equipmentSerial?.trim();
+      if (!unit1Serial) return "(미입력)";
+
+      const lastUnit = units[units.length - 1];
+      let lastSerial = lastUnit?.equipmentSerial?.trim();
+      if (!lastSerial && units.length > 1) {
+        lastSerial = cascadeSerialFromUnit1(unit1Serial, units.length);
+      }
+
+      if (units.length <= 1 || !lastSerial || unit1Serial === lastSerial) {
+        return unit1Serial;
+      }
+
+      return `${unit1Serial} ~ ${lastSerial}`;
+    }
+
+    const STORAGE_KEY = "VISION_PASS_PROJECTS_DATA_V6";
+
+    // 로컬 스토리지 데이터 로드 헬퍼 (새로고침 F5 시에도 데이터 영구 유지 및 엑셀 기반 5개 프로젝트 자동 반영)
+    function loadSavedProjects() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const isUpToDate = parsed.some(p => p.inspectorName && p.inspectorName.includes("김형태, 유병준"));
+          if (isUpToDate && Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to load projects from localStorage", e);
+      }
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_PROJECTS));
+      } catch (e) { }
+      return INITIAL_PROJECTS;
+    }
+
+    // --- 4. 메인 React App ---
+    function App() {
+      const [step, setStep] = useState(1);
+      const [projects, setProjects] = useState(loadSavedProjects);
+      const [currentProjectId, setCurrentProjectId] = useState(() => {
+        const saved = loadSavedProjects();
+        return saved[0] ? saved[0].id : "pjt-001";
+      });
+
+      // 2단계(PJT 입력) 작성용 폼 프로젝트 상태 & 신규 생성 모드 여부
+      const [formProject, setFormProject] = useState(() => {
+        const saved = loadSavedProjects();
+        return saved[0] ? JSON.parse(JSON.stringify(saved[0])) : INITIAL_PROJECTS[0];
+      });
+      const [isCreatingNew, setIsCreatingNew] = useState(false);
+
+      const [activeUnit, setActiveUnit] = useState(1);
+      const [ocrModalOpen, setOcrModalOpen] = useState(false);
+      const [targetPart, setTargetPart] = useState(null);
+      const [presetModalOpen, setPresetModalOpen] = useState(false);
+      const [pjtModalTab, setPjtModalTab] = useState("TEMPLATES");
+      const [expandedPjtTpl, setExpandedPjtTpl] = useState("tpl-tm100l");
+      const [parsedExcelParts, setParsedExcelParts] = useState([]);
+      const [excelUploadError, setExcelUploadError] = useState(null);
+      const [uploadedExcelName, setUploadedExcelName] = useState("");
+      const [isExcelParsing, setIsExcelParsing] = useState(false);
+      const excelFileInputRef = useRef(null);
+
+      // 동적 PJT 양식 목록 상태 (localStorage 저장/로드)
+      const TEMPLATES_STORAGE_KEY = "VISION_PASS_PJT_TEMPLATES_V2";
+      const [pjtTemplates, setPjtTemplates] = useState(() => {
+        try {
+          const saved = localStorage.getItem(TEMPLATES_STORAGE_KEY);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          }
+        } catch (e) { }
+        return PJT_MODEL_TEMPLATES;
+      });
+
+      useEffect(() => {
+        try {
+          if (pjtTemplates && pjtTemplates.length > 0) {
+            localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(pjtTemplates));
+          }
+        } catch (e) { }
+      }, [pjtTemplates]);
+
+      // 기존 등록된 프로젝트들에서 설비 담당자 목록 자동 추출 (중복 제거)
+      const existingInspectors = useMemo(() => {
+        const names = projects.map(p => p.inspectorName && p.inspectorName.trim()).filter(Boolean);
+        const unique = Array.from(new Set(names));
+        if (unique.length > 0) return unique;
+        return ["홍길동", "김철수", "이영희", "박민수", "최동현", "장준혁"];
+      }, [projects]);
+
+      // PJT 양식 추가/수정 모달 및 Step 4 관리 상태
+      const [isTemplateEditorOpen, setIsTemplateEditorOpen] = useState(false);
+      const [editingTemplateData, setEditingTemplateData] = useState(null);
+      const [editorModelName, setEditorModelName] = useState("");
+      const [editorDescription, setEditorDescription] = useState("");
+      const [editorParts, setEditorParts] = useState([]);
+      const editorFileInputRef = useRef(null);
+
+      // Step 4 (설비 부품 양식) 상태
+      const [selectedTplId, setSelectedTplId] = useState(() => pjtTemplates[0]?.id || "tpl-tm100l");
+      const [searchTplQuery, setSearchTplQuery] = useState("");
+      const [searchTplPartQuery, setSearchTplPartQuery] = useState("");
+
+      // 양식 복제
+      const handleDuplicateTemplate = (tpl, e) => {
+        if (e) e.stopPropagation();
+        const dup = {
+          ...tpl,
+          id: `tpl-custom-${generateId()}`,
+          modelName: `${tpl.modelName} (COPY)`,
+          description: `${tpl.description || ""} (복제본)`.trim(),
+          isCustom: true,
+          parts: (tpl.parts || []).map(p => ({ ...p, id: generateId(), detectedSerial: "", isVerified: false }))
+        };
+        setPjtTemplates(prev => [dup, ...prev]);
+        setSelectedTplId(dup.id);
+      };
+
+      // 신규 양식 추가 열기
+      const handleOpenCreateTemplate = () => {
+        setEditingTemplateData(null);
+        setEditorModelName("");
+        setEditorDescription("");
+        const curParts = (currentProject && currentProject.equipmentUnits && currentProject.equipmentUnits.find(u => u.unitIndex === activeUnit)?.parts) || [];
+        setEditorParts(
+          curParts.length > 0
+            ? curParts.map(p => ({ ...p, id: generateId() }))
+            : [{ id: generateId(), category: "[ MAIN ]", partName: "신규 공정 부품", subSpec: "-", spec: "표준 규격 입력", detectedSerial: "", isVerified: false }]
+        );
+        setIsTemplateEditorOpen(true);
+      };
+
+      // 기존 양식 수정 열기
+      const handleOpenEditTemplate = (tpl, e) => {
+        if (e) e.stopPropagation();
+        setEditingTemplateData(tpl);
+        setEditorModelName(tpl.modelName);
+        setEditorDescription(tpl.description || "");
+        setEditorParts(tpl.parts ? tpl.parts.map(p => ({ ...p, id: p.id || generateId() })) : []);
+        setIsTemplateEditorOpen(true);
+      };
+
+      // 양식 삭제
+      const handleDeleteTemplate = (id, name, e) => {
+        if (e) e.stopPropagation();
+        if (pjtTemplates.length <= 1) {
+          alert("최소 1개 이상의 양식이 유지되어야 합니다.");
+          return;
+        }
+        if (confirm(`「${name}」 PJT 양식을 목록에서 삭제하시겠습니까?`)) {
+          const remaining = pjtTemplates.filter(t => t.id !== id);
+          setPjtTemplates(remaining);
+          if (selectedTplId === id) {
+            setSelectedTplId(remaining[0]?.id || "");
+          }
+        }
+      };
+
+      // 기본 양식으로 초기화
+      const handleResetTemplates = () => {
+        if (confirm("모든 양식을 초기 표준 5개 모델 양식으로 복원하시겠습니까?")) {
+          setPjtTemplates(PJT_MODEL_TEMPLATES);
+          localStorage.removeItem(TEMPLATES_STORAGE_KEY);
+        }
+      };
+
+      // 양식 저장
+      const handleSaveTemplateEditor = () => {
+        if (!editorModelName.trim()) {
+          alert("양식 이름(모델명)을 입력해주세요.");
+          return;
+        }
+        if (editorParts.length === 0) {
+          alert("최소 1개 이상의 부품이 등록되어야 합니다.");
+          return;
+        }
+
+        const moduleSet = new Set(editorParts.map(p => p.category || "[ MAIN ]"));
+
+        if (editingTemplateData) {
+          setPjtTemplates(prev =>
+            prev.map(t =>
+              t.id === editingTemplateData.id
+                ? {
+                  ...t,
+                  modelName: editorModelName.trim(),
+                  description: editorDescription.trim(),
+                  partsCount: editorParts.length,
+                  moduleCount: moduleSet.size,
+                  parts: editorParts
+                }
+                : t
+            )
+          );
+        } else {
+          const newTpl = {
+            id: `tpl-custom-${Date.now()}`,
+            modelName: editorModelName.trim(),
+            description: editorDescription.trim() || `${editorParts.length}개 품목 사용자 등록 양식`,
+            partsCount: editorParts.length,
+            moduleCount: moduleSet.size,
+            parts: editorParts,
+            isCustom: true
+          };
+          setPjtTemplates(prev => [...prev, newTpl]);
+        }
+        setIsTemplateEditorOpen(false);
+      };
+
+      // 에디터 안에서 엑셀 파일로 부품 파싱하여 채우기 (지능형 헤더 감지 & 컬럼 자동 매칭)
+      const handleEditorExcelUpload = async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+
+        try {
+          const buffer = await file.arrayBuffer();
+          let rawRows = [];
+          if (typeof window !== "undefined" && window.XLSX && window.XLSX.read) {
+            const u8 = new Uint8Array(buffer);
+            const wb = window.XLSX.read(u8, { type: "array", cellDates: true });
+            if (wb && wb.SheetNames && wb.SheetNames.length > 0) {
+              const ws = wb.Sheets[wb.SheetNames[0]];
+              rawRows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+            }
+          }
+
+          if (!rawRows || rawRows.length === 0) {
+            const wb = new ExcelJS.Workbook();
+            await wb.xlsx.load(buffer);
+            const ws = wb.worksheets && wb.worksheets[0];
+            if (ws) {
+              ws.eachRow({ includeEmpty: false }, (row) => {
+                const rowVals = [];
+                for (let c = 1; c <= 12; c++) {
+                  const cell = row.getCell(c);
+                  rowVals.push(cell && cell.value !== null && cell.value !== undefined ? String(cell.value).trim() : "");
+                }
+                rawRows.push(rowVals);
+              });
+            }
+          }
+
+          // --- 헤더 행 및 컬럼 인덱스 자동 감지 ---
+          let headerRowIdx = -1;
+          let colPartName = -1;
+          let colSubSpec = -1;
+          let colSpec = -1;
+          let colSerial = -1;
+
+          for (let r = 0; r < Math.min(rawRows.length, 30); r++) {
+            const row = (rawRows[r] || []).map(cell => String(cell || "").replace(/\s+/g, ""));
+            if (row.length === 0) continue;
+
+            const pIdx = row.findIndex(c => /^(품명|부품명|품목|partname|part|item)$/i.test(c));
+            const subIdx = row.findIndex(c => /^(세부사항|세부|subspec|sub_spec|용도|위치|비고)$/i.test(c));
+            const sIdx = row.findIndex(c => /^(규격|사양|spec|specification|model|모델명|모델)$/i.test(c));
+            const snIdx = row.findIndex(c => /^(serialno\.?|serialnumber|serial|시리얼|s\/n|sn|일련번호)$/i.test(c));
+
+            if (pIdx !== -1) {
+              headerRowIdx = r;
+              colPartName = pIdx;
+              colSubSpec = subIdx;
+              colSpec = sIdx;
+              colSerial = snIdx;
+              break;
+            }
+          }
+
+          const extracted = [];
+          let currentCategory = "[ MAIN ]";
+          const startRow = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
+
+          let lastPartName = "";
+          let lastSubSpec = "";
+
+          for (let r = startRow; r < rawRows.length; r++) {
+            const row = rawRows[r] || [];
+            if (!Array.isArray(row) || row.length === 0) continue;
+
+            const cells = row.map(c => (c !== undefined && c !== null ? String(c).trim() : ""));
+            const nonEmpty = cells.filter(c => c.length > 0);
+            if (nonEmpty.length === 0) continue;
+
+            const firstVal = nonEmpty[0] || "";
+
+            if (
+              firstVal.includes("시리얼 리스트") ||
+              firstVal.includes("시리얼리스트") ||
+              firstVal.includes("모 델 명") ||
+              firstVal.includes("모델명") ||
+              firstVal.includes("작성자") ||
+              firstVal.includes("비 고") ||
+              firstVal.includes("비고")
+            ) {
+              continue;
+            }
+
+            if (firstVal.startsWith("[") && (firstVal.endsWith("]") || nonEmpty.length === 1)) {
+              currentCategory = firstVal.startsWith("[") && firstVal.endsWith("]")
+                ? firstVal
+                : `[ ${firstVal.replace(/[\[\]]/g, "").trim()} ]`;
+              lastPartName = "";
+              lastSubSpec = "";
+              continue;
+            }
+
+            if (firstVal === "품명" || firstVal === "부품명" || firstVal === "Part Name") {
+              continue;
+            }
+
+            let rawPartName = "";
+            let rawSubSpec = "";
+            let rawSpec = "";
+            let rawSerial = "";
+
+            if (headerRowIdx !== -1 && colPartName !== -1) {
+              rawPartName = colPartName !== -1 && cells[colPartName] ? cells[colPartName] : "";
+              rawSubSpec = colSubSpec !== -1 && cells[colSubSpec] ? cells[colSubSpec] : "";
+              rawSpec = colSpec !== -1 && cells[colSpec] ? cells[colSpec] : "";
+              rawSerial = colSerial !== -1 && cells[colSerial] ? cells[colSerial] : "";
+            } else {
+              const isCol0Number = /^\d+$/.test(cells[0] || "");
+              const offset = isCol0Number ? 1 : (cells[0] ? 0 : 1);
+
+              rawPartName = cells[offset] || "";
+              rawSubSpec = cells[offset + 1] || "";
+              rawSpec = cells[offset + 2] || "";
+              rawSerial = cells[offset + 3] || "";
+            }
+
+            // 아무 데이터도 없는 빈 행 건너뛰기
+            if (!rawPartName && !rawSubSpec && !rawSpec && !rawSerial) {
+              continue;
+            }
+
+            // 🔄 엑셀 세로 병합 셀(Merged Cells) 자동 상속 처리 (예: PC, Control Board)
+            let finalPartName = rawPartName;
+            if (!finalPartName && (rawSubSpec || rawSpec || rawSerial) && lastPartName) {
+              finalPartName = lastPartName;
+            }
+
+            let finalSubSpec = rawSubSpec;
+            if (!finalSubSpec && finalPartName === lastPartName && lastSubSpec && !rawPartName) {
+              finalSubSpec = lastSubSpec;
+            }
+
+            if (rawPartName) {
+              lastPartName = rawPartName;
+              lastSubSpec = rawSubSpec;
+            }
+
+            if (finalPartName && !finalPartName.startsWith("[")) {
+              extracted.push({
+                id: generateId(),
+                category: currentCategory,
+                partName: finalPartName,
+                subSpec: finalSubSpec || "-",
+                spec: rawSpec || "-",
+                detectedSerial: rawSerial || "",
+                isVerified: Boolean(rawSerial && rawSerial.length > 0)
+              });
+            }
+          }
+
+          if (extracted.length > 0) {
+            setEditorParts(extracted);
+            if (!editorModelName.trim()) {
+              setEditorModelName(file.name.replace(/\.[^/.]+$/, ""));
+            }
+          }
+        } catch (err) {
+          alert("엑셀 파일 분석 중 오류가 발생했습니다: " + (err && err.message ? err.message : ""));
+        } finally {
+          if (editorFileInputRef.current) editorFileInputRef.current.value = "";
+        }
+      };
+
+      const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+      const [ocrProgress, setOcrProgress] = useState(0);
+      const [ocrCandidate, setOcrCandidate] = useState("");
+      const [isVerifiedCheck, setIsVerifiedCheck] = useState(true);
+      const [searchPjtFilter, setSearchPjtFilter] = useState("");
+
+      // PJT 빠른 수정 모달 상태
+      const [editPjtModalOpen, setEditPjtModalOpen] = useState(false);
+      const [editingPjtData, setEditingPjtData] = useState(null);
+
+      const videoRef = useRef(null);
+      const streamRef = useRef(null);
+
+      // 엑셀 파일 직접 업로드 분석 핸들러 (SheetJS + ExcelJS + CSV 3중 방어 파서)
+      const handleExcelFileUpload = async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+
+        setExcelUploadError(null);
+        setIsExcelParsing(true);
+        setUploadedExcelName(file.name);
+
+        try {
+          const buffer = await file.arrayBuffer();
+          let rawRows = [];
+
+          // 1. SheetJS (가장 강력하고 오류 없는 엑셀 파서)
+          if (typeof window !== "undefined" && window.XLSX && typeof window.XLSX.read === "function") {
+            try {
+              const u8 = new Uint8Array(buffer);
+              const wb = window.XLSX.read(u8, { type: "array", cellDates: true });
+              if (wb && wb.SheetNames && wb.SheetNames.length > 0) {
+                const sheetName = wb.SheetNames[0];
+                const ws = wb.Sheets[sheetName];
+                if (ws) {
+                  rawRows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+                }
+              }
+            } catch (xlsxErr) {
+              console.warn("SheetJS parse exception:", xlsxErr);
+            }
+          }
+
+          // 2. ExcelJS 백업 파서 (SheetJS 미로드 시)
+          if (!rawRows || rawRows.length === 0) {
+            try {
+              if (typeof ExcelJS !== "undefined" && ExcelJS.Workbook) {
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(buffer);
+                const worksheet = workbook.worksheets && workbook.worksheets[0];
+                if (worksheet) {
+                  worksheet.eachRow({ includeEmpty: false }, (row) => {
+                    const rowValues = [];
+                    for (let colIdx = 1; colIdx <= 10; colIdx++) {
+                      try {
+                        const cell = row.getCell(colIdx);
+                        let valStr = "";
+                        if (cell && cell.value !== null && cell.value !== undefined) {
+                          if (typeof cell.value === "object") {
+                            if (cell.value.result !== undefined && cell.value.result !== null) {
+                              valStr = String(cell.value.result);
+                            } else if (Array.isArray(cell.value.richText)) {
+                              valStr = cell.value.richText.map(r => (r && r.text) ? r.text : "").join("");
+                            } else if (cell.value.text !== undefined && cell.value.text !== null) {
+                              valStr = String(cell.value.text);
+                            } else {
+                              valStr = String(cell.value || "");
+                            }
+                          } else {
+                            valStr = String(cell.value);
+                          }
+                        }
+                        rowValues.push(valStr.trim());
+                      } catch (cErr) {
+                        rowValues.push("");
+                      }
+                    }
+                    rawRows.push(rowValues);
+                  });
+                }
+              }
+            } catch (excelJsErr) {
+              console.warn("ExcelJS parse exception:", excelJsErr);
+            }
+          }
+
+          // 3. CSV 텍스트 직접 파싱 백업
+          if (!rawRows || rawRows.length === 0) {
+            try {
+              const text = new TextDecoder("utf-8").decode(buffer);
+              if (text && text.includes(",")) {
+                rawRows = text.split(/\r?\n/).map(line => line.split(",").map(c => c.replace(/^["']|["']$/g, "").trim()));
+              }
+            } catch (txtErr) {
+              console.warn("CSV text parse exception:", txtErr);
+            }
+          }
+
+          if (!rawRows || rawRows.length === 0) {
+            throw new Error("엑셀 파일 데이터를 읽어오지 못했습니다. 파일 형식(.xlsx, .xls, .csv)을 확인해주세요.");
+          }
+
+          // 파싱된 행 데이터에서 부품 목록 지능형 추출 (헤더 감지 & 컬럼 자동 매칭)
+          let headerRowIdx = -1;
+          let colPartName = -1;
+          let colSubSpec = -1;
+          let colSpec = -1;
+          let colSerial = -1;
+
+          for (let r = 0; r < Math.min(rawRows.length, 30); r++) {
+            const row = (rawRows[r] || []).map(cell => String(cell || "").replace(/\s+/g, ""));
+            if (row.length === 0) continue;
+
+            const pIdx = row.findIndex(c => /^(품명|부품명|품목|partname|part|item)$/i.test(c));
+            const subIdx = row.findIndex(c => /^(세부사항|세부|subspec|sub_spec|용도|위치|비고)$/i.test(c));
+            const sIdx = row.findIndex(c => /^(규격|사양|spec|specification|model|모델명|모델)$/i.test(c));
+            const snIdx = row.findIndex(c => /^(serialno\.?|serialnumber|serial|시리얼|s\/n|sn|일련번호)$/i.test(c));
+
+            if (pIdx !== -1) {
+              headerRowIdx = r;
+              colPartName = pIdx;
+              colSubSpec = subIdx;
+              colSpec = sIdx;
+              colSerial = snIdx;
+              break;
+            }
+          }
+
+          const extractedParts = [];
+          let currentCategory = "[ MAIN ]";
+          const startRow = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
+
+          let lastPartName = "";
+          let lastSubSpec = "";
+
+          for (let r = startRow; r < rawRows.length; r++) {
+            const row = rawRows[r] || [];
+            if (!Array.isArray(row) || row.length === 0) continue;
+
+            const cells = row.map(c => (c !== undefined && c !== null ? String(c).trim() : ""));
+            const nonEmpty = cells.filter(c => c.length > 0);
+            if (nonEmpty.length === 0) continue;
+
+            const firstVal = nonEmpty[0] || "";
+
+            if (
+              firstVal.includes("시리얼 리스트") ||
+              firstVal.includes("시리얼리스트") ||
+              firstVal.includes("모 델 명") ||
+              firstVal.includes("모델명") ||
+              firstVal.includes("작성자") ||
+              firstVal.includes("비 고") ||
+              firstVal.includes("비고")
+            ) {
+              continue;
+            }
+
+            if (firstVal.startsWith("[") && (firstVal.endsWith("]") || nonEmpty.length === 1)) {
+              currentCategory = firstVal.startsWith("[") && firstVal.endsWith("]")
+                ? firstVal
+                : `[ ${firstVal.replace(/[\[\]]/g, "").trim()} ]`;
+              lastPartName = "";
+              lastSubSpec = "";
+              continue;
+            }
+
+            if (firstVal === "품명" || firstVal === "부품명" || firstVal === "Part Name") {
+              continue;
+            }
+
+            let rawPartName = "";
+            let rawSubSpec = "";
+            let rawSpec = "";
+            let rawSerial = "";
+
+            if (headerRowIdx !== -1 && colPartName !== -1) {
+              rawPartName = colPartName !== -1 && cells[colPartName] ? cells[colPartName] : "";
+              rawSubSpec = colSubSpec !== -1 && cells[colSubSpec] ? cells[colSubSpec] : "";
+              rawSpec = colSpec !== -1 && cells[colSpec] ? cells[colSpec] : "";
+              rawSerial = colSerial !== -1 && cells[colSerial] ? cells[colSerial] : "";
+            } else {
+              const isCol0Number = /^\d+$/.test(cells[0] || "");
+              const offset = isCol0Number ? 1 : (cells[0] ? 0 : 1);
+
+              rawPartName = cells[offset] || "";
+              rawSubSpec = cells[offset + 1] || "";
+              rawSpec = cells[offset + 2] || "";
+              rawSerial = cells[offset + 3] || "";
+            }
+
+            // 아무 데이터도 없는 빈 행 건너뛰기
+            if (!rawPartName && !rawSubSpec && !rawSpec && !rawSerial) {
+              continue;
+            }
+
+            // 🔄 엑셀 세로 병합 셀(Merged Cells) 자동 상속 처리 (예: PC, Control Board)
+            let finalPartName = rawPartName;
+            if (!finalPartName && (rawSubSpec || rawSpec || rawSerial) && lastPartName) {
+              finalPartName = lastPartName;
+            }
+
+            let finalSubSpec = rawSubSpec;
+            if (!finalSubSpec && finalPartName === lastPartName && lastSubSpec && !rawPartName) {
+              finalSubSpec = lastSubSpec;
+            }
+
+            if (rawPartName) {
+              lastPartName = rawPartName;
+              lastSubSpec = rawSubSpec;
+            }
+
+            if (finalPartName && !finalPartName.startsWith("[")) {
+              extractedParts.push({
+                id: generateId(),
+                category: currentCategory,
+                partName: finalPartName,
+                subSpec: finalSubSpec || "-",
+                spec: rawSpec || "-",
+                detectedSerial: rawSerial || "",
+                isVerified: Boolean(rawSerial && rawSerial.length > 0)
+              });
+            }
+          }
+
+          if (extractedParts.length === 0) {
+            throw new Error("엑셀 파일에서 유효한 부품 목록을 찾을 수 없습니다. 시트 내 품명 열을 확인해 주세요.");
+          }
+
+          setParsedExcelParts(extractedParts);
+        } catch (err) {
+          console.error("Excel Upload Error:", err);
+          setExcelUploadError(err && err.message ? err.message : "엑셀 파일 분석 중 오류가 발생했습니다.");
+          setParsedExcelParts([]);
+        } finally {
+          setIsExcelParsing(false);
+          if (excelFileInputRef.current) excelFileInputRef.current.value = "";
+        }
+      };
+
+      // 프로젝트 상태 변경 시 localStorage에 실시간 자동 저장 (F5 새로고침 완벽 보존)
+      useEffect(() => {
+        try {
+          if (projects && projects.length > 0) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+          }
+        } catch (e) {
+          console.warn("Failed to save projects to localStorage", e);
+        }
+      }, [projects]);
+
+      // 초기 샘플 데이터로 리셋 핸들러
+      const handleResetToDefault = () => {
+        if (confirm("모든 데이터를 기본 초기 샘플 데이터로 복원하시겠습니까?\n(작성하신 프로젝트 및 부품 검증 내역이 초기화됩니다.)")) {
+          try {
+            localStorage.removeItem(STORAGE_KEY);
+          } catch (e) { }
+          setProjects(INITIAL_PROJECTS);
+          setCurrentProjectId(INITIAL_PROJECTS[0].id);
+          setFormProject(JSON.parse(JSON.stringify(INITIAL_PROJECTS[0])));
+          setStep(1);
+        }
+      };
+
+      // 현재 활성화된 프로젝트 객체
+      const currentProject = projects.find(p => p.id === currentProjectId) || projects[0];
+
+      // 프로젝트 업데이트 헬퍼
+      const updateCurrentProject = (newProjectData) => {
+        setProjects(prev => prev.map(p => p.id === currentProjectId ? { ...newProjectData, updatedAt: new Date().toISOString() } : p));
+      };
+
+      // 1. 신규 PJT 등록 핸들러 (2단계로 이동, 버튼을 누를 때까지는 projects에 미등록)
+      const handleCreateNewProject = () => {
+        const newPjt = createNewBlankProject();
+        setFormProject(newPjt);
+        setIsCreatingNew(true);
+        setActiveUnit(1);
+        setStep(2); // 2. PJT 입력 단계로 이동
+      };
+
+      // 특정 PJT 선택 후 이동
+      const handleSelectProject = (pjtId, targetStep = 3) => {
+        setCurrentProjectId(pjtId);
+        const target = projects.find(p => p.id === pjtId) || currentProject;
+        setFormProject(JSON.parse(JSON.stringify(target)));
+        setIsCreatingNew(false);
+        setActiveUnit(1);
+        setStep(targetStep);
+      };
+
+      // 2단계에서 [PJT 등록 및 OCR 검사] 버튼 클릭 시 정식 등록 및 3단계 이동
+      const handleRegisterOrSaveProject = () => {
+        if (!formProject.site || !formProject.site.trim()) {
+          alert("사업장 (Site)을 입력하거나 선택해주세요.");
+          return;
+        }
+        if (!formProject.pjtCode || !formProject.pjtCode.trim()) {
+          alert("PJT CODE를 입력해주세요.");
+          return;
+        }
+        if (!formProject.equipmentName || !formProject.equipmentName.trim()) {
+          alert("프로젝트 이름 / 설비명을 입력해주세요.");
+          return;
+        }
+
+        const finalProject = {
+          ...formProject,
+          quantity: formProject.equipmentUnits.length,
+          updatedAt: new Date().toISOString()
+        };
+
+        if (isCreatingNew) {
+          // 신규 프로젝트 정식 등록
+          setProjects(prev => [finalProject, ...prev]);
+          setCurrentProjectId(finalProject.id);
+          setIsCreatingNew(false);
+        } else {
+          // 기존 프로젝트 수정 저장
+          setProjects(prev => prev.map(p => p.id === finalProject.id ? finalProject : p));
+          setCurrentProjectId(finalProject.id);
+        }
+
+        setActiveUnit(1);
+        setStep(3); // 3. 설비 OCR 검사 단계로 이동
+      };
+
+      // PJT 수정 모달 열기
+      const handleOpenEditPjtModal = (pjt, e) => {
+        if (e) e.stopPropagation();
+        setEditingPjtData(JSON.parse(JSON.stringify(pjt)));
+        setEditPjtModalOpen(true);
+      };
+
+      // PJT 수정 저장
+      const handleSavePjtEdit = () => {
+        if (!editingPjtData) return;
+        if (!editingPjtData.pjtCode.trim()) {
+          alert("PJT CODE를 입력해주세요.");
+          return;
+        }
+        if (!editingPjtData.equipmentName.trim()) {
+          alert("프로젝트 설비명을 입력해주세요.");
+          return;
+        }
+
+        setProjects(prev => prev.map(p => {
+          if (p.id === editingPjtData.id) {
+            return {
+              ...editingPjtData,
+              quantity: editingPjtData.equipmentUnits.length,
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return p;
+        }));
+
+        setEditPjtModalOpen(false);
+        setEditingPjtData(null);
+      };
+
+      // PJT 복제
+      const handleDuplicateProject = (pjtId, e) => {
+        if (e) e.stopPropagation();
+        const target = projects.find(p => p.id === pjtId);
+        if (!target) return;
+        const dup = {
+          ...target,
+          id: generateId(),
+          pjtCode: `${target.pjtCode}-COPY`,
+          equipmentUnits: target.equipmentUnits.map(u => ({
+            ...u,
+            equipmentSerial: `${u.equipmentSerial}-COPY`,
+            parts: u.parts.map(p => ({ ...p, id: generateId(), detectedSerial: "", isVerified: false }))
+          })),
+          updatedAt: new Date().toISOString()
+        };
+        setProjects(prev => [dup, ...prev]);
+      };
+
+      // PJT 삭제
+      const handleDeleteProject = (pjtId, e) => {
+        if (e) e.stopPropagation();
+        if (projects.length <= 1) {
+          alert("최소 1개 이상의 프로젝트가 유지되어야 합니다.");
+          return;
+        }
+        if (confirm("해당 프로젝트를 목록에서 삭제하시겠습니까?")) {
+          setProjects(prev => prev.filter(p => p.id !== pjtId));
+          if (currentProjectId === pjtId) {
+            const remaining = projects.filter(p => p.id !== pjtId);
+            setCurrentProjectId(remaining[0].id);
+          }
+        }
+      };
+
+      // Step 2 호기 수량 변경 핸들러 (formProject 대상 - 이전 시리얼에서 +1 자동 증가)
+      const handleQuantityChange = (qty) => {
+        if (qty < 1 || qty > 50) return;
+        const current = [...formProject.equipmentUnits];
+        if (qty > current.length) {
+          for (let i = current.length; i < qty; i++) {
+            const nextIdx = i + 1;
+            const baseParts = current[0]?.parts.map(p => ({ ...p, id: generateId(), detectedSerial: "", isVerified: false })) || [];
+            const unit1Serial = current[0]?.equipmentSerial?.trim();
+            const nextSerial = unit1Serial ? cascadeSerialFromUnit1(unit1Serial, nextIdx) : "";
+            current.push({ unitIndex: nextIdx, equipmentSerial: nextSerial, parts: baseParts });
+          }
+        } else {
+          current.splice(qty);
+        }
+        setFormProject({ ...formProject, quantity: qty, equipmentUnits: current });
+      };
+
+      // 1호기 부품 일괄 복사
+      const replicateParts = () => {
+        const u1Parts = currentProject.equipmentUnits[0]?.parts || [];
+        const updated = currentProject.equipmentUnits.map((u, i) => {
+          if (i === 0) return u;
+          return {
+            ...u,
+            parts: u1Parts.map(p => ({ ...p, id: generateId(), detectedSerial: "", isVerified: false }))
+          };
+        });
+        updateCurrentProject({ ...currentProject, equipmentUnits: updated });
+        alert("1호기의 부품 목록이 모든 호기에 일괄 복제되었습니다.");
+      };
+
+      // 카메라 시작
+      // 카메라 시작 (다단계 장애 극복 & 안드로이드 호환)
+      const startCamera = async () => {
+        try {
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach(t => t.stop());
+            streamRef.current = null;
+          }
+
+          let mediaStream = null;
+          try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { ideal: "environment" }, width: { ideal: 1920, min: 640 }, height: { ideal: 1080, min: 480 } },
+              audio: false
+            });
+          } catch (e1) {
+            try {
+              mediaStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment" },
+                audio: false
+              });
+            } catch (e2) {
+              mediaStream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: false
+              });
+            }
+          }
+
+          if (mediaStream) {
+            streamRef.current = mediaStream;
+            if (videoRef.current) {
+              videoRef.current.srcObject = mediaStream;
+              videoRef.current.onloadedmetadata = () => {
+                videoRef.current?.play().catch(e => console.warn("Auto-play error:", e));
+              };
+            }
+          }
+        } catch (e) {
+          console.warn("Camera failed:", e);
+        }
+      };
+
+      const stopCamera = () => {
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop());
+          streamRef.current = null;
+        }
+        if (videoRef.current) videoRef.current.srcObject = null;
+      };
+
+      const openOcr = (part) => {
+        setTargetPart(part);
+        setOcrCandidate(part.detectedSerial || "");
+        setIsVerifiedCheck(true);
+        setOcrModalOpen(true);
+        setTimeout(startCamera, 200);
+      };
+
+      const closeOcr = () => {
+        stopCamera();
+        setOcrModalOpen(false);
+        setTargetPart(null);
+      };
+
+      // 스토리지 제로 인메모리 OCR 실행
+      const runOcr = async () => {
+        setIsOcrProcessing(true);
+        setOcrProgress(20);
+
+        let canvas = document.createElement("canvas");
+        const video = videoRef.current;
+        canvas.width = video ? video.videoWidth || 1280 : 1280;
+        canvas.height = video ? video.videoHeight || 720 : 720;
+        const ctx = canvas.getContext("2d");
+        if (video && ctx) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // ROI Crop & Preprocess
+        const roi = cropROI(canvas, { x: canvas.width * 0.1, y: canvas.height * 0.25, w: canvas.width * 0.8, h: canvas.height * 0.5 });
+        const processed = preprocessCanvas(roi);
+
+        setOcrProgress(50);
+        try {
+          const worker = await Tesseract.createWorker("eng");
+          await worker.setParameters({ tessedit_char_whitelist: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_./:" });
+          setOcrProgress(75);
+          const ret = await worker.recognize(processed);
+          await worker.terminate();
+
+          const raw = ret.data.text || "";
+          const match = raw.match(/[A-Z0-9\-_]{4,25}/g);
+          const best = match ? match[0].toUpperCase() : raw.trim().toUpperCase();
+
+          setOcrCandidate(best);
+          triggerScanFeedback();
+        } catch (e) {
+          console.error(e);
+        } finally {
+          disposeCanvas(canvas);
+          disposeCanvas(roi);
+          disposeCanvas(processed);
+          setIsOcrProcessing(false);
+          setOcrProgress(100);
+        }
+      };
+
+      const saveOcrResult = () => {
+        if (!targetPart) return;
+        const updatedUnits = currentProject.equipmentUnits.map(u => {
+          if (u.unitIndex === activeUnit) {
+            return {
+              ...u,
+              parts: u.parts.map(p => p.id === targetPart.id ? { ...p, detectedSerial: ocrCandidate, isVerified: isVerifiedCheck, scannedAt: new Date().toISOString() } : p)
+            };
+          }
+          return u;
+        });
+        updateCurrentProject({ ...currentProject, equipmentUnits: updatedUnits });
+        closeOcr();
+      };
+
+      const currentUnitData = currentProject.equipmentUnits.find(u => u.unitIndex === activeUnit) || currentProject.equipmentUnits[0];
+
+      // PJT List 필터링
+      const filteredProjects = projects.filter(p =>
+        p.pjtCode.toLowerCase().includes(searchPjtFilter.toLowerCase()) ||
+        p.equipmentName.toLowerCase().includes(searchPjtFilter.toLowerCase()) ||
+        p.site.toLowerCase().includes(searchPjtFilter.toLowerCase()) ||
+        p.equipmentUnits.some(u => u.equipmentSerial.toLowerCase().includes(searchPjtFilter.toLowerCase())) ||
+        (p.inspectorName && p.inspectorName.toLowerCase().includes(searchPjtFilter.toLowerCase()))
+      );
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          {/* Header */}
+          <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/80 backdrop-blur-md px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-cyan-400 via-cyan-500 to-blue-600 shadow-glow-cyan">
+                {/* 📷 광학 카메라 렌즈 / 조리개(Aperture) SVG */}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-slate-950">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="14.31" y1="8" x2="20.05" y2="17.94" />
+                  <line x1="9.69" y1="8" x2="21.17" y2="8" />
+                  <line x1="7.38" y1="12" x2="13.12" y2="2.06" />
+                  <line x1="9.69" y1="16" x2="3.95" y2="6.06" />
+                  <line x1="14.31" y1="16" x2="2.83" y2="16" />
+                  <line x1="16.62" y1="12" x2="10.88" y2="21.94" />
+                </svg>
+                <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-slate-950 animate-pulse"></div>
+              </div>
+              <div>
+                <span className="font-mono font-extrabold text-sm text-white">Serial <span className="text-cyan-400">Report</span></span>
+                <span className="ml-2 rounded bg-cyan-950 px-1.5 py-0.5 text-[10px] text-cyan-300 border border-cyan-800 font-mono">OCR Pro</span>
+              </div>
+            </div>
+
+            {/* Stepper (1. PJT List -> 2. PJT 입력 -> 3. 설비 OCR -> 4. 설비 부품 양식) */}
+            <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+              <button onClick={() => setStep(1)} className={`px-3 py-1.5 rounded-lg transition-all ${step === 1 ? 'bg-cyan-500 text-slate-950 font-bold shadow-glow-cyan' : 'text-slate-400 hover:text-white'}`}>1. PJT List</button>
+              <button onClick={() => handleCreateNewProject()} className={`px-3 py-1.5 rounded-lg transition-all ${step === 2 ? 'bg-cyan-500 text-slate-950 font-bold shadow-glow-cyan' : 'text-slate-400 hover:text-white'}`}>2. PJT 입력</button>
+              <button onClick={() => setStep(3)} className={`px-3 py-1.5 rounded-lg transition-all ${step === 3 ? 'bg-cyan-500 text-slate-950 font-bold shadow-glow-cyan' : 'text-slate-400 hover:text-white'}`}>3. 설비 OCR</button>
+              <button onClick={() => setStep(4)} className={`px-3 py-1.5 rounded-lg transition-all ${step === 4 ? 'bg-cyan-500 text-slate-950 font-bold shadow-glow-cyan' : 'text-slate-400 hover:text-white'}`}>4. 설비 부품 양식</button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-1.5 bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-800 text-xs text-emerald-400 shadow-sm" title="모든 PJT 등록, 수정 및 OCR 검증 내역이 브라우저 로컬 저장소에 실시간 자동 저장됩니다.">
+                <span>💾 자동 저장됨</span>
+              </div>
+            </div>
+          </header>
+
+          {/* Main Body */}
+          <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+
+            {/* Step 1: PJT List (가로 나열 + 깔끔한 사업장 명칭) */}
+            {step === 1 && (
+              <div className="space-y-5">
+                {/* Banner & Quick Action (검색창 + 프로젝트 수 + 신규 PJT 추가 통합 상단 헤더) */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-slate-900 via-cleanroom-850 to-slate-900 p-5 sm:p-6 border border-slate-800 shadow-xl">
+                  <div className="shrink-0">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold text-xs border border-cyan-500/30">
+                        01
+                      </span>
+                      <h2 className="text-xl font-bold text-white tracking-wide">
+                        PJT List (프로젝트 목록 관리)
+                      </h2>
+                    </div>
+                    <p className="mt-1 text-ms text-slate-400">
+                      WITHTECH 제작 설비 Serial 리스트 작성하고 관리하세요.
+                    </p>
+                  </div>
+
+                  {/* Right Controls: 검색창 + 프로젝트 개수 + 신규 PJT 추가 버튼 */}
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full lg:w-auto flex-1 lg:flex-none justify-end">
+                    {/* 검색창 (빨간색 박스 위치 및 크기) */}
+                    <div className="relative w-full sm:w-72 md:w-80">
+                      <input
+                        type="text"
+                        placeholder="PJT CODE, 설비명, Serial NO., 사업장, 담당자 검색..."
+                        value={searchPjtFilter}
+                        onChange={e => setSearchPjtFilter(e.target.value)}
+                        className="w-full bg-slate-950/90 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* 총 프로젝트 개수 */}
+                    <span className="text-xs font-mono text-slate-400 shrink-0 whitespace-nowrap px-1">
+                      총 <strong className="text-cyan-400 font-bold">{filteredProjects.length}</strong>개 프로젝트
+                    </span>
+
+                    {/* 신규 PJT 추가 버튼 */}
+                    <button
+                      onClick={handleCreateNewProject}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-xs font-bold text-slate-950 shadow-glow-cyan hover:opacity-95 transition-all shrink-0 whitespace-nowrap cursor-pointer"
+                    >
+                      <span className="text-base leading-none font-black">+</span>
+                      <span>신규 PJT 추가</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Horizontal Wide Row List (가로 나열 방식) */}
+                <div className="space-y-3">
+                  {filteredProjects.map((pjt) => {
+                    const isSelected = pjt.id === currentProjectId;
+                    let totalParts = 0;
+                    let verifiedParts = 0;
+                    pjt.equipmentUnits.forEach(u => u.parts.forEach(p => {
+                      totalParts++;
+                      if (p.isVerified) verifiedParts++;
+                    }));
+                    const rate = totalParts > 0 ? Math.round((verifiedParts / totalParts) * 100) : 0;
+                    const isCompleted = totalParts > 0 && verifiedParts === totalParts;
+                    const siteStyle = getSiteBadgeStyle(pjt.site);
+
+                    return (
+                      <div
+                        key={pjt.id}
+                        onClick={() => handleSelectProject(pjt.id, 1)}
+                        className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6 ${isSelected
+                          ? "bg-slate-900/95 border-cyan-500/90 shadow-glow-cyan ring-1 ring-cyan-500/50"
+                          : "bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900"
+                          }`}
+                      >
+                        {/* 1. Left: Main Info (고객사 -> PJT CODE -> 설비명 -> 진행률 순서) */}
+                        <div className="flex-1 min-w-0 space-y-2.5">
+                          {/* Main Header Line: 고객사/PJT CODE/설비명 (좌측) + 진행률 배지 (우측 ml-auto 일괄 정렬) */}
+                          <div className="flex items-center gap-2.5 flex-nowrap min-w-0">
+                            {/* 1. 고객사 */}
+                            <span className={`shrink-0 whitespace-nowrap text-sm font-bold flex items-center gap-1.5 px-3 py-1 rounded-lg border shadow-sm ${siteStyle.bg}`}>
+                              <span>🏢</span>
+                              <span>{pjt.site}</span>
+                            </span>
+
+                            {/* 2. PJT CODE */}
+                            <span className="shrink-0 whitespace-nowrap font-mono font-extrabold text-sm text-white tracking-wider bg-slate-950 px-3 py-1 rounded-lg border border-slate-800">
+                              {pjt.pjtCode}
+                            </span>
+
+                            {/* 3. 프로젝트 이름 / 설비명 (1자 유지 + 툴팁) */}
+                            <h3 className="min-w-0 truncate whitespace-nowrap font-bold text-white text-base sm:text-lg tracking-wide" title={pjt.equipmentName}>
+                              {pjt.equipmentName}
+                            </h3>
+
+                            {/* 4. 진행률 배지 (ml-auto로 모든 카드의 동일한 우측 수직선상에 정렬) */}
+                            <span className={`shrink-0 ml-auto whitespace-nowrap inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${isCompleted
+                              ? "bg-emerald-950 text-emerald-400 border border-emerald-700 shadow-sm"
+                              : rate > 0
+                                ? "bg-amber-950 text-amber-400 border border-amber-800"
+                                : "bg-slate-800 text-slate-400"
+                              }`}>
+                              {isCompleted ? "✓ 완료 (100%)" : `진행률 ${rate}%`}
+                            </span>
+                          </div>
+
+                          {/* 🔢 Serial NO. 요약 범위 박스 (단일/연속 범위 표기 - 적절한 크기) */}
+                          <div className="bg-slate-950/70 border border-slate-800/80 px-3 py-1.5 rounded-xl font-mono text-xs text-slate-300 flex items-center gap-2">
+                            <span className="text-[11px] text-cyan-400 font-bold shrink-0">Serial NO:</span>
+                            <span className="text-cyan-300 font-medium tracking-wide text-xs">
+                              {formatSerialRange(pjt.equipmentUnits)}
+                            </span>
+                          </div>
+
+                          {/* 하단 메타 정보 (수량 / 담당자 / 작성일 - 균형 잡힌 정렬) */}
+                          <div className="flex flex-wrap items-center gap-6 sm:gap-8 text-xs text-slate-400 font-mono pl-3 sm:pl-3.5 pt-0.5">
+                            <span>수량: <strong className="text-white">{pjt.quantity}대</strong></span>
+                            <span>담당자: <span className="text-slate-300 font-medium">{pjt.inspectorName}</span></span>
+                            <span>작성일: <span className="text-slate-300 font-medium">{pjt.inspectionDate}</span></span>
+                          </div>
+                        </div>
+
+                        {/* 2. Middle: Progress Indicator */}
+                        <div className="w-full lg:w-64 space-y-1.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 shrink-0">
+                          <div className="flex justify-between text-xs font-mono">
+                            <span className="text-slate-400">부품 검증 현황</span>
+                            <span className="text-cyan-300 font-bold">{verifiedParts}/{totalParts}개 ({rate}%)</span>
+                          </div>
+                          <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                            <div
+                              className={`h-full transition-all duration-300 ${isCompleted ? 'bg-emerald-400 shadow-glow-emerald' : 'bg-cyan-400'}`}
+                              style={{ width: `${rate}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* 3. Right: Action Buttons (시리얼 입력 버튼 + 세로 액션 목록: PJT 수정, 엑셀 추출, PJT 복사, 삭제) */}
+                        <div className="flex items-stretch sm:items-center gap-2.5 shrink-0 border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-800">
+                          {/* Main CTA: 시리얼 입력 (3단계) */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectProject(pjt.id, 3);
+                            }}
+                            className="bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 px-4 py-3 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 flex-1 sm:flex-none min-h-[52px]"
+                          >
+                            <span>OCR 입력 →</span>
+                          </button>
+
+                          {/* Vertical Action Column: PJT 수정, 보고서 추출, PJT 복사, 삭제 */}
+                          <div className="flex flex-col gap-1 w-24 shrink-0">
+                            <button
+                              onClick={(e) => handleOpenEditPjtModal(pjt, e)}
+                              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[11px] font-semibold transition-all flex items-center justify-center gap-1 border border-slate-700 cursor-pointer shadow-sm"
+                              title="PJT 정보 및 Serial NO. 수정"
+                            >
+                              <span>✏️ PJT 수정</span>
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                exportToExcel(pjt);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 text-[11px] font-semibold transition-all flex items-center justify-center gap-1 border border-slate-700 cursor-pointer shadow-sm"
+                              title="보고서 즉시 다운로드 (.xlsx)"
+                            >
+                              <span>📥 보고서 추출</span>
+                            </button>
+
+                            <button
+                              onClick={(e) => handleDuplicateProject(pjt.id, e)}
+                              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition-all flex items-center justify-center gap-1 border border-slate-700 cursor-pointer"
+                              title="PJT 복제"
+                            >
+                              <span>📋 PJT 복사</span>
+                            </button>
+
+                            <button
+                              onClick={(e) => handleDeleteProject(pjt.id, e)}
+                              className="px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-red-950 text-slate-400 hover:text-red-400 text-[11px] font-medium transition-all flex items-center justify-center gap-1 border border-slate-800 hover:border-red-800/60 cursor-pointer"
+                              title="PJT 삭제"
+                            >
+                              <span>🗑️ 삭제</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: PJT 입력 (신규 등록 및 수정 폼 -> [PJT 등록 및 OCR 검사] 클릭 시 정식 생성) */}
+            {step === 2 && (
+              <div className="bg-slate-900/90 rounded-2xl p-6 border border-slate-800 space-y-6 shadow-2xl">
+                <div className="border-b border-slate-800 pb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold text-xs border border-cyan-500/30">
+                      02
+                    </span>
+                    <h2 className="text-lg font-bold text-white">
+                      프로젝트 추가 (프로젝트 정보 및 Serial NO. 입력)
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-cyan-950 text-cyan-300 border border-cyan-800">
+                      PJT 등록
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    PJT 메인 정보와 호기별 설비 Serial NO.를 입력 후 하단의 [PJT 추가 & OCR 등록] 버튼을 누르면 프로젝트가 정식 등록됩니다.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  {/* 1. 고객사 */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-slate-300 font-bold block">고객사 *</label>
+                      <span className="text-[10px] text-cyan-400">직접 입력 & 선택</span>
+                    </div>
+                    <input
+                      type="text"
+                      list="site-list-options"
+                      placeholder="예: SKH 이천, SEC 평택"
+                      value={formProject.site}
+                      onChange={e => setFormProject({ ...formProject, site: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none font-medium text-sm"
+                    />
+                    <datalist id="site-list-options">
+                      {DEFAULT_SITES.map(s => <option key={s} value={s} />)}
+                    </datalist>
+                  </div>
+
+                  {/* 2. PJT CODE */}
+                  <div>
+                    <label className="text-slate-300 font-bold block mb-1">PJT CODE *</label>
+                    <input
+                      type="text"
+                      placeholder="예: S26-15-01"
+                      value={formProject.pjtCode}
+                      onChange={e => setFormProject({ ...formProject, pjtCode: e.target.value.toUpperCase() })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-cyan-300 font-mono font-bold placeholder:font-sans placeholder:normal-case placeholder:font-normal placeholder-slate-500 focus:border-cyan-500 focus:outline-none uppercase text-sm"
+                    />
+                  </div>
+
+                  {/* 3. 모델명 (인증명) */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-slate-300 font-bold block">모델명 (인증명) *</label>
+                      <span className="text-[10px] text-cyan-400">사양서 확인</span>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="예: NaVi-MG200 (NaVi-MG200H-0224), WOA-683 (WOA-683-0124)"
+                      value={formProject.equipmentName}
+                      onChange={e => setFormProject({ ...formProject, equipmentName: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none text-sm"
+                    />
+                  </div>
+
+                  {/* 4. 설비 수량 */}
+                  <div>
+                    <label className="text-slate-300 font-bold block mb-1">
+                      설비 수량 (호기 생성: {formProject.quantity}대) *
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleQuantityChange(formProject.quantity - 1)}
+                        className="bg-slate-800 px-4 py-2 rounded-xl text-white font-bold hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+                        disabled={formProject.quantity <= 1}
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        max="50"
+                        value={formProject.quantity}
+                        onChange={e => handleQuantityChange(parseInt(e.target.value) || 1)}
+                        style={{ MozAppearance: 'textfield' }}
+                        className="w-full text-center bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono font-bold text-cyan-300 text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleQuantityChange(formProject.quantity + 1)}
+                        className="bg-slate-800 px-4 py-2 rounded-xl text-white font-bold hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+                        disabled={formProject.quantity >= 50}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 5. 설비 담당자 */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-slate-300 font-bold block">설비 담당자</label>
+                      {existingInspectors.length > 0 && (
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          (기존 담당자 추천)
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      list="inspector-list"
+                      placeholder="예: 홍길동"
+                      value={formProject.inspectorName}
+                      onChange={e => setFormProject({ ...formProject, inspectorName: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none text-sm"
+                    />
+                    <datalist id="inspector-list">
+                      {existingInspectors.map(name => (
+                        <option key={name} value={name} />
+                      ))}
+                    </datalist>
+
+                    {existingInspectors.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap pt-1.5">
+                        <span className="text-[10px] text-slate-400">최근 담당자:</span>
+                        {existingInspectors.slice(0, 5).map(name => (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => setFormProject({ ...formProject, inspectorName: name })}
+                            className={`text-[11px] px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
+                              formProject.inspectorName === name
+                                ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-bold"
+                                : "bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700"
+                            }`}
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 6. 검수일자 */}
+                  <div>
+                    <label className="text-slate-300 font-bold block mb-1">검수일자 (Inspection Date)</label>
+                    <input
+                      type="date"
+                      value={formProject.inspectionDate}
+                      onClick={e => { try { e.currentTarget.showPicker(); } catch (err) { } }}
+                      onChange={e => setFormProject({ ...formProject, inspectionDate: e.target.value })}
+                      style={{ colorScheme: 'dark' }}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none text-sm cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* 🔢 설비 Serial NO. 입력 */}
+                <div className="bg-slate-950/80 p-5 rounded-xl border border-cyan-900/40 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <span className="font-bold text-cyan-300 flex items-center gap-1.5 text-xs">
+                      <span>🔢</span>
+                      <span>설비 Serial NO. 입력 (총 {formProject.quantity}개 호기)</span>
+                    </span>
+                  </div>
+
+                  {/* 적용된 PJT 양식 표시 배너 */}
+                  <div className="flex items-center justify-between p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-800/50 text-xs">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                        <span>✓</span>
+                        <span>PJT 양식 적용 완료:</span>
+                      </span>
+                      <span className="font-bold text-cyan-300 font-mono bg-slate-900 px-3 py-1 rounded-lg border border-slate-700 text-xs shadow-inner">
+                        {formProject.equipmentName || "표준 기본 양식"}
+                      </span>
+                      <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-slate-700 font-semibold">
+                        총 {formProject.equipmentUnits[0]?.parts?.length || 0}개 품목 / {new Set(formProject.equipmentUnits[0]?.parts?.map(p => p.category)).size || 1}개 모듈
+                      </span>
+                      <span className="text-slate-400">
+                        (전체 {formProject.quantity}개 모든 호기에 일괄 복제 배정됨)
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPresetModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 font-bold transition-all cursor-pointer shrink-0 text-xs shadow-sm ml-2"
+                    >
+                      <span>📑</span>
+                      <span>양식 변경</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                    {formProject.equipmentUnits.map((u, idx) => (
+                      <div key={u.unitIndex} className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex items-center gap-2.5">
+                        <span className="text-slate-300 font-bold font-mono shrink-0 whitespace-nowrap text-xs">
+                          {u.unitIndex}호기 S/N
+                        </span>
+                        <input
+                          type="text"
+                          placeholder={`예: SOTSU-SK26-100${u.unitIndex}`}
+                          value={u.equipmentSerial}
+                          onChange={e => {
+                            const val = e.target.value.toUpperCase();
+                            if (u.unitIndex === 1) {
+                              const updated = formProject.equipmentUnits.map(unit => ({
+                                ...unit,
+                                equipmentSerial: cascadeSerialFromUnit1(val, unit.unitIndex)
+                              }));
+                              setFormProject({ ...formProject, equipmentUnits: updated });
+                            } else {
+                              const updated = formProject.equipmentUnits.map(unit =>
+                                unit.unitIndex === u.unitIndex ? { ...unit, equipmentSerial: val } : unit
+                              );
+                              setFormProject({ ...formProject, equipmentUnits: updated });
+                            }
+                          }}
+                          className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg p-2 font-mono font-bold text-cyan-300 uppercase focus:border-cyan-500 focus:outline-none"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+                  <button
+                    onClick={() => {
+                      setIsCreatingNew(false);
+                      setStep(1);
+                    }}
+                    className="bg-slate-800 text-slate-300 px-4 py-2.5 rounded-xl text-xs hover:bg-slate-700 cursor-pointer"
+                  >
+                    ← 1. PJT List 목록
+                  </button>
+
+                  <button
+                    onClick={handleRegisterOrSaveProject}
+                    className="bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-3 rounded-xl font-extrabold text-slate-950 shadow-glow-cyan text-xs cursor-pointer hover:opacity-95 transition-all flex items-center gap-1.5"
+                  >
+                    <span>PJT 추가 & OCR 등록 →</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3:  OCR (시리얼 넘버 순서대로 나열 및 검사) */}
+            {step === 3 && (
+              <div className="space-y-4">
+                {/* 1. 상단 안내 및 등록된 Serial NO. 순서 나열 바 */}
+                <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-lg space-y-3">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold text-xs border border-cyan-500/30">
+                          03
+                        </span>
+                        <h2 className="text-base font-bold text-white">
+                          PJT 부품 시리얼 OCR 인식
+                        </h2>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs">
+                        <span className={`font-bold flex items-center gap-1 px-2.5 py-0.5 rounded-lg border shadow-sm ${getSiteBadgeStyle(currentProject.site).bg}`}>
+                          <span>🏢</span>
+                          <span>{currentProject.site || "사업장 미지정"}</span>
+                        </span>
+                        <span className="text-slate-400">
+                          PJT: <strong className="text-cyan-300 font-mono font-extrabold">{currentProject.pjtCode}</strong> / 설비명: <strong className="text-white">{currentProject.equipmentName}</strong> (총 {currentProject.quantity}대)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
+                      {/* 📥 엑셀 보고서 다운로드 (.xlsx) - 상단 메인 액션 버튼 */}
+                      <button
+                        onClick={() => exportToExcel(currentProject)}
+                        className="text-xs bg-gradient-to-r from-cyan-500 to-blue-600 hover:opacity-95 text-slate-950 font-extrabold px-4 py-2 rounded-xl shadow-glow-cyan transition-all shrink-0 cursor-pointer flex items-center gap-1.5"
+                        title="모든 호기의 부품 시리얼 리스트를 시트별로 매칭하여 단일 엑셀 파일로 다운로드"
+                      >
+                        <span>📥</span>
+                        <span>엑셀 보고서 다운로드 (.xlsx)</span>
+                      </button>
+
+                      <button
+                        onClick={(e) => handleOpenEditPjtModal(currentProject, e)}
+                        className="text-xs bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 hover:text-white font-semibold px-3.5 py-2 rounded-xl border border-cyan-700/60 transition-all shrink-0 cursor-pointer flex items-center gap-1.5 shadow-sm"
+                        title="프로젝트 정보 및 Serial NO. 수정"
+                      >
+                        <span>✏️</span>
+                        <span>프로젝트 정보 수정</span>
+                      </button>
+
+                      {currentProject.quantity > 1 && (
+                        <button
+                          onClick={replicateParts}
+                          className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3.5 py-2 rounded-xl border border-slate-700 shrink-0 cursor-pointer flex items-center gap-1.5"
+                          title="1호기의 부품 목록을 나머지 모든 호기에 일괄 복제"
+                        >
+                          <span>📋</span>
+                          <span>1호기 부품 목록 전체 복제</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 🔢 등록된 설비 Serial NO. 및 호기 선택 탭 (단일 통합) */}
+                  <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-slate-400 font-bold flex items-center gap-1.5 mr-1 shrink-0">
+                      <span>🔢</span>
+                      <span>호기 선택 (Serial NO.) :</span>
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2 font-mono">
+                      {currentProject.equipmentUnits.map((u, i) => {
+                        const isCurrentActive = u.unitIndex === activeUnit;
+                        const verified = u.parts.filter(p => p.isVerified).length;
+                        const total = u.parts.length;
+                        const isAll = total > 0 && verified === total;
+
+                        return (
+                          <button
+                            key={u.unitIndex}
+                            onClick={() => setActiveUnit(u.unitIndex)}
+                            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer flex items-center gap-2 transition-all shrink-0 ${isCurrentActive
+                              ? 'bg-cyan-500 text-slate-950 font-bold border-cyan-400 shadow-glow-cyan'
+                              : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700'
+                              }`}
+                          >
+                            <span className={`font-bold ${isCurrentActive ? 'text-slate-950' : 'text-slate-300'}`}>
+                              {u.unitIndex}호기:
+                            </span>
+                            <span className={`font-bold ${isCurrentActive ? 'text-slate-950 font-extrabold' : 'text-cyan-300'}`}>
+                              {u.equipmentSerial || "(미입력)"}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold shrink-0 ${isCurrentActive
+                              ? 'bg-slate-950 text-cyan-300'
+                              : isAll
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                                : 'bg-slate-800 text-slate-400'
+                              }`}>
+                              {isAll ? "✓ 완료" : `${verified}/${total}`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. 부품 목록 테이블 */}
+                <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
+                  <div className="p-3.5 border-b border-slate-800 flex justify-between items-center text-xs bg-slate-950/50">
+                    <span className="font-bold text-white">{activeUnit}호기 ({currentUnitData.equipmentSerial}) 부품 목록 ({currentUnitData.parts.length}개)</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setPresetModalOpen(true)}
+                        className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-3.5 py-1.5 rounded-xl hover:bg-cyan-500/30 cursor-pointer font-semibold flex items-center gap-1.5 shadow-sm"
+                        title="모델별 표준 BOM 템플릿 불러오기 또는 엑셀(.xlsx) 파일 업로드"
+                      >
+                        <span>📑</span>
+                        <span>PJT 부품 양식 변경</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          const newP = { id: generateId(), category: "[ MAIN ]", partName: "신규 공정 부품", subSpec: "-", spec: "표준 규격 입력", detectedSerial: "", isVerified: false };
+                          const updated = currentProject.equipmentUnits.map(u => u.unitIndex === activeUnit ? { ...u, parts: [...u.parts, newP] } : u);
+                          updateCurrentProject({ ...currentProject, equipmentUnits: updated });
+                        }}
+                        className="bg-slate-800 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-xl hover:bg-slate-700 cursor-pointer"
+                      >
+                        + 직접 추가
+                      </button>
+                    </div>
+                  </div>
+
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                      <tr>
+                        <th className="p-3 w-10 text-center">No</th>
+                        <th className="p-3 min-w-[140px]">품명 (Part Name)</th>
+                        <th className="p-3 min-w-[130px]">세부 사항 (Sub Spec)</th>
+                        <th className="p-3 min-w-[160px]">규격 (Spec)</th>
+                        <th className="p-3 min-w-[200px]">시리얼 번호 (Serial No.)</th>
+                        <th className="p-3 text-center w-24">검증</th>
+                        <th className="p-3 text-center w-20">관리</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/70">
+                      {currentUnitData.parts.map((p, idx) => {
+                        const prev = idx > 0 ? currentUnitData.parts[idx - 1] : null;
+                        const showModuleHeader = p.category && (!prev || prev.category !== p.category);
+
+                        return (
+                          <React.Fragment key={p.id}>
+                            {showModuleHeader && (
+                              <tr className="bg-slate-950/90 border-y border-slate-700/80">
+                                <td colSpan={7} className="py-2 px-4">
+                                  <div className="flex items-center gap-2 font-mono font-extrabold text-xs text-cyan-300">
+                                    <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-glow-cyan" />
+                                    <span>{p.category}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                            <tr className={p.isVerified ? 'bg-emerald-950/10 hover:bg-emerald-950/20' : 'hover:bg-slate-800/40'}>
+                              <td className="p-3 text-center font-mono text-slate-500 font-bold">{idx + 1}</td>
+                              <td className="p-3 font-semibold text-slate-200">{p.partName}</td>
+                              <td className="p-3 text-slate-300 font-mono text-xs">{p.subSpec || "-"}</td>
+                              <td className="p-3 font-mono text-slate-400 text-xs">{p.spec}</td>
+                              <td className="p-3">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => openOcr(p)}
+                                    className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2.5 py-1 rounded-lg font-bold hover:bg-cyan-500/30 shrink-0 cursor-pointer"
+                                  >
+                                    📸 OCR 스캔
+                                  </button>
+                                  <input
+                                    type="text"
+                                    value={p.detectedSerial || ""}
+                                    placeholder="(미인식)"
+                                    onChange={e => {
+                                      const val = e.target.value.toUpperCase();
+                                      const updated = currentProject.equipmentUnits.map(u => u.unitIndex === activeUnit ? {
+                                        ...u,
+                                        parts: u.parts.map(pt => pt.id === p.id ? { ...pt, detectedSerial: val, isVerified: val.length > 0 ? pt.isVerified : false } : pt)
+                                      } : u);
+                                      updateCurrentProject({ ...currentProject, equipmentUnits: updated });
+                                    }}
+                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-0.5 font-mono text-xs text-cyan-300 uppercase font-bold w-44"
+                                  />
+                                </div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  onClick={() => {
+                                    const updated = currentProject.equipmentUnits.map(u => u.unitIndex === activeUnit ? { ...u, parts: u.parts.map(pt => pt.id === p.id ? { ...pt, isVerified: !pt.isVerified } : pt) } : u);
+                                    updateCurrentProject({ ...currentProject, equipmentUnits: updated });
+                                  }}
+                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer ${p.isVerified ? 'bg-emerald-950 text-emerald-400 border border-emerald-700' : 'bg-amber-950 text-amber-400 border border-amber-800'}`}
+                                >
+                                  {p.isVerified ? "VERIFIED" : "PENDING"}
+                                </button>
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  onClick={() => {
+                                    const updated = currentProject.equipmentUnits.map(u => u.unitIndex === activeUnit ? { ...u, parts: u.parts.filter(pt => pt.id !== p.id) } : u);
+                                    updateCurrentProject({ ...currentProject, equipmentUnits: updated });
+                                  }}
+                                  className="text-red-400 hover:text-red-300 px-2 py-1 cursor-pointer"
+                                >
+                                  삭제
+                                </button>
+                              </td>
+                            </tr>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800">
+                  <button
+                    onClick={() => setStep(1)}
+                    className="w-full sm:w-auto bg-slate-800 text-slate-300 px-5 py-2.5 rounded-xl text-xs hover:bg-slate-700 cursor-pointer border border-slate-700"
+                  >
+                    ← 1. PJT List 목록
+                  </button>
+
+                  <button
+                    onClick={() => exportToExcel(currentProject)}
+                    className="w-full sm:w-auto bg-gradient-to-r from-cyan-400 to-blue-600 font-extrabold text-slate-950 px-6 py-2.5 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <span>📥 엑셀 보고서 다운로드 (.xlsx)</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: 설비 부품 양식 (BOM Template Management) */}
+            {step === 4 && (() => {
+              const activeTpl = pjtTemplates.find(t => t.id === selectedTplId) || pjtTemplates[0] || null;
+              const filteredTpls = !searchTplQuery.trim()
+                ? pjtTemplates
+                : pjtTemplates.filter(t =>
+                    t.modelName.toLowerCase().includes(searchTplQuery.toLowerCase()) ||
+                    (t.description && t.description.toLowerCase().includes(searchTplQuery.toLowerCase())) ||
+                    (t.parts && t.parts.some(p =>
+                      p.partName.toLowerCase().includes(searchTplQuery.toLowerCase()) ||
+                      p.spec.toLowerCase().includes(searchTplQuery.toLowerCase()) ||
+                      (p.subSpec && p.subSpec.toLowerCase().includes(searchTplQuery.toLowerCase())) ||
+                      p.category.toLowerCase().includes(searchTplQuery.toLowerCase())
+                    ))
+                  );
+
+              const filteredParts = !activeTpl ? [] : !searchTplPartQuery.trim()
+                ? activeTpl.parts || []
+                : (activeTpl.parts || []).filter(p =>
+                    p.partName.toLowerCase().includes(searchTplPartQuery.toLowerCase()) ||
+                    p.spec.toLowerCase().includes(searchTplPartQuery.toLowerCase()) ||
+                    (p.subSpec && p.subSpec.toLowerCase().includes(searchTplPartQuery.toLowerCase())) ||
+                    p.category.toLowerCase().includes(searchTplPartQuery.toLowerCase())
+                  );
+
+              return (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* 1. Header Banner */}
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-slate-900 via-cleanroom-850 to-slate-900 p-6 border border-slate-800 shadow-xl">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold text-xs border border-cyan-500/30">
+                          04
+                        </span>
+                        <h2 className="text-xl font-bold text-white tracking-wide flex items-center gap-2">
+                          <span>설비 부품 양식 (BOM Template Management)</span>
+                          <span className="bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full">
+                            총 {pjtTemplates.length}개 양식
+                          </span>
+                        </h2>
+                      </div>
+                      <p className="mt-1.5 text-xs text-slate-400">
+                        WITHTECH 제작 설비 모델별 표준 부품 BOM 양식을 조회, 수정, 복제 및 엑셀 일괄 등록하여 관리합니다.
+                      </p>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleOpenCreateTemplate}
+                        className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-xs font-extrabold text-slate-950 shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer"
+                      >
+                        <span className="font-bold text-base">+</span>
+                        <span>신규 PJT 양식 추가</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 2. Main Two-Column Master-Detail Layout */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    {/* Left Column: 양식 목록 (5 Cols) */}
+                    <div className="lg:col-span-5 space-y-3">
+                      <div className="flex items-center justify-between gap-2 px-1">
+                        <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                          <span>📋</span>
+                          <span>등록된 PJT 양식 목록 ({filteredTpls.length})</span>
+                        </span>
+                      </div>
+
+                      {/* Search Box */}
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs">🔍</span>
+                        <input
+                          type="text"
+                          placeholder="양식명, 설명, 부품명 검색..."
+                          value={searchTplQuery}
+                          onChange={e => setSearchTplQuery(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
+                        />
+                        {searchTplQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setSearchTplQuery("")}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Template Cards List */}
+                      <div className="space-y-2.5 max-h-[680px] overflow-y-auto pr-1 custom-scrollbar">
+                        {filteredTpls.length === 0 ? (
+                          <div className="py-12 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-4">
+                            <p className="text-xs text-slate-400">검색 조건에 맞는 양식이 없습니다.</p>
+                          </div>
+                        ) : (
+                          filteredTpls.map((tpl, idx) => {
+                            const isSelected = activeTpl?.id === tpl.id;
+                            return (
+                              <div
+                                key={tpl.id}
+                                onClick={() => setSelectedTplId(tpl.id)}
+                                className={`p-4 rounded-2xl border transition-all cursor-pointer group flex flex-col gap-2.5 relative ${
+                                  isSelected
+                                    ? "bg-slate-900/90 border-cyan-500/70 shadow-glow-cyan ring-1 ring-cyan-500/30"
+                                    : "bg-slate-950/70 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900/50"
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    {/* 🔢 순번 뱃지 */}
+                                    <div
+                                      className={`flex h-8 w-8 items-center justify-center rounded-xl font-mono font-extrabold text-xs shrink-0 transition-all ${
+                                        isSelected
+                                          ? "bg-cyan-500 text-slate-950 shadow-sm"
+                                          : "bg-slate-900 border border-slate-800 text-cyan-400 group-hover:border-cyan-500/40"
+                                      }`}
+                                    >
+                                      {String(idx + 1).padStart(2, "0")}
+                                    </div>
+
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <h4 className="font-bold text-sm text-white truncate" title={tpl.modelName}>
+                                          {tpl.modelName}
+                                        </h4>
+                                        {tpl.isCustom && (
+                                          <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 px-2 py-0.2 rounded text-[9px] font-bold">
+                                            사용자 등록
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-slate-400 truncate mt-0.5" title={tpl.description}>
+                                        {tpl.description}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {/* Item & Part Badges */}
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <span className="bg-cyan-950/90 text-cyan-300 border border-cyan-800/70 px-2 py-0.5 rounded text-[11px] font-mono font-bold">
+                                      {tpl.parts?.length || tpl.partsCount || 0}개 품목
+                                    </span>
+                                    <span className="bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded text-[11px] font-mono">
+                                      {tpl.moduleCount || 1}개 파트
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Card Footer Actions */}
+                                <div className="flex items-center justify-between border-t border-slate-800/60 pt-2.5 text-xs text-slate-400">
+                                  <span className="text-[11px] font-mono text-slate-500">
+                                    {isSelected ? "● 현재 상세 조회 중" : "클릭하여 부품 상세 조회"}
+                                  </span>
+
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleOpenEditTemplate(tpl, e)}
+                                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-semibold transition-all cursor-pointer"
+                                      title="양식 수정"
+                                    >
+                                      ✏️ 수정
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDuplicateTemplate(tpl, e)}
+                                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 text-[11px] transition-all cursor-pointer"
+                                      title="양식 복제"
+                                    >
+                                      📋
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDeleteTemplate(tpl.id, tpl.modelName, e)}
+                                      className="p-1 rounded-lg bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-400 border border-slate-700 hover:border-red-800 text-[11px] transition-all cursor-pointer"
+                                      title="양식 삭제"
+                                    >
+                                      🗑️
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right Column: 선택된 양식의 부품 상세 BOM (7 Cols) */}
+                    <div className="lg:col-span-7 space-y-3">
+                      {activeTpl ? (
+                        <div className="rounded-2xl border border-slate-800 bg-slate-950/80 overflow-hidden shadow-xl">
+                          {/* Detail Header */}
+                          <div className="p-5 border-b border-slate-800 bg-slate-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded font-mono text-[11px] font-bold border border-cyan-500/30">
+                                  BOM 상세
+                                </span>
+                                <h3 className="text-base font-bold text-white">
+                                  {activeTpl.modelName}
+                                </h3>
+                              </div>
+                              <p className="text-xs text-slate-400 mt-1">
+                                {activeTpl.description}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditTemplate(activeTpl)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-bold hover:bg-cyan-500/30 transition-all cursor-pointer shadow-sm"
+                              >
+                                <span>✏️</span>
+                                <span>양식 수정</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Detail Sub Header / Part Search */}
+                          <div className="p-3.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="font-bold text-slate-300">
+                                부품 목록 (총 {activeTpl.parts ? activeTpl.parts.length : 0}개 품목 / {new Set((activeTpl.parts || []).map(p => p.category)).size}개 파트)
+                              </span>
+                            </div>
+
+                            <div className="relative w-48 sm:w-64">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs">🔍</span>
+                              <input
+                                type="text"
+                                placeholder="품명/규격 검색..."
+                                value={searchTplPartQuery}
+                                onChange={e => setSearchTplPartQuery(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-7 pr-3 py-1 text-[11px] text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Parts Table */}
+                          <div className="max-h-[580px] overflow-y-auto custom-scrollbar">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead className="bg-slate-900 text-slate-400 font-semibold sticky top-0 z-10 border-b border-slate-800">
+                                <tr>
+                                  <th className="p-3 w-12 text-center">No</th>
+                                  <th className="p-3">품명 (Part Name)</th>
+                                  <th className="p-3">세부 사항 (Sub Spec)</th>
+                                  <th className="p-3">규격 (Spec)</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/80">
+                                {filteredParts.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={4} className="p-8 text-center text-slate-400 text-xs">
+                                      검색된 부품이 없습니다.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  filteredParts.map((p, idx) => {
+                                    const prevPart = idx > 0 ? filteredParts[idx - 1] : null;
+                                    const showCategoryHeader = p.category && (!prevPart || prevPart.category !== p.category);
+
+                                    return (
+                                      <React.Fragment key={p.id || idx}>
+                                        {showCategoryHeader && (
+                                          <tr className="bg-slate-950/90 border-y border-slate-800">
+                                            <td colSpan={4} className="py-2.5 px-4">
+                                              <div className="flex items-center gap-2 font-mono font-extrabold text-xs text-cyan-300">
+                                                <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-glow-cyan" />
+                                                <span>{p.category}</span>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        )}
+                                        <tr className="hover:bg-slate-900/60 transition-colors">
+                                          <td className="p-3 text-center text-slate-500 font-mono font-bold text-xs">
+                                            {idx + 1}
+                                          </td>
+                                          <td className="p-3 font-semibold text-slate-200">
+                                            {p.partName}
+                                          </td>
+                                          <td className="p-3 text-slate-400">
+                                            {p.subSpec || "-"}
+                                          </td>
+                                          <td className="p-3 font-mono text-[11px] text-slate-300">
+                                            {p.spec || "-"}
+                                          </td>
+                                        </tr>
+                                      </React.Fragment>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-12 text-center">
+                          <p className="text-slate-400 text-xs">좌측에서 양식을 선택해주세요.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+          </main>
+
+          {/* Quick PJT Edit Modal (PJT 수정 모달 - 사업장 직접 입력 & 선택 지원) */}
+          {editPjtModalOpen && editingPjtData && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-cyan-400 font-bold">✏️</span>
+                    <h3 className="text-base font-bold text-white">프로젝트 정보 및 Serial NO. 수정</h3>
+                  </div>
+                  <button
+                    onClick={() => setEditPjtModalOpen(false)}
+                    className="text-slate-400 hover:text-white text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-3.5 text-xs">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-slate-300 font-bold block">PJT CODE *</label>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="예: S26-15-01"
+                      value={editingPjtData.pjtCode}
+                      onChange={e => setEditingPjtData({ ...editingPjtData, pjtCode: e.target.value.toUpperCase() })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 font-mono font-bold text-cyan-300 uppercase focus:border-cyan-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-300 font-bold block mb-1">모델명 (인증명) *</label>
+                    <input
+                      type="text"
+                      value={editingPjtData.equipmentName}
+                      onChange={e => setEditingPjtData({ ...editingPjtData, equipmentName: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 font-bold text-white focus:border-cyan-500 focus:outline-none"
+                      placeholder="예: NaVi-MG200 (NaVi-MG200H-0224), WOA-683 (WOA-683-0124)"
+                    />
+                  </div>
+
+                  {/* 사업장 (Site) - 괄호 없는 깔끔한 명칭 직접 입력 & 선택 지원 */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-slate-300 font-bold block">고객사</label>
+                      <span className="text-[10px] text-cyan-400">직접 입력 및 목록 선택 가능</span>
+                    </div>
+                    <input
+                      type="text"
+                      list="edit-site-list-options"
+                      value={editingPjtData.site}
+                      onChange={e => setEditingPjtData({ ...editingPjtData, site: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:border-cyan-500 focus:outline-none font-medium"
+                      placeholder="예: SKH 이천, SEC 평택"
+                    />
+                    <datalist id="edit-site-list-options">
+                      {DEFAULT_SITES.map(s => <option key={s} value={s} />)}
+                    </datalist>
+                  </div>
+
+                  {/* 호기별 Serial NO. 수정 및 호기 추가 */}
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-cyan-300 font-bold block text-[11px]">
+                        호기별 Serial NO. 수정 (총 {editingPjtData.equipmentUnits.length}대) :
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextIdx = editingPjtData.equipmentUnits.length + 1;
+                          const baseParts = (editingPjtData.equipmentUnits[0]?.parts || []).map(p => ({
+                            ...p,
+                            id: generateId(),
+                            detectedSerial: "",
+                            isVerified: false
+                          }));
+                          const unit1Serial = editingPjtData.equipmentUnits[0]?.equipmentSerial?.trim();
+                          const nextSerial = unit1Serial ? cascadeSerialFromUnit1(unit1Serial, nextIdx) : "";
+                          const newUnit = {
+                            unitIndex: nextIdx,
+                            equipmentSerial: nextSerial,
+                            parts: baseParts
+                          };
+                          const updatedUnits = [...editingPjtData.equipmentUnits, newUnit];
+                          setEditingPjtData({
+                            ...editingPjtData,
+                            quantity: updatedUnits.length,
+                            equipmentUnits: updatedUnits
+                          });
+                        }}
+                        className="px-2.5 py-1 bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 rounded-lg font-bold text-[11px] hover:opacity-90 shadow-sm flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>+ 호기 추가</span>
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                      {editingPjtData.equipmentUnits.map((u, i) => (
+                        <div key={u.unitIndex} className="flex items-center gap-2 bg-slate-900/60 p-1.5 rounded-lg border border-slate-800/80">
+                          <span className="w-16 font-mono text-slate-300 shrink-0 text-[11px] font-semibold">
+                            {u.unitIndex}호기 S/N:
+                          </span>
+                          <input
+                            type="text"
+                            placeholder={`예: SOTSU-SK26-100${u.unitIndex}`}
+                            value={u.equipmentSerial}
+                            onChange={e => {
+                              const val = e.target.value.toUpperCase();
+                              if (u.unitIndex === 1) {
+                                const newUnits = editingPjtData.equipmentUnits.map(unit => ({
+                                  ...unit,
+                                  equipmentSerial: cascadeSerialFromUnit1(val, unit.unitIndex)
+                                }));
+                                setEditingPjtData({ ...editingPjtData, equipmentUnits: newUnits });
+                              } else {
+                                const newUnits = editingPjtData.equipmentUnits.map(unit =>
+                                  unit.unitIndex === u.unitIndex ? { ...unit, equipmentSerial: val } : unit
+                                );
+                                setEditingPjtData({ ...editingPjtData, equipmentUnits: newUnits });
+                              }
+                            }}
+                            className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-1.5 font-mono text-cyan-300 uppercase text-xs focus:border-cyan-500 focus:outline-none"
+                          />
+                          {editingPjtData.equipmentUnits.length > 1 && (
+                            <button
+                              type="button"
+                              title="이 호기 삭제"
+                              onClick={() => {
+                                const filtered = editingPjtData.equipmentUnits.filter(unit => unit.unitIndex !== u.unitIndex);
+                                const reindexed = filtered.map((unit, idx) => ({
+                                  ...unit,
+                                  unitIndex: idx + 1
+                                }));
+                                setEditingPjtData({
+                                  ...editingPjtData,
+                                  quantity: reindexed.length,
+                                  equipmentUnits: reindexed
+                                });
+                              }}
+                              className="p-1 text-slate-500 hover:text-red-400 rounded transition-colors cursor-pointer text-xs"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-300 font-bold block mb-1">설비 담당자</label>
+                      <input
+                        type="text"
+                        placeholder="예: 홍길동"
+                        value={editingPjtData.inspectorName}
+                        onChange={e => setEditingPjtData({ ...editingPjtData, inspectorName: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-300 font-bold block mb-1">검사일자</label>
+                      <input
+                        type="date"
+                        value={editingPjtData.inspectionDate}
+                        onChange={e => setEditingPjtData({ ...editingPjtData, inspectionDate: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:border-cyan-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-3 border-t border-slate-800">
+                  <button
+                    onClick={() => setEditPjtModalOpen(false)}
+                    className="w-1/2 bg-slate-800 text-slate-300 py-2.5 rounded-xl text-xs hover:bg-slate-700 cursor-pointer"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={handleSavePjtEdit}
+                    className="w-1/2 bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 cursor-pointer"
+                  >
+                    변경사항 저장
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 📑 PJT 양식 Modal (모델별 표준 BOM & 엑셀 업로드) */}
+          {presetModalOpen && (
+            <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full flex flex-col max-h-[90vh] shadow-2xl overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800 bg-slate-950/70">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-lg">
+                      📑
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-bold text-white">
+                          PJT 양식 (모델별 표준 Serial List 양식 불러오기)
+                        </h3>
+                        <span className="bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                          BOM 템플릿 로더
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        표준 모델 양식을 원클릭으로 나열하거나, 보유 중인 엑셀 파일(.xlsx)을 업로드하여 전체 품명을 자동 등록합니다.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setPresetModalOpen(false);
+                      setParsedExcelParts([]);
+                      setExcelUploadError(null);
+                    }}
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white cursor-pointer text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Tab Navigation & Top-Right New Template Action */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-b border-slate-800 bg-slate-950/40 px-5 pt-3 gap-2">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPjtModalTab("TEMPLATES")}
+                      className={`flex items-center gap-1.5 pb-3 px-3 text-xs font-bold transition-all border-b-2 cursor-pointer ${pjtModalTab === "TEMPLATES"
+                        ? "border-cyan-400 text-cyan-300"
+                        : "border-transparent text-slate-400 hover:text-slate-200"
+                        }`}
+                    >
+                      <span>📋</span>
+                      <span>1. 모델별 표준 PJT 양식</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPjtModalTab("EXCEL")}
+                      className={`flex items-center gap-1.5 pb-3 px-3 text-xs font-bold transition-all border-b-2 cursor-pointer ${pjtModalTab === "EXCEL"
+                        ? "border-cyan-400 text-cyan-300"
+                        : "border-transparent text-slate-400 hover:text-slate-200"
+                        }`}
+                    >
+                      <span>📂</span>
+                      <span>2. 엑셀 파일(.xlsx) 직접 업로드</span>
+                    </button>
+                  </div>
+
+                  {/* 우측 상단: 신규 PJT 양식 추가 버튼 */}
+                  <div className="flex items-center gap-2 pb-2 sm:pb-0">
+                    <button
+                      type="button"
+                      onClick={handleOpenCreateTemplate}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer shrink-0"
+                      title="새로운 설비 모델의 BOM 양식을 생성하여 등록"
+                    >
+                      <span className="font-bold text-sm">+</span>
+                      <span>신규 PJT 양식 추가</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Body Content */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+                  {/* TAB 1: 모델별 표준 PJT 양식 */}
+                  {pjtModalTab === "TEMPLATES" && (
+                    <div className="space-y-3">
+                      <div className="rounded-xl bg-cyan-950/40 p-3 border border-cyan-800/50 text-cyan-300 flex items-center justify-between">
+                        <span>
+                          💡 모델을 선택하시면 엑셀 사진과 동일한 <strong>모듈별 전체 부품 목록(품명, 세부사항, 규격)</strong>이 품명 테이블에 쫙 나열됩니다.
+                          <span className="ml-2 font-bold text-white bg-slate-800 px-2 py-0.5 rounded-full text-[11px] font-mono border border-slate-700">
+                            총 {pjtTemplates.length}개 양식
+                          </span>
+                        </span>
+                      </div>
+
+                      {/* 📜 10~20개 이상의 양식도 편안하게 탐색 가능한 전용 스크롤 컨테이너 */}
+                      <div className="max-h-[470px] overflow-y-auto pr-1.5 space-y-3 custom-scrollbar">
+                        {pjtTemplates.length === 0 ? (
+                          <div className="py-12 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/40">
+                            <p className="text-sm text-slate-400 font-semibold mb-3">등록된 PJT 양식이 없습니다.</p>
+                          </div>
+                        ) : (
+                          pjtTemplates.map((tpl, idx) => {
+                            return (
+                              <div
+                                key={tpl.id}
+                                className="p-3.5 sm:p-4 rounded-2xl border bg-slate-950/60 border-slate-800 hover:border-slate-700 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md group"
+                              >
+                                {/* 좌측: 순번 뱃지 & 모델 정보 */}
+                                <div className="flex items-center gap-3 flex-1 min-w-0 w-full sm:w-auto">
+                                  {/* 🔢 순번 뱃지 */}
+                                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 border border-slate-800 font-mono font-extrabold text-cyan-400 text-xs shrink-0 shadow-inner group-hover:border-cyan-500/40 group-hover:text-cyan-300 transition-all">
+                                    {String(idx + 1).padStart(2, "0")}
+                                  </div>
+
+                                  <div className="space-y-1 min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-sm text-white truncate" title={tpl.modelName}>
+                                        {tpl.modelName}
+                                      </span>
+                                      {tpl.isCustom && (
+                                        <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 px-2 py-0.5 rounded text-[9px] font-bold shrink-0">
+                                          사용자 등록
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-slate-400 truncate" title={tpl.description}>{tpl.description}</p>
+                                  </div>
+                                </div>
+
+                                {/* 📌 가운데 고정 위치: 품목 수 & 모듈 수 뱃지 (빨간 박스 영역 고정 정렬) */}
+                                <div className="flex items-center gap-1.5 shrink-0 px-2.5 py-1 rounded-xl bg-slate-900/80 border border-slate-800 self-start sm:self-auto">
+                                  <span className="bg-cyan-950/90 text-cyan-300 border border-cyan-700/60 px-2.5 py-1 rounded-lg text-xs font-mono font-bold whitespace-nowrap shadow-sm">
+                                    {(tpl.parts && tpl.parts.length) || tpl.partsCount || 0}개 품목
+                                  </span>
+                                  <span className="bg-slate-800 text-slate-300 border border-slate-700/80 px-2 py-1 rounded-lg text-xs font-mono font-semibold whitespace-nowrap">
+                                    {tpl.moduleCount || 1}개 모듈
+                                  </span>
+                                </div>
+
+                                {/* 우측: Action Buttons: 수정, 삭제, 로드 */}
+                                <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                                  {/* ✏️ 양식 수정 버튼 */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditTemplate(tpl)}
+                                    className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-300 border border-slate-700 hover:bg-slate-750 hover:text-white transition-all cursor-pointer shrink-0"
+                                    title="양식명, 설명 및 부품 구성 수정"
+                                  >
+                                    <span>✏️</span>
+                                    <span>양식 수정</span>
+                                  </button>
+
+                                  {/* 🗑️ 삭제 버튼 (모든 양식 삭제 가능) */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteTemplate(tpl.id, tpl.modelName)}
+                                    className="p-2 rounded-xl bg-slate-800 text-slate-400 border border-slate-700 hover:bg-red-950 hover:text-red-400 hover:border-red-800 transition-all cursor-pointer text-xs shrink-0"
+                                    title="이 양식 삭제"
+                                  >
+                                    <span>🗑️</span>
+                                  </button>
+
+                                  {/* ✨ 이 PJT 양식으로 품명 로드 버튼 */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newParts = tpl.parts.map(p => ({
+                                        ...p,
+                                        id: generateId(),
+                                        detectedSerial: "",
+                                        isVerified: false
+                                      }));
+
+                                      if (step === 2) {
+                                        // 2단계 (PJT 입력): 전체 호기에 양식 부품 일괄 복제 배정 & 모델명을 해당 양식명으로 즉시 변경!
+                                        const updatedUnits = formProject.equipmentUnits.map(u => ({
+                                          ...u,
+                                          parts: newParts.map(p => ({ ...p, id: generateId() }))
+                                        }));
+                                        setFormProject({
+                                          ...formProject,
+                                          equipmentName: tpl.modelName, // 선택한 양식명으로 즉시 변경
+                                          equipmentUnits: updatedUnits
+                                        });
+                                      } else {
+                                        // 3단계 (설비 OCR): 현재 호기 부품 교체
+                                        const updated = currentProject.equipmentUnits.map(u =>
+                                          u.unitIndex === activeUnit ? { ...u, parts: newParts } : u
+                                        );
+                                        updateCurrentProject({ ...currentProject, equipmentUnits: updated });
+                                      }
+                                      setPresetModalOpen(false);
+                                    }}
+                                    className="bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-extrabold px-4 py-2 rounded-xl shadow-glow-cyan hover:opacity-95 cursor-pointer flex items-center gap-1.5 shrink-0"
+                                  >
+                                    <span>✨</span>
+                                    <span>이 PJT 양식으로 품명 로드</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 2: 엑셀 파일(.xlsx) 직접 업로드 */}
+                  {pjtModalTab === "EXCEL" && (
+                    <div className="space-y-4">
+                      <input
+                        ref={excelFileInputRef}
+                        type="file"
+                        accept=".xlsx, .xls, .csv"
+                        onChange={handleExcelFileUpload}
+                        className="hidden"
+                      />
+
+                      <div
+                        onClick={() => excelFileInputRef.current && excelFileInputRef.current.click()}
+                        className="border-2 border-dashed border-cyan-500/40 hover:border-cyan-400 bg-slate-950/60 hover:bg-slate-950 rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-3"
+                      >
+                        <div className="h-14 w-14 rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center border border-cyan-500/30 text-2xl shadow-glow-cyan">
+                          📂
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-white text-sm">
+                            설비 엑셀 시리얼 리스트 파일(.xlsx)을 업로드하세요
+                          </h4>
+                          <p className="text-slate-400 mt-1">
+                            클릭하거나 파일을 이곳에 드래그하면, 엑셀 속 모듈 및 품명/세부사항/규격을 자동으로 읽어와 나열합니다.
+                          </p>
+                        </div>
+                        <span className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-sm mt-1">
+                          <span>📑</span>
+                          <span>내 컴퓨터에서 엑셀 파일 선택</span>
+                        </span>
+                      </div>
+
+                      {isExcelParsing && (
+                        <div className="p-4 bg-slate-950 rounded-xl border border-cyan-800 text-center text-cyan-300 animate-pulse">
+                          엑셀 시트를 분석하여 부품 목록을 추출하는 중입니다...
+                        </div>
+                      )}
+
+                      {excelUploadError && (
+                        <div className="p-3.5 bg-red-950/60 border border-red-800 rounded-xl text-red-300 flex items-center gap-2">
+                          <span className="text-red-400 font-bold">⚠️</span>
+                          <span>{excelUploadError}</span>
+                        </div>
+                      )}
+
+                      {/* Parsed Preview Table */}
+                      {parsedExcelParts.length > 0 && (
+                        <div className="rounded-2xl border border-emerald-800/80 bg-slate-950/80 overflow-hidden space-y-3 p-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-emerald-400 font-bold">✓</span>
+                              <span className="font-bold text-emerald-300">
+                                「{uploadedExcelName}」에서 총 {parsedExcelParts.length}개 부품 품명을 성공적으로 추출했습니다!
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newParts = parsedExcelParts.map(p => ({ ...p, id: generateId(), detectedSerial: "", isVerified: false }));
+                                if (step === 2) {
+                                  // 2단계: 전체 호기에 엑셀 부품 일괄 복제 배정 & 모델명 자동 채움
+                                  const pureName = uploadedExcelName ? uploadedExcelName.replace(/\.[^/.]+$/, "") : "";
+                                  const updatedUnits = formProject.equipmentUnits.map(u => ({
+                                    ...u,
+                                    parts: newParts.map(p => ({ ...p, id: generateId() }))
+                                  }));
+                                  setFormProject({
+                                    ...formProject,
+                                    equipmentName: formProject.equipmentName.trim() ? formProject.equipmentName : (pureName || formProject.equipmentName),
+                                    equipmentUnits: updatedUnits
+                                  });
+                                } else {
+                                  // 3단계: 현재 호기 부품 교체
+                                  const updated = currentProject.equipmentUnits.map(u =>
+                                    u.unitIndex === activeUnit ? { ...u, parts: newParts } : u
+                                  );
+                                  updateCurrentProject({ ...currentProject, equipmentUnits: updated });
+                                }
+                                setPresetModalOpen(false);
+                              }}
+                              className="bg-emerald-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl shadow-glow-emerald hover:opacity-95 cursor-pointer flex items-center gap-1.5"
+                            >
+                              <span>✓</span>
+                              <span>이 엑셀 품목 전체를 품명에 나열 (적용)</span>
+                            </button>
+                          </div>
+
+                          <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-800">
+                            <table className="w-full text-left">
+                              <thead className="bg-slate-900 text-slate-400 font-semibold sticky top-0">
+                                <tr>
+                                  <th className="p-2 w-10 text-center">No</th>
+                                  <th className="p-2">모듈</th>
+                                  <th className="p-2">품명</th>
+                                  <th className="p-2">세부 사항</th>
+                                  <th className="p-2">규격</th>
+                                  <th className="p-2">Serial No.</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800">
+                                {parsedExcelParts.map((p, idx) => (
+                                  <tr key={idx} className="hover:bg-slate-900/50">
+                                    <td className="p-2 text-center text-slate-500 font-mono font-bold">{idx + 1}</td>
+                                    <td className="p-2 text-cyan-300 font-mono text-[11px] font-bold">{p.category}</td>
+                                    <td className="p-2 text-slate-200 font-semibold">{p.partName}</td>
+                                    <td className="p-2 text-slate-400">{p.subSpec}</td>
+                                    <td className="p-2 text-slate-400 font-mono text-[11px]">{p.spec}</td>
+                                    <td className="p-2 text-cyan-400 font-mono text-[11px]">{p.detectedSerial || "-"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
+                  <span className="text-slate-500">
+                    PJT 양식을 불러오면 언제든지 자유롭게 인라인 수정 및 OCR 스캔을 진행할 수 있습니다.
+                  </span>
+                  <button
+                    onClick={() => {
+                      setPresetModalOpen(false);
+                      setParsedExcelParts([]);
+                      setExcelUploadError(null);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-semibold hover:bg-slate-700 cursor-pointer"
+                  >
+                    닫기
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ✏️ PJT 양식 추가 / 수정 모달 (Template Editor) */}
+          {isTemplateEditorOpen && (
+            <div
+              className="fixed inset-0 flex items-center justify-center p-3 bg-black/90 backdrop-blur-md"
+              style={{ zIndex: 9999 }}
+            >
+              <div className="relative w-full max-w-3xl rounded-2xl bg-slate-900 border border-cyan-500/50 shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
+                <input
+                  ref={editorFileInputRef}
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={handleEditorExcelUpload}
+                  className="hidden"
+                />
+
+                {/* Editor Header */}
+                <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-sm">
+                      ✏️
+                    </div>
+                    <h4 className="text-sm font-bold text-white">
+                      {editingTemplateData ? `「${editingTemplateData.modelName}」 양식 수정` : "신규 PJT 양식 추가 등록"}
+                    </h4>
+                  </div>
+                  <button
+                    onClick={() => setIsTemplateEditorOpen(false)}
+                    className="text-slate-400 hover:text-white p-1 cursor-pointer text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Editor Form Body */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">
+                        양식 이름 (모델명) <span className="text-cyan-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={editorModelName}
+                        onChange={e => setEditorModelName(e.target.value)}
+                        placeholder="예: TM100L (NaVi-TM100L-0312)"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">양식 설명 / 비고</label>
+                      <input
+                        type="text"
+                        value={editorDescription}
+                        onChange={e => setEditorDescription(e.target.value)}
+                        placeholder="예: 8개 모듈 사내 표준 시리얼 리스트 양식"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Parts Toolbar */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                    <span className="font-bold text-white">
+                      포함 부품 목록 ({editorParts.length}개 품목)
+                    </span>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => editorFileInputRef.current && editorFileInputRef.current.click()}
+                        className="bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 px-2.5 py-1.5 rounded-lg font-semibold hover:bg-cyan-900 cursor-pointer flex items-center gap-1 text-[11px]"
+                        title="엑셀 파일을 읽어와 부품 리스트를 일괄 채웁니다"
+                      >
+                        <span>📂</span>
+                        <span>엑셀에서 가져오기</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const curParts = (currentProject && currentProject.equipmentUnits && currentProject.equipmentUnits.find(u => u.unitIndex === activeUnit)?.parts) || [];
+                          if (curParts.length > 0) {
+                            setEditorParts(curParts.map(p => ({ ...p, id: generateId() })));
+                          }
+                        }}
+                        className="bg-slate-800 text-slate-300 border border-slate-700 px-2.5 py-1.5 rounded-lg font-semibold hover:bg-slate-700 cursor-pointer flex items-center gap-1 text-[11px]"
+                      >
+                        <span>⚡</span>
+                        <span>현재 호기 부품 복사</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditorParts(prev => [
+                            ...prev,
+                            {
+                              id: generateId(),
+                              category: prev.length > 0 ? prev[prev.length - 1].category : "[ MAIN ]",
+                              partName: "",
+                              subSpec: "-",
+                              spec: "",
+                              detectedSerial: "",
+                              isVerified: false
+                            }
+                          ]);
+                        }}
+                        className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-2.5 py-1.5 rounded-lg font-bold hover:bg-cyan-500/30 cursor-pointer flex items-center gap-1 text-[11px]"
+                      >
+                        <span>+</span>
+                        <span>부품 추가</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Editable Parts Table */}
+                  <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-800">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-950 text-slate-400 font-semibold sticky top-0 text-[11px]">
+                        <tr>
+                          <th className="p-2 w-8 text-center">No</th>
+                          <th className="p-2 w-28">파트 구분</th>
+                          <th className="p-2 min-w-[120px]">품명</th>
+                          <th className="p-2 w-24">세부사항</th>
+                          <th className="p-2 min-w-[120px]">규격</th>
+                          <th className="p-2 w-10 text-center">삭제</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 text-[11px]">
+                        {editorParts.map((p, idx) => (
+                          <tr key={p.id || idx} className="hover:bg-slate-900/40">
+                            <td className="p-2 text-center text-slate-500 font-mono font-bold">
+                              {idx + 1}
+                            </td>
+                            <td className="p-1">
+                              <input
+                                type="text"
+                                value={p.category || ""}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setEditorParts(prev =>
+                                    prev.map((item, i) => (i === idx ? { ...item, category: val } : item))
+                                  );
+                                }}
+                                placeholder="[ MAIN ]"
+                                className="w-full bg-slate-950 border border-slate-800 rounded p-1 text-cyan-300 font-mono font-bold focus:border-cyan-500 focus:outline-none"
+                              />
+                            </td>
+                            <td className="p-1">
+                              <input
+                                type="text"
+                                value={p.partName || ""}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setEditorParts(prev =>
+                                    prev.map((item, i) => (i === idx ? { ...item, partName: val } : item))
+                                  );
+                                }}
+                                placeholder="품명 입력"
+                                className="w-full bg-slate-950 border border-slate-800 rounded p-1 text-white font-semibold focus:border-cyan-500 focus:outline-none"
+                              />
+                            </td>
+                            <td className="p-1">
+                              <input
+                                type="text"
+                                value={p.subSpec || ""}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setEditorParts(prev =>
+                                    prev.map((item, i) => (i === idx ? { ...item, subSpec: val } : item))
+                                  );
+                                }}
+                                placeholder="-"
+                                className="w-full bg-slate-950 border border-slate-800 rounded p-1 text-slate-300 focus:border-cyan-500 focus:outline-none"
+                              />
+                            </td>
+                            <td className="p-1">
+                              <input
+                                type="text"
+                                value={p.spec || ""}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setEditorParts(prev =>
+                                    prev.map((item, i) => (i === idx ? { ...item, spec: val } : item))
+                                  );
+                                }}
+                                placeholder="규격 입력"
+                                className="w-full bg-slate-950 border border-slate-800 rounded p-1 text-slate-300 font-mono focus:border-cyan-500 focus:outline-none"
+                              />
+                            </td>
+                            <td className="p-1 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditorParts(prev => prev.filter((_, i) => i !== idx));
+                                }}
+                                className="text-slate-500 hover:text-red-400 p-1 cursor-pointer text-xs"
+                              >
+                                ✕
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Editor Footer */}
+                <div className="p-3 border-t border-slate-800 bg-slate-950 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsTemplateEditorOpen(false)}
+                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 text-slate-300 text-xs hover:bg-slate-700 cursor-pointer"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveTemplateEditor}
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 text-xs font-bold shadow-glow-cyan hover:opacity-95 cursor-pointer"
+                  >
+                    <span>💾</span>
+                    <span>양식 저장 완료</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Camera OCR Modal */}
+          {ocrModalOpen && targetPart && (
+            <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-3">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-4 space-y-3 shadow-2xl">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-white">📸 {targetPart.partName} 명판 OCR</h3>
+                  <button onClick={closeOcr} className="text-slate-400 hover:text-white cursor-pointer">✕</button>
+                </div>
+
+                {/* Viewfinder */}
+                <div className="relative aspect-[4/3] bg-black rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center">
+                  <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 border-2 border-dashed border-cyan-400/80 m-6 rounded-lg pointer-events-none flex items-center justify-center">
+                    <span className="bg-slate-950/80 text-cyan-300 text-[10px] px-2 py-1 rounded">시리얼 각인부를 박스 안에 맞추세요</span>
+                    {isOcrProcessing && <div className="absolute inset-x-0 top-0 h-0.5 bg-cyan-400 scan-line" />}
+                  </div>
+                </div>
+
+                <button
+                  onClick={runOcr}
+                  disabled={isOcrProcessing}
+                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 py-3 rounded-xl font-bold text-slate-950 text-xs shadow-glow-cyan cursor-pointer"
+                >
+                  {isOcrProcessing ? `OCR 분석 중 (${ocrProgress}%)...` : "✨ 프레임 캡처 & 인메모리 시리얼 추출"}
+                </button>
+
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">인식된 시리얼 번호 (수정 가능):</label>
+                  <input
+                    type="text"
+                    value={ocrCandidate}
+                    onChange={e => setOcrCandidate(e.target.value.toUpperCase())}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono font-bold text-cyan-300 uppercase"
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 text-xs text-emerald-400 cursor-pointer">
+                  <input type="checkbox" checked={isVerifiedCheck} onChange={e => setIsVerifiedCheck(e.target.checked)} />
+                  <span>작업자 실물 검증 완료 (Verified)</span>
+                </label>
+
+                <div className="flex gap-2 pt-2">
+                  <button onClick={closeOcr} className="w-1/2 bg-slate-800 text-slate-300 py-2 rounded-xl text-xs cursor-pointer">취소</button>
+                  <button onClick={saveOcrResult} className="w-1/2 bg-emerald-500 text-slate-950 font-bold py-2 rounded-xl text-xs shadow-glow-emerald cursor-pointer">저장 및 확정</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+
+</html>

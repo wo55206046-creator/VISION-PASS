@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">VISION-PASS</string>
+    <string name="title_activity_main">VISION-PASS</string>
+    <string name="package_name">com.withtech.visionpass</string>
+    <string name="custom_url_scheme">com.withtech.visionpass</string>
+</resources>
