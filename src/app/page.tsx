@@ -46,6 +46,7 @@ export default function Home() {
     () => INITIAL_PROJECT_LIST[0]?.id || "pjt-001"
   );
   const [draftProject, setDraftProject] = useState<ProjectMaster | null>(null);
+  const [syncStatus, setSyncStatus] = useState<"connected" | "syncing" | "error">("connected");
 
   // 실시간 동기화 제어용 Refs
   const isInitialMount = useRef(true);
@@ -68,9 +69,10 @@ export default function Home() {
             localStorage.setItem(STORAGE_KEY, incomingJson);
           } catch {}
         }
+        setSyncStatus("connected");
       }
     } catch (err) {
-      // ignore
+      setSyncStatus("error");
     } finally {
       isSyncingInFlight.current = false;
     }
@@ -135,18 +137,63 @@ export default function Home() {
     };
   }, [projects]);
 
-  const currentProject = projects.find((p) => p.id === currentProjectId) || projects[0];
-
+  // 프로젝트 실시간 업데이트 (즉시 로컬 저장 및 클라우드 즉시 푸시)
   const updateCurrentProject = (updater: (prev: ProjectMaster) => ProjectMaster) => {
-    setProjects((prevProjects) =>
-      prevProjects.map((p) => {
+    setProjects((prevProjects) => {
+      const nextProjects = prevProjects.map((p) => {
         if (p.id === currentProjectId) {
           const updated = updater(p);
           return { ...updated, updatedAt: new Date().toISOString() };
         }
         return p;
-      })
-    );
+      });
+      
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextProjects));
+      } catch {}
+
+      // 0초 지연: 즉시 클라우드 전송 (모바일 백그라운드 전환 시에도 손실 방지)
+      pushProjectsToCloud(nextProjects).then((res) => {
+        if (res.success) {
+          lastKnownCloudJson.current = JSON.stringify(nextProjects);
+          setSyncStatus("connected");
+        }
+      }).catch(() => setSyncStatus("error"));
+
+      return nextProjects;
+    });
+  };
+
+  // 수동 즉시 동기화 버튼 핸들러 (PC 및 모바일 상단 버튼)
+  const handleForceManualSync = async () => {
+    setSyncStatus("syncing");
+    try {
+      // 1. 먼저 클라우드에서 최신 데이터 당겨오기
+      const pullRes = await pullProjectsFromCloud();
+      if (pullRes.success && pullRes.projects && pullRes.projects.length > 0) {
+        setProjects(pullRes.projects);
+        lastKnownCloudJson.current = JSON.stringify(pullRes.projects);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(pullRes.projects));
+        } catch {}
+        setSyncStatus("connected");
+        alert("✅ 클라우드와 실시간 동기화가 완료되었습니다!");
+        return;
+      }
+
+      // 2. 만약 클라우드가 비어있다면 현재 내 로컬 데이터를 클라우드로 전송
+      const pushRes = await pushProjectsToCloud(projects);
+      if (pushRes.success) {
+        setSyncStatus("connected");
+        alert("✅ 현재 데이터가 클라우드에 성공적으로 등록되었습니다!");
+      } else {
+        setSyncStatus("error");
+        alert("⚠️ 동기화 실패: 네트워크 상태를 확인해주세요.");
+      }
+    } catch (e) {
+      setSyncStatus("error");
+      alert("⚠️ 동기화 중 오류가 발생했습니다.");
+    }
   };
 
   const handleCreateNewProject = () => {
@@ -220,6 +267,8 @@ export default function Home() {
         onStepChange={(step) => setCurrentStep(step)}
         pjtCode={currentProject?.pjtCode}
         equipmentName={currentProject?.equipmentName}
+        syncStatus={syncStatus}
+        onForceSync={handleForceManualSync}
       />
 
       {/* Main Workspace View */}

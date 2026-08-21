@@ -9,6 +9,8 @@ interface HeaderProps {
   onStepChange: (step: number) => void;
   pjtCode?: string;
   equipmentName?: string;
+  syncStatus?: "connected" | "syncing" | "error";
+  onForceSync?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -16,6 +18,8 @@ export const Header: React.FC<HeaderProps> = ({
   onStepChange,
   pjtCode,
   equipmentName,
+  syncStatus = "connected",
+  onForceSync,
 }) => {
   const steps = [
     { num: 1, label: "1. PJT List" },
@@ -71,13 +75,37 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* System Badges & Zero-Storage Indicator */}
           <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-1.5 rounded-lg bg-emerald-950/50 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium text-emerald-400 border border-emerald-800/50">
+            {/* 실시간 클라우드 동기화 버튼 & 상태 표시등 */}
+            {onForceSync && (
+              <button
+                type="button"
+                onClick={onForceSync}
+                title="클라우드 실시간 동기화 (클릭 시 모바일↔PC 즉시 동기화)"
+                className="flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 px-2.5 sm:px-3 py-1.5 text-xs border border-slate-700 hover:border-cyan-500 text-slate-200 transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                <span className="text-cyan-400 font-bold">🔄</span>
+                <span className="hidden sm:inline font-bold">
+                  {syncStatus === "syncing" ? "동기화 중..." : "실시간 동기화"}
+                </span>
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    syncStatus === "connected"
+                      ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                      : syncStatus === "syncing"
+                      ? "bg-amber-400 animate-pulse"
+                      : "bg-emerald-400"
+                  }`}
+                />
+              </button>
+            )}
+
+            <div className="hidden lg:flex items-center gap-1.5 rounded-lg bg-emerald-950/50 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium text-emerald-400 border border-emerald-800/50">
               <ShieldCheck className="h-3.5 w-3.5" />
-              <span>Storage-Zero (인메모리)</span>
+              <span>Storage-Zero</span>
             </div>
 
             {pjtCode && (
-              <div className="hidden lg:flex items-center gap-1.5 rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-mono text-cyan-300 border border-slate-800">
+              <div className="hidden xl:flex items-center gap-1.5 rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-mono text-cyan-300 border border-slate-800">
                 <Zap className="h-3 w-3 text-cyan-400" />
                 <span>{pjtCode}</span>
                 {equipmentName && (
