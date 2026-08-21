@@ -465,7 +465,6 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             <ArrowRight className="h-4 w-4 stroke-[2.5]" />
           </button>
         </div>
-      </div>
 
       {/* 📑 PJT 양식 Modal */}
       <PresetModal
