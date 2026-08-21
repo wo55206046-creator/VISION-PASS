@@ -159,7 +159,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             02
           </span>
           <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
-            프로젝트 추가 (프로젝트 정보 및 Serial NO. 입력)
+            프로젝트 추가
           </h2>
         </div>
       </div>
