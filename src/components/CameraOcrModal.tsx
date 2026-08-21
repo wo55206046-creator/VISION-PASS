@@ -254,30 +254,39 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       ctx.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
     }
 
-    // ROI 타겟팅 크롭 (줌 배율에 맞춰 화면에 보이는 영역을 정밀 크롭)
-    const effectiveZoom = isHardwareZoom ? 1 : zoomLevel;
-    const visibleWidth = rawCanvas.width / effectiveZoom;
-    const visibleHeight = rawCanvas.height / effectiveZoom;
-    const visibleX = (rawCanvas.width - visibleWidth) / 2;
-    const visibleY = (rawCanvas.height - visibleHeight) / 2;
+    // ROI 타겟팅 크롭 (사용자 업로드 사진은 전체 프레임 사용, 카메라는 넓은 85% x 70% 와이드 ROI 적용)
+    let processedCanvas: HTMLCanvasElement;
+    let croppedCanvas: HTMLCanvasElement | null = null;
 
-    // 가이드 사각틀 내부의 시리얼 영역 (가로 80%, 세로 45%)
-    const roiWidth = visibleWidth * 0.8;
-    const roiHeight = visibleHeight * 0.45;
-    const roiX = visibleX + (visibleWidth - roiWidth) / 2;
-    const roiY = visibleY + (visibleHeight - roiHeight) / 2;
+    if (customCanvas) {
+      // 1. 직접 사진 업로드 시: 전체 이미지 전체 해상도 사용
+      processedCanvas = preprocessCanvas(customCanvas, options);
+    } else {
+      // 2. 카메라 촬영 시: 줌에 맞춘 85% x 70% 넓은 광시야각 ROI 크롭
+      const effectiveZoom = isHardwareZoom ? 1 : zoomLevel;
+      const visibleWidth = rawCanvas.width / effectiveZoom;
+      const visibleHeight = rawCanvas.height / effectiveZoom;
+      const visibleX = (rawCanvas.width - visibleWidth) / 2;
+      const visibleY = (rawCanvas.height - visibleHeight) / 2;
 
-    const croppedCanvas = cropCanvasROI(rawCanvas, {
-      x: roiX,
-      y: roiY,
-      width: roiWidth,
-      height: roiHeight,
-    });
+      const roiWidth = visibleWidth * 0.90;
+      const roiHeight = visibleHeight * 0.75;
+      const roiX = visibleX + (visibleWidth - roiWidth) / 2;
+      const roiY = visibleY + (visibleHeight - roiHeight) / 2;
+
+      croppedCanvas = cropCanvasROI(rawCanvas, {
+        x: roiX,
+        y: roiY,
+        width: roiWidth,
+        height: roiHeight,
+      }, 2.5);
+
+      processedCanvas = preprocessCanvas(croppedCanvas, options);
+    }
 
     // 1. 금속 명판 특화 전처리 파이프라인 적용
     setOcrProgress(25);
-    setOcrStatusText("반사광 억제 및 적응형 대비 강화 전처리 중...");
-    const processedCanvas = preprocessCanvas(croppedCanvas, options);
+    setOcrStatusText("광학 노이즈 억제 및 대비 강화 전처리 중...");
 
     // 프리뷰 캔버스에 표시
     if (previewCanvasRef.current) {
@@ -289,9 +298,9 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       }
     }
 
-    // 2. Tesseract.js 인메모리 OCR 실행
+    // 2. Tesseract.js 인메모리 OCR & 1D 바코드 복합 실행
     setOcrProgress(50);
-    setOcrStatusText("Tesseract 인메모리 OCR 문자 인식 중...");
+    setOcrStatusText("초정밀 텍스트 및 시리얼 번호 분석 중...");
 
     try {
       const result = await performInMemoryOcr(
@@ -322,7 +331,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     } finally {
       // 메모리 즉시 회수 (스토리지 제로)
       disposeCanvas(rawCanvas);
-      disposeCanvas(croppedCanvas);
+      if (croppedCanvas) disposeCanvas(croppedCanvas);
       disposeCanvas(processedCanvas);
 
       setOcrProgress(100);
