@@ -67,15 +67,20 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
   const [editingPjt, setEditingPjt] = useState<ProjectMaster | null>(null);
 
   // 현재 활성화된 호기
+  const equipmentUnits = project?.equipmentUnits || [];
   const currentUnit =
-    project.equipmentUnits.find((u) => u.unitIndex === activeUnitIndex) ||
-    project.equipmentUnits[0];
+    equipmentUnits.find((u) => u.unitIndex === activeUnitIndex) ||
+    equipmentUnits[0] || {
+      unitIndex: 1,
+      equipmentSerial: "",
+      parts: [],
+    };
 
   // 현재 호기 부품 목록 업데이트 핸들러
   const handleUpdateCurrentParts = (newParts: PartItem[]) => {
     onUpdate((prev) => ({
       ...prev,
-      equipmentUnits: prev.equipmentUnits.map((u) =>
+      equipmentUnits: (prev?.equipmentUnits || []).map((u) =>
         u.unitIndex === activeUnitIndex ? { ...u, parts: newParts } : u
       ),
     }));

@@ -112,6 +112,13 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         stream.getTracks().forEach((track) => track.stop());
       }
 
+      if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia) {
+        setHasCameraError(
+          "카메라 접근 권한이 없거나 지원되지 않는 브라우저 환경입니다. [📷 사진 직접 촬영 / 앨범 업로드] 버튼을 이용해주세요."
+        );
+        return;
+      }
+
       let mediaStream: MediaStream | null = null;
 
       // 1단계 시도: Full HD 후면 카메라 & 연속 자동초점
@@ -221,6 +228,11 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     } catch (e) {
       console.warn("Torch toggle failed:", e);
     }
+  };
+
+  // 카메라 전환 (전면/후면)
+  const switchFacingMode = () => {
+    setFacingMode((prev) => (prev === "environment" ? "user" : "environment"));
   };
 
   // 다시 촬영 (카메라 라이브 뷰 재개)
