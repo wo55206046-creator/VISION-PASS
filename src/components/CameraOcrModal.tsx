@@ -298,9 +298,9 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       }
     }
 
-    // 2. Tesseract.js 인메모리 OCR & 1D 바코드 복합 실행
+    // 2. Tesseract.js 순수 문자/숫자 광학 OCR 실행
     setOcrProgress(50);
-    setOcrStatusText("초정밀 텍스트 및 시리얼 번호 분석 중...");
+    setOcrStatusText("명판 인쇄 문자/숫자 정밀 광학 판독 중...");
 
     try {
       const result = await performInMemoryOcr(

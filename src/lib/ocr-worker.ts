@@ -5,7 +5,7 @@ let cachedWorker: Worker | null = null;
 let isInitializing = false;
 
 /**
- * Tesseract.js Worker 초기화 (싱글톤 & 산업용 고정밀 OCR 엔진)
+ * Tesseract.js Worker 초기화 (싱글톤 & 순수 문자/숫자 특화 OCR 엔진)
  */
 export async function getOcrWorker(
   onProgress?: (progress: number, status: string) => void
@@ -33,11 +33,11 @@ export async function getOcrWorker(
       },
     });
 
-    // 산업용 금속 명판 및 라벨 최적화 화이트리스트 & PSM 3(전체 자동 분할)
+    // 산업용 문자/숫자 전용 화이트리스트 & 자동 단락 분할(PSM 3) + 300 DPI
     await worker.setParameters({
       tessedit_char_whitelist:
-        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_./:#()=+ ",
-      tessedit_pageseg_mode: "3" as any, // Fully automatic page segmentation (PSM 3)
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_./:#()= ",
+      tessedit_pageseg_mode: "3" as any,
       user_defined_dpi: "300",
       preserve_interword_spaces: "1",
     });
@@ -158,7 +158,7 @@ export interface PartOcrContext {
 }
 
 /**
- * 유효한 시리얼 번호 형태인지 검증
+ * 유효한 시리얼 번호(문자+숫자 또는 순수 숫자) 형식 검증
  */
 function isValidSerialFormat(token: string): boolean {
   if (!token || token.length < 3 || token.length > 35) return false;
@@ -167,7 +167,7 @@ function isValidSerialFormat(token: string): boolean {
   // 1. 단순 반복 문자열 방지 (예: "------", "11111", "AAAAA", ".....", "||||||")
   if (/^(.)\1+$/.test(token)) return false;
 
-  // 2. 바코드 노이즈 라인 방지
+  // 2. 바코드 노이즈 선 (수직선, 슬래시 잔여물) 방지
   if (/^[|\-=_/\\.]+$/.test(token)) return false;
 
   // 3. 특수기호만으로 구성된 노이즈 방지
@@ -190,7 +190,7 @@ export function sanitizeSerialToken(token: string): string {
   if (!token) return "";
   let clean = token.toUpperCase().trim();
 
-  // 앞뒤 특수문자, 바코드 라인 잔여물 제거
+  // 앞뒤 특수문자, 노이즈 기호 제거
   clean = clean.replace(/^[^A-Z0-9]+/, "").replace(/[^A-Z0-9]+$/, "");
   clean = clean.replace(/\s+/g, "");
 
@@ -198,7 +198,7 @@ export function sanitizeSerialToken(token: string): string {
 }
 
 /**
- * 부품 규격/품명에서 모델명 키워드 추출 (규격이 시리얼로 오인되는 것 방지)
+ * 부품 규격/품명에서 모델명 키워드 추출 (규격/모델명이 시리얼로 오인되는 것 방지)
  */
 function extractForbiddenSpecTokens(context?: PartOcrContext): Set<string> {
   const forbidden = new Set<string>();
@@ -218,61 +218,21 @@ function extractForbiddenSpecTokens(context?: PartOcrContext): Set<string> {
 }
 
 /**
- * 1D 바코드 네이티브 하드웨어 스캐닝 (BarcodeDetector 지원 시 100% 신뢰도 즉시 추출)
- */
-export async function tryDetectNativeBarcode(
-  canvas: HTMLCanvasElement
-): Promise<string[]> {
-  const detected: string[] = [];
-  try {
-    const BarcodeDetectorClass = (window as unknown as { BarcodeDetector?: any })
-      .BarcodeDetector;
-    if (BarcodeDetectorClass) {
-      const barcodeDetector = new BarcodeDetectorClass({
-        formats: [
-          "code_128",
-          "code_39",
-          "code_93",
-          "ean_13",
-          "ean_8",
-          "upc_a",
-          "upc_e",
-          "qr_code",
-          "data_matrix",
-          "codabar",
-          "itf",
-        ],
-      });
-      const barcodes = await barcodeDetector.detect(canvas);
-      for (const b of barcodes) {
-        const val = sanitizeSerialToken(b.rawValue);
-        if (val && isValidSerialFormat(val)) {
-          detected.push(val);
-        }
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return detected;
-}
-
-/**
- * 텍스트 및 바코드에서 산업용 시리얼 번호를 정밀 추출 (다중 패턴 & 점수제)
+ * 텍스트에서 산업용 시리얼 번호를 정밀 추출 (순수 문자/숫자 OCR 전용)
  */
 export function extractSerialCandidates(
   rawText: string,
-  context?: PartOcrContext,
-  nativeBarcodes: string[] = []
+  context?: PartOcrContext
 ): {
   bestSerial: string;
   candidates: string[];
   lines: string[];
 } {
+  // 바코드 줄 노이즈(||||||) 필터링
   const rawLines = rawText
     .split("\n")
     .map((l) => l.trim())
-    .filter((l) => l.length > 0);
+    .filter((l) => l.length > 0 && !/^[|/\\_\-\s.]{4,}$/.test(l));
 
   const scoredMap = new Map<string, number>();
   const forbiddenSpecTokens = extractForbiddenSpecTokens(context);
@@ -295,13 +255,8 @@ export function extractSerialCandidates(
     }
   };
 
-  // [0] 바코드 리더에서 직접 인식된 100% 신뢰도 시리얼 (+1000점)
-  for (const bar of nativeBarcodes) {
-    addCandidate(bar, 1000);
-  }
-
   // [1] 명판 고유 S/N 패턴 정규식 목록:
-  // A. Moxa 스타일: "Production S/N: TBAJB1112637", "Product S/N : ..." (+500점)
+  // A. Moxa 스타일: "Production S/N: TBAJB1112637", "Product S/N: ...", "Prod S/N: ..." (+500점)
   const productionSnRegex =
     /(?:Production\s*S\s*[/\\|\-.]\s*N|Product\s*S\s*[/\\|\-.]\s*N|Prod\s*S\s*[/\\|\-.]\s*N|Mfg\s*S\s*[/\\|\-.]\s*N)\s*[:.\-|=]?\s*([A-Za-z0-9\-_./]{4,35})/gi;
 
@@ -309,7 +264,7 @@ export function extractSerialCandidates(
   const spaceSerialRegex =
     /(?:^|\s)(?:SERIAL|SER\.?\s*NO\.?|S\/N|SN)\s*[:.\-|=]?\s*([A-Za-z0-9\-_./]{4,35})/gi;
 
-  // C. Advantech 스타일: "SN: KMA9011219", "S/N: 2026-X88", "S.N: ..." (+480점)
+  // C. Advantech 스타일: "SN: KMA9011219", "S/N: 2026-X88", "S.N: ...", "S/NO: ..." (+480점)
   const strongPrefixRegex =
     /(?:SERIAL\s*(?:NUMBER|NO\.?|#|CODE)?|S\s*[/\\|\-.]\s*N|S\s*N|SER\.?\s*(?:NO\.?|#)|S\/NO\.?|S\.NO\.?|S\.N\.)\s*[:.\-|=]\s*([A-Za-z0-9\-_./]{3,35})/gi;
 
@@ -317,7 +272,7 @@ export function extractSerialCandidates(
   const fuzzyPrefixRegex =
     /(?:S[I1|l]N|5\s*[/\\|\-.]\s*N|S\s*\|\s*N|SER[I1|l]AL\s*(?:NO\.?|#)?|S\/M|S\s*M)\s*[:.\-|=]?\s*([A-Za-z0-9\-_./]{3,35})/gi;
 
-  // E. 줄 단독 S/N 헤더 (아래 1~2줄에 시리얼/바코드가 위치한 경우) (+450점)
+  // E. 줄 단독 S/N 헤더 (아래 1~2줄에 시리얼 문자가 위치한 경우) (+460점)
   const headerOnlyRegex =
     /^(?:Production\s*S\s*[/\\|\-.]\s*N|Product\s*S\s*[/\\|\-.]\s*N|SERIAL\s*(?:NUMBER|NO\.?|#|CODE)?|S\s*[/\\|\-.]\s*N|S\s*N|SER\.?\s*(?:NO\.?|#)|S[I1|l]N|S\/NO\.?|S\.N\.?)$/i;
 
@@ -363,23 +318,23 @@ export function extractSerialCandidates(
       if (match[1]) addCandidate(match[1], 420);
     }
 
-    // 5. 헤더 아래 1~2줄 위치 시리얼 추적 (450점)
+    // 5. 헤더 아래 1~2줄 위치 시리얼 추적 (460점)
     if (headerOnlyRegex.test(line.trim())) {
       if (i + 1 < rawLines.length) {
         const nextTokens = rawLines[i + 1].split(/[\s,;:()[\]|]+/);
         for (const t of nextTokens) {
-          addCandidate(t, 450);
+          addCandidate(t, 460);
         }
       }
       if (i + 2 < rawLines.length) {
         const next2Tokens = rawLines[i + 2].split(/[\s,;:()[\]|]+/);
         for (const t of next2Tokens) {
-          addCandidate(t, 420);
+          addCandidate(t, 430);
         }
       }
     }
 
-    // 6. 모든 일반 영문+숫자 혼합 또는 연속 숫자 시리얼 토큰 유연 추출
+    // 6. 모든 일반 영문+숫자 혼합 또는 연속 숫자 시리얼 토큰 추출
     const tokens = line.split(/[\s,;:()[\]|]+/);
     for (const rawTok of tokens) {
       const tok = sanitizeSerialToken(rawTok);
@@ -388,13 +343,13 @@ export function extractSerialCandidates(
       const hasAlpha = /[A-Z]/.test(tok);
       const hasDigit = /[0-9]/.test(tok);
 
-      // A. 영문+숫자 혼합 (예: KMA9011219, TBAJB1112637, Z0065234, 25X-0049H, 230600231746059-A, TM1L-HK26-1007)
+      // A. 영문+숫자 혼합 (예: KMA9011219, TBAJB1112637, Z0065234, 25X-0049H, 230600231746059-A, TM1L-HK26-1007, SOTSU-SK26-0701)
       if (hasAlpha && hasDigit && tok.length >= 4 && tok.length <= 30) {
-        addCandidate(tok, 300);
+        addCandidate(tok, 320);
       }
       // B. 5~18자리 연속 숫자 (예: 673644, 092402204027, 8821034)
       else if (!hasAlpha && hasDigit && tok.length >= 5 && tok.length <= 18) {
-        addCandidate(tok, 270);
+        addCandidate(tok, 290);
       }
     }
   }
@@ -417,17 +372,13 @@ export function extractSerialCandidates(
 }
 
 /**
- * 캔버스 메모리 상에서 직접 OCR 및 바코드 복합 인식 수행 (Storage Zero)
+ * 캔버스 메모리 상에서 순수 문자/숫자 정밀 광학 OCR 실행 (Storage Zero)
  */
 export async function performInMemoryOcr(
   canvas: HTMLCanvasElement,
   onProgress?: (progress: number, status: string) => void,
   context?: PartOcrContext
 ): Promise<OcrResult> {
-  // 1. 네이티브 바코드 스캔 시도 (Advantech, Moxa 등 바코드 100% 인식)
-  const nativeBarcodes = await tryDetectNativeBarcode(canvas);
-
-  // 2. Tesseract OCR 실행
   const worker = await getOcrWorker(onProgress);
   const result = await worker.recognize(canvas);
 
@@ -436,18 +387,16 @@ export async function performInMemoryOcr(
 
   const { bestSerial, candidates, lines } = extractSerialCandidates(
     rawText,
-    context,
-    nativeBarcodes
+    context
   );
 
   const finalSerial = candidates.length > 0 ? bestSerial : "";
   const finalCandidates = candidates.length > 0 ? candidates : [];
-  const finalConfidence = nativeBarcodes.length > 0 ? 100 : confidence;
 
   return {
     rawText,
     cleanedSerial: finalSerial,
-    confidence: finalConfidence,
+    confidence,
     lines,
     candidates: finalCandidates,
   };
