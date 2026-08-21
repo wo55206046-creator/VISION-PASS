@@ -137,14 +137,14 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
         confidence: undefined,
       }));
 
-      const updatedUnits = prev.equipmentUnits.map((u) => ({
+      const updatedUnits = (prev?.equipmentUnits || []).map((u) => ({
         ...u,
         parts: templateParts.map((p) => ({ ...p, id: generateId() })),
       }));
 
       return {
         ...prev,
-        equipmentName: template.modelName, // 선택한 양식명으로 즉시 변경
+        equipmentName: template.modelName, // 선택한 양식명으로 즉시 통일
         equipmentUnits: updatedUnits,
       };
     });

@@ -678,14 +678,14 @@ export const PresetModal: React.FC<PresetModalProps> = ({
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
 
-                          {/* ✨ 이 PJT 양식으로 품명 로드 버튼 */}
+                          {/* ✨ PJT 양식 선택 버튼 */}
                           <button
                             type="button"
                             onClick={() => handleApplyTemplate(tpl, true)}
                             className="bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 cursor-pointer flex items-center gap-1.5 shrink-0"
                           >
                             <Sparkles className="h-3.5 w-3.5" />
-                            <span>이 PJT 양식으로 품명 로드</span>
+                            <span>PJT 양식 선택</span>
                           </button>
                         </div>
                       </div>

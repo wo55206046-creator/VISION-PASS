@@ -63,8 +63,9 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   const [options, setOptions] = useState<PreprocessingOptions>(DEFAULT_PREPROCESSING_OPTIONS);
   const [showOptions, setShowOptions] = useState(false);
 
-  // OCR State
+  // UI 및 처리 상태
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isFrozen, setIsFrozen] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrStatusText, setOcrStatusText] = useState("");
   const [ocrResult, setOcrResult] = useState<OcrResult | null>(null);
@@ -190,6 +191,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       setSelectedSerial(targetPart.detectedSerial || "");
       setIsVerifiedCheck(true);
       setOcrResult(null);
+      setIsFrozen(false);
       setZoomLevel(1);
       startCamera();
     } else {
@@ -221,16 +223,21 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     }
   };
 
-  // 카메라 전환 (전면/후면)
-  const switchFacingMode = () => {
-    setFacingMode((prev) => (prev === "environment" ? "user" : "environment"));
+  // 다시 촬영 (카메라 라이브 뷰 재개)
+  const handleRetake = () => {
+    setIsFrozen(false);
+    setOcrResult(null);
+    setSelectedSerial("");
+    try {
+      videoRef.current?.play().catch(console.warn);
+    } catch {}
   };
 
-  // 인메모리 캡처 & OCR 수행 (Storage Zero)
+  // 인메모리 원터치 셔터 캡처 & OCR 수행 (Storage Zero: 사진 즉시 휘발)
   const captureAndRecognize = async (customCanvas?: HTMLCanvasElement) => {
     setIsProcessing(true);
     setOcrProgress(5);
-    setOcrStatusText("금속 명판 프레임 캡처 중...");
+    setOcrStatusText("금속 명판 프레임 순간 캡처 중...");
 
     let rawCanvas: HTMLCanvasElement;
 
@@ -242,6 +249,12 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         setIsProcessing(false);
         return;
       }
+
+      // 화면 일시정지 (작업자가 팔을 편하게 내릴 수 있도록 프레임 동결)
+      try {
+        video.pause();
+        setIsFrozen(true);
+      } catch {}
 
       rawCanvas = document.createElement("canvas");
       rawCanvas.width = video.videoWidth || 1280;
@@ -434,11 +447,17 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                   <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-300 to-transparent animate-pulse" />
                 )}
 
-                {/* Guide Text */}
+                {/* Guide Text / Freeze Status Badge */}
                 <div className="absolute -top-5 inset-x-0 text-center">
-                  <span className="bg-slate-950/80 text-cyan-300 text-[10px] font-mono font-bold px-2 py-0.2 rounded-full border border-cyan-500/40">
-                    [ 명판 영역 맞춤 ]
-                  </span>
+                  {isFrozen ? (
+                    <span className="bg-emerald-950/90 text-emerald-300 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/60 shadow-glow-emerald">
+                      ✓ 촬영 완료 (사진 즉시 휘발됨)
+                    </span>
+                  ) : (
+                    <span className="bg-slate-950/80 text-cyan-300 text-[10px] font-mono font-bold px-2 py-0.2 rounded-full border border-cyan-500/40">
+                      [ 명판 영역 맞춤 후 촬영 ]
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -521,26 +540,38 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             )}
           </div>
 
-          {/* Action Trigger Buttons */}
+          {/* Action Trigger Buttons (원터치 셔터 촬영 & 즉시 휘발) */}
           <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={isProcessing}
-              onClick={() => captureAndRecognize()}
-              className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 py-2.5 px-3 rounded-xl text-xs sm:text-sm shadow-glow-cyan hover:opacity-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              {isProcessing ? (
-                <>
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                  <span>광학 분석 및 S/N 추출 중...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  <span>명판 촬영 & 시리얼 즉시 추출 ({zoomLevel}x)</span>
-                </>
-              )}
-            </button>
+            {!isFrozen ? (
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={() => captureAndRecognize()}
+                className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 py-3 px-4 rounded-xl text-xs sm:text-sm shadow-glow-cyan hover:opacity-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              >
+                {isProcessing ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <span>사진 즉시 휘발 & S/N 정밀 추출 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Camera className="h-4 w-4 stroke-[2.5]" />
+                    <span>📸 찰칵! 명판 촬영 & 시리얼 즉시 추출 ({zoomLevel}x)</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={handleRetake}
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-700 hover:border-cyan-500 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>🔄 다시 촬영하기</span>
+              </button>
+            )}
           </div>
 
           {/* Real-Time Processing Progress Bar */}
