@@ -380,22 +380,44 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
               </button>
             </div>
 
-            <div className="space-y-3.5 text-xs">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-slate-300 font-bold block">PJT CODE *</label>
+            <div className="space-y-3 text-xs">
+              {/* 1. PJT CODE (좌) & 고객사 (우) */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">PJT CODE *</label>
+                  <input
+                    type="text"
+                    placeholder="예: S26-15-01"
+                    value={editingPjt.pjtCode}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setEditingPjt({ ...editingPjt, pjtCode: e.target.value.toUpperCase() })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 font-mono font-bold text-cyan-300 uppercase focus:border-cyan-500 focus:outline-none"
+                  />
                 </div>
-                <input
-                  type="text"
-                  placeholder="예: S26-15-01"
-                  value={editingPjt.pjtCode}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setEditingPjt({ ...editingPjt, pjtCode: e.target.value.toUpperCase() })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 font-mono font-bold text-cyan-300 uppercase focus:border-cyan-500 focus:outline-none"
-                />
+
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-slate-300 font-bold block">고객사</label>
+                    <span className="text-[10px] text-cyan-400">선택/입력</span>
+                  </div>
+                  <input
+                    type="text"
+                    list="edit-modal-site-list-options"
+                    value={editingPjt.site}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingPjt({ ...editingPjt, site: e.target.value })}
+                    placeholder="예: SKH 이천, SEC 평택"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+                  />
+                  <datalist id="edit-modal-site-list-options">
+                    {DEFAULT_SITES.map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
+                </div>
               </div>
 
+              {/* 2. 모델명 (인증명) */}
               <div>
                 <label className="text-slate-300 font-bold block mb-1">
                   모델명 (인증명) *
@@ -407,35 +429,42 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                     setEditingPjt({ ...editingPjt, equipmentName: e.target.value })
                   }
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 font-bold text-white focus:border-cyan-500 focus:outline-none"
-                  placeholder="예: NaVi-MG200 (NaVi-MG200H-0224), WOA-683 (WOA-683-0124)"
+                  placeholder="예: NaVi-MG200 (NaVi-MG200H-0224)"
                 />
               </div>
 
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-slate-300 font-bold block">고객사</label>
-                  <span className="text-[10px] text-cyan-400">직접 입력 및 목록 선택 가능</span>
+              {/* 3. 설비 담당자 (좌) & 검사일자 (우) */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">설비 담당자</label>
+                  <input
+                    type="text"
+                    placeholder="예: 홍길동"
+                    value={editingPjt.inspectorName}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setEditingPjt({ ...editingPjt, inspectorName: e.target.value })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+                  />
                 </div>
-                <input
-                  type="text"
-                  list="edit-modal-site-list-options"
-                  value={editingPjt.site}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingPjt({ ...editingPjt, site: e.target.value })}
-                  placeholder="예: SKH 이천, SEC 평택"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
-                />
-                <datalist id="edit-modal-site-list-options">
-                  {DEFAULT_SITES.map((s) => (
-                    <option key={s} value={s} />
-                  ))}
-                </datalist>
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">검사일자</label>
+                  <input
+                    type="date"
+                    value={editingPjt.inspectionDate}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setEditingPjt({ ...editingPjt, inspectionDate: e.target.value })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
               </div>
 
-              {/* 호기별 Serial NO. 수정 및 호기 추가 */}
+              {/* 4. 호기별 설비 S/N 수정 */}
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-cyan-300 font-bold block text-[11px]">
-                    호기별 설비 Serial NO. 수정 (총 {editingPjt.equipmentUnits.length}대) :
+                    호기별 설비 S/N 수정 (총 {editingPjt.equipmentUnits.length}대) :
                   </label>
                   <button
                     type="button"
@@ -470,7 +499,7 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                   </button>
                 </div>
 
-                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                   {editingPjt.equipmentUnits.map((u) => (
                     <div
                       key={u.unitIndex}
@@ -525,32 +554,6 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                       )}
                     </div>
                   ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-300 font-bold block mb-1">설비 담당자</label>
-                  <input
-                    type="text"
-                    placeholder="예: 홍길동"
-                    value={editingPjt.inspectorName}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setEditingPjt({ ...editingPjt, inspectorName: e.target.value })
-                    }
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-300 font-bold block mb-1">검사일자</label>
-                  <input
-                    type="date"
-                    value={editingPjt.inspectionDate}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setEditingPjt({ ...editingPjt, inspectionDate: e.target.value })
-                    }
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:border-cyan-500 focus:outline-none"
-                  />
                 </div>
               </div>
             </div>
