@@ -287,15 +287,15 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       // 1. 직접 사진 업로드 시: 전체 이미지 전체 해상도 사용
       processedCanvas = preprocessCanvas(customCanvas, options);
     } else {
-      // 2. 카메라 촬영 시: 줌에 맞춘 85% x 70% 넓은 광시야각 ROI 크롭
+      // 2. 카메라 촬영 시: 줌에 맞춘 96% x 90% 초광각 전체 캡처 ROI 적용
       const effectiveZoom = isHardwareZoom ? 1 : zoomLevel;
       const visibleWidth = rawCanvas.width / effectiveZoom;
       const visibleHeight = rawCanvas.height / effectiveZoom;
       const visibleX = (rawCanvas.width - visibleWidth) / 2;
       const visibleY = (rawCanvas.height - visibleHeight) / 2;
 
-      const roiWidth = visibleWidth * 0.90;
-      const roiHeight = visibleHeight * 0.75;
+      const roiWidth = visibleWidth * 0.96;
+      const roiHeight = visibleHeight * 0.90;
       const roiX = visibleX + (visibleWidth - roiWidth) / 2;
       const roiY = visibleY + (visibleHeight - roiHeight) / 2;
 

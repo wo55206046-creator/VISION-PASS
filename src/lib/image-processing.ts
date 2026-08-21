@@ -3,7 +3,7 @@ import { PreprocessingOptions } from "@/types";
 export const DEFAULT_PREPROCESSING_OPTIONS: PreprocessingOptions = {
   grayscale: true,
   contrastStretch: true,
-  adaptiveThreshold: true,
+  adaptiveThreshold: false, // Tesseract 5 LSTM 신경망은 Grayscale에서 정확도가 가장 높음
   invert: false,
   blurReduction: true,
   windowSize: 21,
