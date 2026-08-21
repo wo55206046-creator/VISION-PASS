@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { ProjectMaster } from "@/types";
 import { INITIAL_PROJECT_LIST, createBlankProject } from "@/lib/default-presets";
 import { Header } from "@/components/Header";
@@ -8,6 +8,8 @@ import { PjtListStep } from "@/components/PjtListStep";
 import { ProjectMasterStep } from "@/components/ProjectMasterStep";
 import { EquipmentUnitStep } from "@/components/EquipmentUnitStep";
 import { TemplateManagerStep } from "@/components/TemplateManagerStep";
+import { SyncModal } from "@/components/SyncModal";
+import { pushProjectsToCloud, pullProjectsFromCloud, getSyncRoomKey } from "@/lib/cloud-sync";
 import {
   ShieldCheck,
   Cpu,
@@ -17,7 +19,7 @@ import {
   Layers,
 } from "lucide-react";
 
-const STORAGE_KEY = "VISION_PASS_PROJECTS_DATA_V6";
+const STORAGE_KEY = "VISION_PASS_PROJECTS_DATA_V7";
 
 function loadSavedProjects(): ProjectMaster[] {
   if (typeof window === "undefined") return INITIAL_PROJECT_LIST;
@@ -25,10 +27,7 @@ function loadSavedProjects(): ProjectMaster[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      const isUpToDate = parsed.some(
-        (p: ProjectMaster) => p.inspectorName && p.inspectorName.includes("김형태, 유병준")
-      );
-      if (isUpToDate && Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
       }
     }
@@ -48,18 +47,39 @@ export default function Home() {
     () => INITIAL_PROJECT_LIST[0]?.id || "pjt-001"
   );
   const [draftProject, setDraftProject] = useState<ProjectMaster | null>(null);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
+  const isInitialMount = useRef(true);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 클라이언트 마운트 시 localStorage에서 복원
+  // 1. 클라이언트 마운트 시: 로컬 스토리지 복원 + 클라우드 최신 데이터 자동 풀 시도
   useEffect(() => {
     const saved = loadSavedProjects();
     if (saved && saved.length > 0) {
       setProjects(saved);
       setCurrentProjectId(saved[0].id || "pjt-001");
     }
+
+    // 클라우드에서 최신 데이터가 있는지 비동기 확인 후 자동 병합
+    const autoSyncFromCloud = async () => {
+      const roomKey = getSyncRoomKey();
+      const res = await pullProjectsFromCloud(roomKey);
+      if (res.success && res.projects && res.projects.length > 0) {
+        setProjects(res.projects);
+        if (res.projects[0]?.id) {
+          setCurrentProjectId(res.projects[0].id);
+        }
+      }
+    };
+    autoSyncFromCloud();
   }, []);
 
-  // projects 변경 시 localStorage 자동 실시간 저장
+  // 2. projects 변경 시: 로컬 스토리지 저장 + 클라우드 자동 동기화 (디바운스 2초)
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
     try {
       if (projects && projects.length > 0) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
@@ -67,6 +87,19 @@ export default function Home() {
     } catch (e) {
       console.warn("Failed to save projects to localStorage", e);
     }
+
+    // 클라우드 자동 푸시 디바운스
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+    syncTimeoutRef.current = setTimeout(() => {
+      const roomKey = getSyncRoomKey();
+      pushProjectsToCloud(projects, roomKey);
+    }, 2000);
+
+    return () => {
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    };
   }, [projects]);
 
   const currentProject = projects.find((p) => p.id === currentProjectId) || projects[0];
@@ -119,84 +152,89 @@ export default function Home() {
   };
 
   const handleDeleteProject = (projectId: string) => {
-    if (projects.length <= 1) {
-      alert("최소 1개 이상의 프로젝트가 유지되어야 합니다.");
-      return;
-    }
-    if (confirm("해당 프로젝트를 목록에서 삭제하시겠습니까?")) {
-      const remaining = projects.filter((p) => p.id !== projectId);
-      setProjects(remaining);
-      if (currentProjectId === projectId) {
-        setCurrentProjectId(remaining[0].id || "");
-      }
+    const target = projects.find((p) => p.id === projectId);
+    const targetName = target ? `${target.pjtCode} (${target.equipmentName})` : "해당 프로젝트";
+    if (confirm(`[${targetName}] 를 정말 삭제하시겠습니까?`)) {
+      setProjects((prev) => {
+        const next = prev.filter((p) => p.id !== projectId);
+        if (next.length > 0 && currentProjectId === projectId) {
+          setCurrentProjectId(next[0].id || "");
+        }
+        return next;
+      });
     }
   };
 
+  const handleSaveDraftProject = (pjtToSave: ProjectMaster) => {
+    const isExisting = projects.some((p) => p.id === pjtToSave.id);
+    if (isExisting) {
+      setProjects((prev) =>
+        prev.map((p) => (p.id === pjtToSave.id ? { ...pjtToSave, updatedAt: new Date().toISOString() } : p))
+      );
+    } else {
+      setProjects((prev) => [{ ...pjtToSave, updatedAt: new Date().toISOString() }, ...prev]);
+    }
+    setCurrentProjectId(pjtToSave.id || "");
+    setDraftProject(null);
+    setCurrentStep(3); // 저장 후 3단계(설비 OCR)로 자동 전환
+  };
+
+  const handleResetDefaultProjects = () => {
+    setProjects(INITIAL_PROJECT_LIST);
+    setCurrentProjectId(INITIAL_PROJECT_LIST[0]?.id || "pjt-001");
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_PROJECT_LIST));
+    } catch {}
+    const roomKey = getSyncRoomKey();
+    pushProjectsToCloud(INITIAL_PROJECT_LIST, roomKey);
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950">
-      {/* Global Cleanroom Top Navigation */}
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950 pb-20 md:pb-6">
+      {/* Dynamic Header with Stepper & Logo */}
       <Header
         currentStep={currentStep}
         onStepChange={(step) => setCurrentStep(step)}
         pjtCode={currentProject?.pjtCode}
         equipmentName={currentProject?.equipmentName}
+        onOpenSyncModal={() => setIsSyncModalOpen(true)}
       />
 
-      {/* Main Container (모바일 하단 내비게이션 바 여백 pb-24 확보) */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 md:pb-8">
-        {/* Step 1: PJT List (프로젝트 목록 전체 조회 & 선택) */}
+      {/* Main Workspace View */}
+      <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+        {/* Step 1: PJT List (프로젝트 목록 관리) */}
         {currentStep === 1 && (
           <PjtListStep
             projects={projects}
             currentProjectId={currentProjectId}
             onSelectProject={handleSelectProject}
             onCreateNewProject={handleCreateNewProject}
-            onUpdateProject={(updatedPjt) => {
-              setProjects((prev) =>
-                prev.map((p) =>
-                  p.id === updatedPjt.id
-                    ? { ...updatedPjt, updatedAt: new Date().toISOString() }
-                    : p
-                )
-              );
-            }}
             onDuplicateProject={handleDuplicateProject}
             onDeleteProject={handleDeleteProject}
+            onUpdateProjects={(updated) => setProjects(updated)}
           />
         )}
 
-        {/* Step 2: PJT 입력 (프로젝트 마스터 정보 작성 및 수정) */}
+        {/* Step 2: 프로젝트 추가 / 수정 (Project Master Form) */}
         {currentStep === 2 && (
           <ProjectMasterStep
-            project={draftProject || currentProject}
+            project={draftProject || currentProject || INITIAL_PROJECT_LIST[0]}
             onUpdate={(updater) => {
               if (draftProject) {
-                setDraftProject((prev) => (prev ? updater(prev) : null));
+                setDraftProject(updater(draftProject));
               } else {
                 updateCurrentProject(updater);
               }
             }}
-            onBackToPjtList={() => {
+            onSaveAndNext={handleSaveDraftProject}
+            onCancel={() => {
               setDraftProject(null);
               setCurrentStep(1);
-            }}
-            onNext={() => {
-              if (draftProject) {
-                const finalPjt = {
-                  ...draftProject,
-                  quantity: draftProject.equipmentUnits.length,
-                  updatedAt: new Date().toISOString(),
-                };
-                setProjects((prev) => [finalPjt, ...prev]);
-                setCurrentProjectId(finalPjt.id || "");
-                setDraftProject(null);
-              }
-              setCurrentStep(3);
             }}
           />
         )}
 
-        {/* Step 3: 호기/부품 OCR 검사 및 엑셀 다운로드 */}
+        {/* Step 3: 설비 OCR 및 부품 Serial 검증 (Equipment Units & Parts) */}
         {currentStep === 3 && (
           <EquipmentUnitStep
             project={currentProject}
@@ -210,7 +248,7 @@ export default function Home() {
         {currentStep === 4 && <TemplateManagerStep />}
       </main>
 
-      {/* Mobile Floating Bottom Navigation Dock (스마트폰 하단 엄지손가락 전용 내비게이션 바) */}
+      {/* Mobile Floating Bottom Navigation Dock */}
       <nav className="fixed bottom-0 inset-x-0 z-40 md:hidden bg-slate-950/95 backdrop-blur-lg border-t border-slate-800 py-1.5 px-3 shadow-2xl safe-bottom">
         <div className="grid grid-cols-4 gap-1">
           {[
@@ -244,6 +282,18 @@ export default function Home() {
           })}
         </div>
       </nav>
+
+      {/* Cloud Sync & Backup Modal */}
+      <SyncModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        projects={projects}
+        onUpdateProjects={(newProjects) => {
+          setProjects(newProjects);
+          if (newProjects[0]?.id) setCurrentProjectId(newProjects[0].id);
+        }}
+        onResetDefault={handleResetDefaultProjects}
+      />
 
       {/* Industrial Footer */}
       <footer className="mt-auto border-t border-slate-800 bg-slate-950/90 py-6 text-xs text-slate-500 hidden md:block">

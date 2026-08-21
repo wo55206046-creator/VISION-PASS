@@ -9,6 +9,7 @@ interface HeaderProps {
   onStepChange: (step: number) => void;
   pjtCode?: string;
   equipmentName?: string;
+  onOpenSyncModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -16,6 +17,7 @@ export const Header: React.FC<HeaderProps> = ({
   onStepChange,
   pjtCode,
   equipmentName,
+  onOpenSyncModal,
 }) => {
   const steps = [
     { num: 1, label: "1. PJT List" },
@@ -69,12 +71,27 @@ export const Header: React.FC<HeaderProps> = ({
             })}
           </nav>
 
-          {/* System Badges & Zero-Storage Indicator */}
+          {/* System Badges & Cloud Sync Button */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 rounded-lg bg-emerald-950/50 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium text-emerald-400 border border-emerald-800/50">
+            {/* Cloud Sync Button */}
+            {onOpenSyncModal && (
+              <button
+                type="button"
+                onClick={onOpenSyncModal}
+                className="flex items-center gap-1.5 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/80 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold text-cyan-300 border border-cyan-700/60 transition-all cursor-pointer shadow-sm active:scale-95"
+                title="PC ↔ 스마트폰 실시간 데이터 동기화 및 백업"
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                </span>
+                <span>클라우드 동기화</span>
+              </button>
+            )}
+
+            <div className="hidden sm:flex items-center gap-1.5 rounded-lg bg-emerald-950/50 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium text-emerald-400 border border-emerald-800/50">
               <ShieldCheck className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Storage-Zero (인메모리)</span>
-              <span className="sm:hidden">Storage 0</span>
+              <span>Storage-Zero (인메모리)</span>
             </div>
 
             {pjtCode && (
