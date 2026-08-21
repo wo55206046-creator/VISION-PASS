@@ -192,8 +192,8 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
         </div>
       </div>
 
-      {/* Horizontal Wide Row List (가로 나열 방식) */}
-      <div className="space-y-3">
+      {/* PC 2열 그리드 & 모바일 1열 카드 배치 (PC 뷰에서 반반 2개 PJT 표시) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4">
         {filteredProjects.map((pjt) => {
           const isCurrent = pjt.id === currentProjectId;
           let totalParts = 0;
@@ -212,97 +212,99 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
             <div
               key={pjt.id}
               onClick={() => onSelectProject(pjt.id || "", 1)}
-              className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer space-y-2.5 ${
+              className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer space-y-2.5 flex flex-col justify-between ${
                 isCurrent
                   ? "bg-slate-900/95 border-cyan-500 shadow-glow-cyan ring-1 ring-cyan-500/50"
                   : "bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900"
               }`}
             >
-              {/* 1. Left: Main Info (고객사 -> PJT CODE -> 설비명) */}
-              <div className="flex items-center gap-2 min-w-0">
-                {/* 1. 고객사 */}
-                <span
-                  className={`shrink-0 whitespace-nowrap text-xs font-bold flex items-center gap-1 px-2.5 py-0.5 rounded-lg border shadow-sm ${siteStyle.bg}`}
-                >
-                  <Building2 className={`h-3.5 w-3.5 ${siteStyle.icon}`} />
-                  <span>{pjt.site}</span>
-                </span>
-
-                {/* 2. PJT CODE */}
-                <span className="shrink-0 whitespace-nowrap font-mono font-extrabold text-xs text-white tracking-wider bg-slate-950 px-2.5 py-0.5 rounded-lg border border-slate-800">
-                  {pjt.pjtCode}
-                </span>
-
-                {/* 3. 프로젝트 이름 / 설비명 */}
-                <h3
-                  className="min-w-0 truncate font-bold text-white text-sm sm:text-base tracking-wide"
-                  title={pjt.equipmentName}
-                >
-                  {pjt.equipmentName}
-                </h3>
-              </div>
-
-              {/* 2. Serial NO. & 검사완료 현황 (바코드 아이콘 제거, Serial NO와 검사완료를 동일 줄에 배치) */}
-              <div className="bg-slate-950/80 border border-slate-800/80 px-3 py-1.5 rounded-xl font-mono text-xs flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className="text-[11px] text-cyan-400 font-bold shrink-0">
-                    Serial NO:
+              <div className="space-y-2.5">
+                {/* 1. Main Info: 고객사 -> PJT CODE -> 설비명 */}
+                <div className="flex items-center gap-2 min-w-0">
+                  {/* 고객사 */}
+                  <span
+                    className={`shrink-0 whitespace-nowrap text-xs font-bold flex items-center gap-1 px-2.5 py-0.5 rounded-lg border shadow-sm ${siteStyle.bg}`}
+                  >
+                    <Building2 className={`h-3.5 w-3.5 ${siteStyle.icon}`} />
+                    <span>{pjt.site}</span>
                   </span>
-                  <span className="text-cyan-300 font-medium tracking-wide text-xs truncate">
-                    {formatSerialRange(pjt.equipmentUnits)}
+
+                  {/* PJT CODE */}
+                  <span className="shrink-0 whitespace-nowrap font-mono font-extrabold text-xs text-white tracking-wider bg-slate-950 px-2.5 py-0.5 rounded-lg border border-slate-800">
+                    {pjt.pjtCode}
+                  </span>
+
+                  {/* 설비명 */}
+                  <h3
+                    className="min-w-0 truncate font-bold text-white text-sm sm:text-base tracking-wide"
+                    title={pjt.equipmentName}
+                  >
+                    {pjt.equipmentName}
+                  </h3>
+                </div>
+
+                {/* 2. Serial NO. & 진행률/완료 상태 배지 (Serial NO 뒤에 배치) */}
+                <div className="bg-slate-950/80 border border-slate-800/80 px-3 py-1.5 rounded-xl font-mono text-xs flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="text-[11px] text-cyan-400 font-bold shrink-0">
+                      Serial NO:
+                    </span>
+                    <span className="text-cyan-300 font-medium tracking-wide text-xs truncate">
+                      {formatSerialRange(pjt.equipmentUnits)}
+                    </span>
+                  </div>
+
+                  {/* 진행률 / 완료 현황 배지 */}
+                  <span
+                    className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                      isComplete
+                        ? "bg-emerald-950 text-emerald-400 border border-emerald-700 shadow-sm"
+                        : rate > 0
+                        ? "bg-amber-950 text-amber-400 border border-amber-800"
+                        : "bg-slate-800 text-slate-400"
+                    }`}
+                  >
+                    {isComplete ? (
+                      <>
+                        <CheckCircle2 className="h-3 w-3" />
+                        <span>완료 (100%)</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="h-3 w-3" />
+                        <span>진행률 {rate}%</span>
+                      </>
+                    )}
                   </span>
                 </div>
 
-                {/* 검사완료 100% / 진행률 현황 배지 */}
-                <span
-                  className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                    isComplete
-                      ? "bg-emerald-950 text-emerald-400 border border-emerald-700 shadow-sm"
-                      : rate > 0
-                      ? "bg-amber-950 text-amber-400 border border-amber-800"
-                      : "bg-slate-800 text-slate-400"
-                  }`}
-                >
-                  {isComplete ? (
-                    <>
-                      <CheckCircle2 className="h-3 w-3" />
-                      <span>완료 (100%)</span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="h-3 w-3" />
-                      <span>진행률 {rate}%</span>
-                    </>
-                  )}
-                </span>
+                {/* 3. 하단 메타 정보 (수량 / 담당자 / 작성일) */}
+                <div className="flex flex-wrap items-center gap-3.5 sm:gap-5 text-[11px] text-slate-400 font-mono px-1">
+                  <span className="flex items-center gap-1">
+                    <Layers className="h-3 w-3 text-slate-500" />
+                    <span>
+                      수량: <strong className="text-white">{pjt.quantity}대</strong>
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <UserCheck className="h-3 w-3 text-slate-500" />
+                    <span>
+                      담당자:{" "}
+                      <span className="text-slate-300 font-medium">{pjt.inspectorName}</span>
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Calendar className="h-3 w-3 text-slate-500" />
+                    <span>
+                      작성일:{" "}
+                      <span className="text-slate-300 font-medium">{pjt.inspectionDate}</span>
+                    </span>
+                  </span>
+                </div>
               </div>
 
-              {/* 3. 하단 메타 정보 (수량 / 담당자 / 작성일) */}
-              <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-[11px] text-slate-400 font-mono px-1">
-                <span className="flex items-center gap-1">
-                  <Layers className="h-3 w-3 text-slate-500" />
-                  <span>
-                    수량: <strong className="text-white">{pjt.quantity}대</strong>
-                  </span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <UserCheck className="h-3 w-3 text-slate-500" />
-                  <span>
-                    담당자:{" "}
-                    <span className="text-slate-300 font-medium">{pjt.inspectorName}</span>
-                  </span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3 text-slate-500" />
-                  <span>
-                    작성일:{" "}
-                    <span className="text-slate-300 font-medium">{pjt.inspectionDate}</span>
-                  </span>
-                </span>
-              </div>
-
-              {/* 4. 부품 검증현황 대신 OCR 입력, PJT 수정, 삭제 3가지 액션 버튼 배치 */}
-              <div className="flex items-center gap-2 pt-1 border-t border-slate-800/60">
+              {/* 4. 액션 버튼 4개: OCR 입력 (적정 크기), PJT 수정, Excel 다운로드, 삭제 */}
+              <div className="flex items-center gap-1.5 sm:gap-2 pt-2 border-t border-slate-800/60 mt-1">
                 {/* 1. OCR 입력 */}
                 <button
                   type="button"
@@ -310,35 +312,48 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                     e.stopPropagation();
                     onSelectProject(pjt.id || "", 3);
                   }}
-                  className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 py-2 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 py-2 px-2.5 sm:px-3 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap"
+                  title="설비 부품 OCR 스캔 및 입력"
                 >
-                  <Camera className="h-3.5 w-3.5" />
+                  <Camera className="h-3.5 w-3.5 shrink-0" />
                   <span>OCR 입력</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
+                  <ArrowRight className="h-3 w-3 shrink-0 hidden sm:inline" />
                 </button>
 
                 {/* 2. PJT 수정 */}
                 <button
                   type="button"
                   onClick={(e: React.MouseEvent) => handleOpenEditModal(pjt, e)}
-                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold transition-all flex items-center justify-center gap-1.5 border border-slate-700 cursor-pointer shadow-sm"
+                  className="px-2.5 sm:px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold transition-all flex items-center justify-center gap-1 border border-slate-700 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
                   title="PJT 정보 및 Serial NO. 수정"
                 >
-                  <Edit2 className="h-3.5 w-3.5" />
+                  <Edit2 className="h-3.5 w-3.5 shrink-0" />
                   <span>PJT 수정</span>
                 </button>
 
-                {/* 3. 삭제 */}
+                {/* 3. Excel 다운로드 */}
+                <button
+                  type="button"
+                  disabled={isExportingId === pjt.id}
+                  onClick={(e: React.MouseEvent) => handleExportExcel(pjt, e)}
+                  className="px-2.5 sm:px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-semibold transition-all flex items-center justify-center gap-1 border border-slate-700 cursor-pointer shadow-sm whitespace-nowrap shrink-0 disabled:opacity-50"
+                  title="제작완료 보고서 Excel 즉시 다운로드 (.xlsx)"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
+                  <span>Excel 다운로드</span>
+                </button>
+
+                {/* 4. 삭제 */}
                 <button
                   type="button"
                   onClick={(e: React.MouseEvent) => {
                     e.stopPropagation();
                     onDeleteProject(pjt.id || "");
                   }}
-                  className="px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-red-950 text-slate-400 hover:text-red-400 text-xs font-medium transition-all flex items-center justify-center gap-1 border border-slate-800 hover:border-red-800/60 cursor-pointer"
+                  className="px-2.5 sm:px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-red-950 text-slate-400 hover:text-red-400 text-xs font-medium transition-all flex items-center justify-center gap-1 border border-slate-800 hover:border-red-800/60 cursor-pointer whitespace-nowrap shrink-0"
                   title="PJT 삭제"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-3.5 w-3.5 shrink-0" />
                   <span>삭제</span>
                 </button>
               </div>
