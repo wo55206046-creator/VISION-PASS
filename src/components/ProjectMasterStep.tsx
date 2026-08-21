@@ -171,18 +171,37 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
         </div>
       )}
 
-      {/* Form Card (1.고객사/PJT CODE, 2.모델명, 3.설비담당자/검수일자, 4.설비수량) */}
-      <div className="rounded-2xl bg-slate-900/90 p-5 sm:p-7 border border-slate-800 shadow-2xl backdrop-blur-sm space-y-4">
-        {/* 1. 고객사 (좌) & PJT CODE (우) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* Form Card (왼쪽 사진과 100% 동일한 2열 분할 컴팩트 레이아웃) */}
+      <div className="rounded-2xl bg-slate-900/90 p-4 sm:p-7 border border-slate-800 shadow-2xl backdrop-blur-sm space-y-3.5 sm:space-y-4">
+        {/* 1. PJT CODE (좌) & 고객사 (우) */}
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
+          {/* PJT CODE */}
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+              <Barcode className="h-3.5 w-3.5 text-cyan-400" />
+              <span>PJT CODE</span> <span className="text-cyan-400">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="예: S26-15-01"
+                value={project.pjtCode}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  onUpdate((prev) => ({ ...prev, pjtCode: e.target.value.toUpperCase() }))
+                }
+                className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm font-mono font-bold text-cyan-300 uppercase placeholder:font-sans placeholder:normal-case placeholder:font-normal placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              />
+            </div>
+          </div>
+
           {/* 고객사 */}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-                <Building2 className="h-4 w-4 text-cyan-400" />
-                고객사 <span className="text-cyan-400">*</span>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                <Building2 className="h-3.5 w-3.5 text-cyan-400" />
+                <span>고객사</span> <span className="text-cyan-400">*</span>
               </label>
-              <span className="text-[10px] font-mono text-cyan-400">직접 입력 & 선택</span>
+              <span className="text-[10px] font-mono text-cyan-400">선택/입력</span>
             </div>
 
             <div className="relative">
@@ -194,7 +213,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   onUpdate((prev) => ({ ...prev, site: e.target.value }))
                 }
-                className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
               />
               <datalist id="site-datalist-options">
                 {DEFAULT_SITES.map((site) => (
@@ -203,33 +222,14 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               </datalist>
             </div>
           </div>
-
-          {/* PJT CODE */}
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-              <Barcode className="h-4 w-4 text-cyan-400" />
-              PJT CODE <span className="text-cyan-400">*</span>
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="예: S26-15-01"
-                value={project.pjtCode}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  onUpdate((prev) => ({ ...prev, pjtCode: e.target.value.toUpperCase() }))
-                }
-                className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3.5 py-2.5 text-sm font-mono font-bold text-cyan-300 uppercase placeholder:font-sans placeholder:normal-case placeholder:font-normal placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-              />
-            </div>
-          </div>
         </div>
 
         {/* 2. 모델명 (인증명) */}
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-              <Cpu className="h-4 w-4 text-cyan-400" />
-              모델명 (인증명) <span className="text-cyan-400">*</span>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+              <Cpu className="h-3.5 w-3.5 text-cyan-400" />
+              <span>모델명 (인증명)</span> <span className="text-cyan-400">*</span>
             </label>
             <span className="text-[10px] font-mono text-cyan-400">사양서 확인</span>
           </div>
@@ -240,24 +240,19 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               onUpdate((prev) => ({ ...prev, equipmentName: e.target.value }))
             }
-            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
           />
         </div>
 
         {/* 3. 설비 담당자 (좌) & 검수일자 (우) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
           {/* 설비 담당자 */}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-                <UserCheck className="h-4 w-4 text-cyan-400" />
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                <UserCheck className="h-3.5 w-3.5 text-cyan-400" />
                 <span>설비 담당자</span>
               </label>
-              {existingInspectors.length > 0 && (
-                <span className="text-[10px] text-slate-400 font-medium">
-                  (기존 담당자 추천)
-                </span>
-              )}
             </div>
             <input
               type="text"
@@ -267,39 +262,19 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 onUpdate((prev) => ({ ...prev, inspectorName: e.target.value }))
               }
-              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
             <datalist id="inspector-datalist-step2">
               {existingInspectors.map((name) => (
                 <option key={name} value={name} />
               ))}
             </datalist>
-
-            {existingInspectors.length > 0 && (
-              <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                <span className="text-[10px] text-slate-400">최근 담당자:</span>
-                {existingInspectors.slice(0, 5).map((name) => (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => onUpdate((prev) => ({ ...prev, inspectorName: name }))}
-                    className={`text-[11px] px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
-                      project.inspectorName === name
-                        ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-bold"
-                        : "bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700"
-                    }`}
-                  >
-                    {name}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* 검수일자 */}
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-              <Calendar className="h-4 w-4 text-cyan-400" />
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+              <Calendar className="h-3.5 w-3.5 text-cyan-400" />
               <span>검수일자</span>
             </label>
             <input
@@ -314,29 +289,29 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
                 onUpdate((prev) => ({ ...prev, inspectionDate: e.target.value }))
               }
               style={{ colorScheme: "dark" }}
-              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
             />
           </div>
         </div>
 
         {/* 4. 설비 수량 (호기 생성) */}
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <label className="flex items-center justify-between text-xs font-semibold text-slate-300">
-            <span className="flex items-center gap-2">
-              <Layers className="h-4 w-4 text-cyan-400" />
-              설비 수량 (호기 생성) <span className="text-cyan-400">*</span>
+            <span className="flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5 text-cyan-400" />
+              <span>설비 수량 (호기 생성)</span> <span className="text-cyan-400">*</span>
             </span>
             <span className="text-[11px] text-slate-400 font-mono">
               현재 {project.quantity}개 호기
             </span>
           </label>
 
-          <div className="flex items-center gap-2 max-w-sm">
+          <div className="flex items-center gap-2 max-w-xs">
             <button
               type="button"
               onClick={() => handleQuantityChange(project.quantity - 1)}
               disabled={project.quantity <= 1}
-              className="flex h-10 w-11 items-center justify-center rounded-xl bg-slate-800 text-lg font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+              className="flex h-9 w-10 items-center justify-center rounded-xl bg-slate-800 text-base font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
             >
               -
             </button>
@@ -347,13 +322,13 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               value={project.quantity}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleQuantityChange(parseInt(e.target.value) || 1)}
               style={{ MozAppearance: "textfield" }}
-              className="w-full text-center rounded-xl bg-slate-950 border border-slate-700 py-2 text-base font-bold font-mono text-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="w-full text-center rounded-xl bg-slate-950 border border-slate-700 py-1.5 text-sm font-bold font-mono text-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
             <button
               type="button"
               onClick={() => handleQuantityChange(project.quantity + 1)}
               disabled={project.quantity >= 50}
-              className="flex h-10 w-11 items-center justify-center rounded-xl bg-slate-800 text-lg font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+              className="flex h-9 w-10 items-center justify-center rounded-xl bg-slate-800 text-base font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
             >
               +
             </button>
