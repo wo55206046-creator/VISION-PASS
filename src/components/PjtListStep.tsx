@@ -243,11 +243,11 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                   </h3>
                 </div>
 
-                {/* 2. Serial NO. & 진행률/완료 상태 배지 (Serial NO 뒤에 배치) */}
+                {/* 2. S/N & 진행률/완료 상태 배지 (S/N 뒤에 배치) */}
                 <div className="bg-slate-950/80 border border-slate-800/80 px-3 py-1.5 rounded-xl font-mono text-xs flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 truncate">
                     <span className="text-[11px] text-cyan-400 font-bold shrink-0">
-                      Serial NO:
+                      S/N:
                     </span>
                     <span className="text-cyan-300 font-medium tracking-wide text-xs truncate">
                       {formatSerialRange(pjt.equipmentUnits)}
@@ -278,26 +278,26 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                   </span>
                 </div>
 
-                {/* 3. 하단 메타 정보 (수량 / 담당자 / 작성일) */}
-                <div className="flex flex-wrap items-center gap-3.5 sm:gap-5 text-[11px] text-slate-400 font-mono px-1">
-                  <span className="flex items-center gap-1">
-                    <Layers className="h-3 w-3 text-slate-500" />
+                {/* 3. 하단 메타 정보 (수량 / 담당자 / 작성일 - 모바일/PC 1줄 배치) */}
+                <div className="flex items-center justify-between gap-1.5 sm:gap-3 text-[10px] sm:text-[11px] text-slate-400 font-mono px-0.5 whitespace-nowrap overflow-hidden">
+                  <span className="flex items-center gap-1 shrink-0">
+                    <Layers className="h-3 w-3 text-slate-500 shrink-0" />
                     <span>
-                      수량: <strong className="text-white">{pjt.quantity}대</strong>
+                      수량: <strong className="text-white font-bold">{pjt.quantity}대</strong>
                     </span>
                   </span>
-                  <span className="flex items-center gap-1">
-                    <UserCheck className="h-3 w-3 text-slate-500" />
-                    <span>
-                      담당자:{" "}
-                      <span className="text-slate-300 font-medium">{pjt.inspectorName}</span>
+                  <span className="text-slate-700 shrink-0">•</span>
+                  <span className="flex items-center gap-1 min-w-0 truncate">
+                    <UserCheck className="h-3 w-3 text-slate-500 shrink-0" />
+                    <span className="truncate">
+                      담당자: <span className="text-slate-300 font-medium">{pjt.inspectorName}</span>
                     </span>
                   </span>
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-3 w-3 text-slate-500" />
+                  <span className="text-slate-700 shrink-0">•</span>
+                  <span className="flex items-center gap-1 shrink-0">
+                    <Calendar className="h-3 w-3 text-slate-500 shrink-0" />
                     <span>
-                      작성일:{" "}
-                      <span className="text-slate-300 font-medium">{pjt.inspectionDate}</span>
+                      작성일: <span className="text-slate-300 font-medium">{pjt.inspectionDate}</span>
                     </span>
                   </span>
                 </div>
