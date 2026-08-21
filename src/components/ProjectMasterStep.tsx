@@ -171,10 +171,11 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
         </div>
       )}
 
-      {/* Form Card (2열 분할 배치: 1.고객사/PJT CODE, 2.모델명/설비수량, 3.설비담당자/검수일자) */}
-      <div className="rounded-2xl bg-slate-900/90 p-5 sm:p-7 border border-slate-800 shadow-2xl backdrop-blur-sm space-y-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
-          {/* 1. 고객사 */}
+      {/* Form Card (1.고객사/PJT CODE, 2.모델명, 3.설비담당자/검수일자, 4.설비수량) */}
+      <div className="rounded-2xl bg-slate-900/90 p-5 sm:p-7 border border-slate-800 shadow-2xl backdrop-blur-sm space-y-4">
+        {/* 1. 고객사 (좌) & PJT CODE (우) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* 고객사 */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
@@ -203,7 +204,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             </div>
           </div>
 
-          {/* 2. PJT CODE */}
+          {/* PJT CODE */}
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
               <Barcode className="h-4 w-4 text-cyan-400" />
@@ -221,69 +222,31 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               />
             </div>
           </div>
+        </div>
 
-          {/* 3. 모델명 (인증명) */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-                <Cpu className="h-4 w-4 text-cyan-400" />
-                모델명 (인증명) <span className="text-cyan-400">*</span>
-              </label>
-              <span className="text-[10px] font-mono text-cyan-400">사양서 확인</span>
-            </div>
-            <input
-              type="text"
-              placeholder="예: NaVi-MG200 (NaVi-MG200H-0224), WOA-683 (WOA-683-0124)"
-              value={project.equipmentName}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                onUpdate((prev) => ({ ...prev, equipmentName: e.target.value }))
-              }
-              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-            />
-          </div>
-
-          {/* 4. 설비 수량 (호기 생성) */}
-          <div className="space-y-2">
-            <label className="flex items-center justify-between text-xs font-semibold text-slate-300">
-              <span className="flex items-center gap-2">
-                <Layers className="h-4 w-4 text-cyan-400" />
-                설비 수량 (호기 생성) <span className="text-cyan-400">*</span>
-              </span>
-              <span className="text-[11px] text-slate-400 font-mono">
-                현재 {project.quantity}개 호기
-              </span>
+        {/* 2. 모델명 (인증명) */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+              <Cpu className="h-4 w-4 text-cyan-400" />
+              모델명 (인증명) <span className="text-cyan-400">*</span>
             </label>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuantityChange(project.quantity - 1)}
-                disabled={project.quantity <= 1}
-                className="flex h-10 w-11 items-center justify-center rounded-xl bg-slate-800 text-lg font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
-              >
-                -
-              </button>
-              <input
-                type="number"
-                min="1"
-                max="50"
-                value={project.quantity}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleQuantityChange(parseInt(e.target.value) || 1)}
-                style={{ MozAppearance: "textfield" }}
-                className="w-full text-center rounded-xl bg-slate-950 border border-slate-700 py-2 text-base font-bold font-mono text-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              />
-              <button
-                type="button"
-                onClick={() => handleQuantityChange(project.quantity + 1)}
-                disabled={project.quantity >= 50}
-                className="flex h-10 w-11 items-center justify-center rounded-xl bg-slate-800 text-lg font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
-              >
-                +
-              </button>
-            </div>
+            <span className="text-[10px] font-mono text-cyan-400">사양서 확인</span>
           </div>
+          <input
+            type="text"
+            placeholder="예: NaVi-MG200 (NaVi-MG200H-0224), WOA-683 (WOA-683-0124)"
+            value={project.equipmentName}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              onUpdate((prev) => ({ ...prev, equipmentName: e.target.value }))
+            }
+            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+          />
+        </div>
 
-          {/* 5. 설비 담당자 */}
+        {/* 3. 설비 담당자 (좌) & 검수일자 (우) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* 설비 담당자 */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
@@ -333,7 +296,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             )}
           </div>
 
-          {/* 6. 검수일자 */}
+          {/* 검수일자 */}
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
               <Calendar className="h-4 w-4 text-cyan-400" />
@@ -356,42 +319,86 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
           </div>
         </div>
 
-        {/* 🔢 설비 Serial NO. 입력 & 적용된 PJT 양식 헤더 (한 줄 통합 배치) */}
-        <div className="rounded-2xl bg-slate-950/80 p-4 sm:p-5 border border-cyan-900/40 space-y-3.5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800 pb-3">
-            {/* 좌측: 타이틀 */}
-            <div className="flex items-center gap-2 shrink-0">
-              <Barcode className="h-4 w-4 text-cyan-400" />
-              <label className="text-xs sm:text-sm font-bold text-cyan-300 whitespace-nowrap">
-                설비 Serial NO. 입력 (총 {project.quantity}개 호기)
-              </label>
-            </div>
+        {/* 4. 설비 수량 (호기 생성) */}
+        <div className="space-y-2">
+          <label className="flex items-center justify-between text-xs font-semibold text-slate-300">
+            <span className="flex items-center gap-2">
+              <Layers className="h-4 w-4 text-cyan-400" />
+              설비 수량 (호기 생성) <span className="text-cyan-400">*</span>
+            </span>
+            <span className="text-[11px] text-slate-400 font-mono">
+              현재 {project.quantity}개 호기
+            </span>
+          </label>
 
-            {/* 우측: PJT 양식 명칭 + 총 품목 수 + 양식 변경 버튼 (상단 한 줄 통합) */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* PJT 양식 명칭 */}
-              <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-700 text-xs shadow-inner min-w-0">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                <span className="text-slate-400 text-[11px] shrink-0">PJT 양식:</span>
-                <span className="font-bold text-cyan-300 font-mono truncate max-w-[160px] sm:max-w-[220px]" title={project.equipmentName}>
-                  {project.equipmentName || "표준 기본 양식"}
-                </span>
+          <div className="flex items-center gap-2 max-w-sm">
+            <button
+              type="button"
+              onClick={() => handleQuantityChange(project.quantity - 1)}
+              disabled={project.quantity <= 1}
+              className="flex h-10 w-11 items-center justify-center rounded-xl bg-slate-800 text-lg font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+            >
+              -
+            </button>
+            <input
+              type="number"
+              min="1"
+              max="50"
+              value={project.quantity}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleQuantityChange(parseInt(e.target.value) || 1)}
+              style={{ MozAppearance: "textfield" }}
+              className="w-full text-center rounded-xl bg-slate-950 border border-slate-700 py-2 text-base font-bold font-mono text-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <button
+              type="button"
+              onClick={() => handleQuantityChange(project.quantity + 1)}
+              disabled={project.quantity >= 50}
+              className="flex h-10 w-11 items-center justify-center rounded-xl bg-slate-800 text-lg font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+
+        {/* 🔢 설비 Serial NO. 입력 & 적용된 PJT 양식 헤더 */}
+        <div className="rounded-2xl bg-slate-950/80 p-4 sm:p-5 border border-cyan-900/40 space-y-3.5">
+          <div className="space-y-2 border-b border-slate-800 pb-3">
+            {/* 1. 상단 행: 좌측 타이틀 & 우측 [양식 변경] 버튼 */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 shrink-0">
+                <Barcode className="h-4 w-4 text-cyan-400" />
+                <label className="text-xs sm:text-sm font-bold text-cyan-300 whitespace-nowrap">
+                  설비 Serial NO. 입력 (총 {project.quantity}개 호기)
+                </label>
               </div>
 
-              {/* 총 품목 개수 */}
-              <span className="bg-slate-900 text-slate-300 px-2 py-1 rounded-lg text-[11px] font-mono border border-slate-800 font-semibold shrink-0 whitespace-nowrap">
-                총 <strong className="text-white font-bold">{project.equipmentUnits[0]?.parts?.length || 0}</strong>개 품목
-              </span>
-
-              {/* 양식 변경 버튼 */}
+              {/* 양식 변경 버튼 (우측 상단 배치) */}
               <button
                 type="button"
                 onClick={() => setIsPresetModalOpen(true)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 font-bold transition-all cursor-pointer shrink-0 text-xs shadow-sm"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 font-bold transition-all cursor-pointer shrink-0 text-xs shadow-sm"
               >
                 <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
                 <span>양식 변경</span>
               </button>
+            </div>
+
+            {/* 2. 하단 행: 좌측 PJT 양식 명칭 & 우측 총 N개 품목 */}
+            <div className="flex items-center justify-between gap-2">
+              {/* PJT 양식 명칭 */}
+              <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-700 text-xs shadow-inner min-w-0 flex-1">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                <span className="text-slate-400 text-[11px] shrink-0">PJT 양식:</span>
+                <span className="font-bold text-cyan-300 font-mono truncate" title={project.equipmentName}>
+                  {project.equipmentName || "표준 기본 양식"}
+                </span>
+              </div>
+
+              {/* 총 품목 개수 (양식변경 버튼 바로 아래) */}
+              <span className="bg-slate-900 text-slate-300 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-slate-800 font-semibold shrink-0 whitespace-nowrap">
+                총 <strong className="text-white font-bold">{project.equipmentUnits[0]?.parts?.length || 0}</strong>개 품목
+              </span>
             </div>
           </div>
 

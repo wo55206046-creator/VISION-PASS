@@ -212,11 +212,10 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
             <div
               key={pjt.id}
               onClick={() => onSelectProject(pjt.id || "", 1)}
-              className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer space-y-2.5 flex flex-col justify-between ${
-                isCurrent
+              className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer space-y-2.5 flex flex-col justify-between ${isCurrent
                   ? "bg-slate-900/95 border-cyan-500 shadow-glow-cyan ring-1 ring-cyan-500/50"
                   : "bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900"
-              }`}
+                }`}
             >
               <div className="space-y-2.5">
                 {/* 1. Main Info: 고객사 -> PJT CODE -> 설비명 */}
@@ -256,13 +255,12 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
 
                   {/* 진행률 / 완료 현황 배지 */}
                   <span
-                    className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                      isComplete
+                    className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${isComplete
                         ? "bg-emerald-950 text-emerald-400 border border-emerald-700 shadow-sm"
                         : rate > 0
-                        ? "bg-amber-950 text-amber-400 border border-amber-800"
-                        : "bg-slate-800 text-slate-400"
-                    }`}
+                          ? "bg-amber-950 text-amber-400 border border-amber-800"
+                          : "bg-slate-800 text-slate-400"
+                      }`}
                   >
                     {isComplete ? (
                       <>
@@ -381,8 +379,21 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
             </div>
 
             <div className="space-y-3 text-xs">
-              {/* 1. 고객사 (좌) & PJT CODE (우) */}
+              {/* 1. PJT CODE (좌) & 고객사 (우) */}
               <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">PJT CODE *</label>
+                  <input
+                    type="text"
+                    placeholder="예: S26-15-01"
+                    value={editingPjt.pjtCode}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setEditingPjt({ ...editingPjt, pjtCode: e.target.value.toUpperCase() })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 font-mono font-bold text-cyan-300 uppercase focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-slate-300 font-bold block">고객사</label>
@@ -401,21 +412,6 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                       <option key={s} value={s} />
                     ))}
                   </datalist>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-slate-300 font-bold block">PJT CODE *</label>
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="예: S26-15-01"
-                    value={editingPjt.pjtCode}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setEditingPjt({ ...editingPjt, pjtCode: e.target.value.toUpperCase() })
-                    }
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 font-mono font-bold text-cyan-300 uppercase focus:border-cyan-500 focus:outline-none"
-                  />
                 </div>
               </div>
 
