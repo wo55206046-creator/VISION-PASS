@@ -17,6 +17,7 @@ import {
   Sparkles,
   CheckCircle2,
   AlertCircle,
+  Plus,
 } from "lucide-react";
 
 // Helper function to generate IDs
@@ -67,21 +68,21 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
     if (newQty < 1 || newQty > 50) return;
 
     onUpdate((prev) => {
-      const currentUnits = [...prev.equipmentUnits];
+      const currentUnits = [...(prev?.equipmentUnits || [])];
       const diff = newQty - currentUnits.length;
 
       if (diff > 0) {
         // 호기 추가
         for (let i = 0; i < diff; i++) {
           const nextIndex = currentUnits.length + 1;
-          const templateParts = currentUnits[0]?.parts.map((p) => ({
+          const templateParts = (currentUnits[0]?.parts || []).map((p) => ({
             ...p,
             id: generateId(),
             detectedSerial: "",
             isVerified: false,
             scannedAt: undefined,
             confidence: undefined,
-          })) || [];
+          }));
 
           const unit1Serial = currentUnits[0]?.equipmentSerial?.trim();
           const nextSerial = unit1Serial ? cascadeSerialFromUnit1(unit1Serial, nextIndex) : "";
@@ -106,11 +107,11 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
   };
 
   const handleNextClick = () => {
-    if (!project.pjtCode.trim()) {
+    if (!project?.pjtCode?.trim()) {
       setErrorMsg("PJT CODE를 입력해주세요.");
       return;
     }
-    if (!project.equipmentName.trim()) {
+    if (!project?.equipmentName?.trim()) {
       setErrorMsg("설비명을 입력해주세요.");
       return;
     }
@@ -378,7 +379,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {project.equipmentUnits.map((u) => (
+            {(project?.equipmentUnits || []).map((u) => (
               <div
                 key={u.unitIndex}
                 className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 flex items-center gap-2.5"
@@ -389,14 +390,14 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
                 <input
                   type="text"
                   placeholder={`예: SOTSU-SK26-100${u.unitIndex}`}
-                  value={u.equipmentSerial}
+                  value={u.equipmentSerial || ""}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const val = e.target.value.toUpperCase();
                     if (u.unitIndex === 1) {
                       // 1호기 수정 시 뒤에 있는 모든 호기에 +1 자동 연속 채번
                       onUpdate((prev) => ({
                         ...prev,
-                        equipmentUnits: prev.equipmentUnits.map((unit) => ({
+                        equipmentUnits: (prev?.equipmentUnits || []).map((unit) => ({
                           ...unit,
                           equipmentSerial: cascadeSerialFromUnit1(val, unit.unitIndex),
                         })),
@@ -405,7 +406,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
                       // 2호기 이후는 해당 호기만 개별 수정
                       onUpdate((prev) => ({
                         ...prev,
-                        equipmentUnits: prev.equipmentUnits.map((unit) =>
+                        equipmentUnits: (prev?.equipmentUnits || []).map((unit) =>
                           unit.unitIndex === u.unitIndex ? { ...unit, equipmentSerial: val } : unit
                         ),
                       }));

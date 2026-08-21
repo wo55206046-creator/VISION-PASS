@@ -274,7 +274,7 @@ export default function Home() {
       return next;
     });
 
-    setCurrentProjectId(finalizedPjt.id);
+    setCurrentProjectId(finalizedPjt.id || "");
     setDraftProject(null);
     setCurrentStep(1); // 1. PJT List 목록 화면으로 이동!
   };
@@ -284,7 +284,13 @@ export default function Home() {
       {/* Dynamic Header with Stepper & Logo */}
       <Header
         currentStep={currentStep}
-        onStepChange={(step) => setCurrentStep(step)}
+        onStepChange={(step) => {
+          if (step === 2 && !draftProject) {
+            handleCreateNewProject();
+          } else {
+            setCurrentStep(step);
+          }
+        }}
         pjtCode={currentProject?.pjtCode}
         equipmentName={currentProject?.equipmentName}
         syncStatus={syncStatus}
@@ -366,7 +372,13 @@ export default function Home() {
               <button
                 key={item.num}
                 type="button"
-                onClick={() => setCurrentStep(item.num)}
+                onClick={() => {
+                  if (item.num === 2 && !draftProject) {
+                    handleCreateNewProject();
+                  } else {
+                    setCurrentStep(item.num);
+                  }
+                }}
                 className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all cursor-pointer ${
                   isActive
                     ? "bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40 shadow-sm"
