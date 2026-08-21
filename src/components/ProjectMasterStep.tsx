@@ -152,20 +152,15 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      {/* Top Banner & Quick Load */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-slate-900 via-cleanroom-850 to-slate-900 p-6 border border-slate-800 shadow-xl">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold text-xs border border-cyan-500/30">
-              02
-            </span>
-            <h2 className="text-xl font-bold text-white tracking-wide">
-              프로젝트 추가 (프로젝트 정보 및 Serial NO. 입력)
-            </h2>
-          </div>
-          <p className="mt-1 text-sm text-slate-400">
-            PJT 메인 정보와 호기별 설비 Serial NO.를 입력 후 하단의 [PJT 추가 & OCR 등록] 버튼을 누르면 프로젝트가 정식 등록됩니다.
-          </p>
+      {/* Top Banner (01처럼 깔끔하게 제목만 표시) */}
+      <div className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-slate-900 via-cleanroom-850 to-slate-900 p-4 sm:p-5 border border-slate-800 shadow-xl">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold text-xs border border-cyan-500/30 shrink-0">
+            02
+          </span>
+          <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
+            프로젝트 추가 (프로젝트 정보 및 Serial NO. 입력)
+          </h2>
         </div>
       </div>
 
@@ -176,9 +171,9 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
         </div>
       )}
 
-      {/* Form Card */}
-      <div className="rounded-2xl bg-slate-900/90 p-6 sm:p-8 border border-slate-800 shadow-2xl backdrop-blur-sm space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      {/* Form Card (2열 분할 배치: 1.고객사/PJT CODE, 2.모델명/설비수량, 3.설비담당자/검수일자) */}
+      <div className="rounded-2xl bg-slate-900/90 p-5 sm:p-7 border border-slate-800 shadow-2xl backdrop-blur-sm space-y-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
           {/* 1. 고객사 */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -247,7 +242,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             />
           </div>
 
-          {/* 4. 설비 수량 (Quantity) */}
+          {/* 4. 설비 수량 (호기 생성) */}
           <div className="space-y-2">
             <label className="flex items-center justify-between text-xs font-semibold text-slate-300">
               <span className="flex items-center gap-2">
@@ -342,7 +337,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
               <Calendar className="h-4 w-4 text-cyan-400" />
-              검수일자 (Inspection Date)
+              <span>검수일자</span>
             </label>
             <input
               type="date"
