@@ -38,16 +38,33 @@ export function preprocessCanvas(
 
   // 1. Grayscale 변환 (Luminance: 0.299R + 0.587G + 0.114B)
   const gray = new Uint8Array(totalPixels);
+  let graySum = 0;
   for (let i = 0; i < totalPixels; i++) {
     const idx = i * 4;
     const r = data[idx];
     const g = data[idx + 1];
     const b = data[idx + 2];
-    gray[i] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    const val = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    gray[i] = val;
+    graySum += val;
   }
 
+  // 1-1. 허공/단색 배경 검출 (표준편차 검사)
+  const mean = graySum / totalPixels;
+  let varianceSum = 0;
+  // 속도를 위해 16픽셀 간격 샘플링
+  const step = 16;
+  for (let i = 0; i < totalPixels; i += step) {
+    const diff = gray[i] - mean;
+    varianceSum += diff * diff;
+  }
+  const stdDev = Math.sqrt(varianceSum / (totalPixels / step));
+
+  // 표준편차가 8 미만이면 대비가 거의 없는 허공/단색이므로 이진화 왜곡 방지
+  const isTooLowContrast = stdDev < 8;
+
   // 2. 대비 정규화 (Min-Max Contrast Stretching / Percentile Clipping)
-  if (options.contrastStretch) {
+  if (options.contrastStretch && !isTooLowContrast) {
     // 히스토그램 생성
     const hist = new Int32Array(256);
     for (let i = 0; i < totalPixels; i++) {

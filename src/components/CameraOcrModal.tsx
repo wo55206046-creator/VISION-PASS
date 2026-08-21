@@ -23,6 +23,7 @@ import {
   Layers,
   Eye,
   AlertCircle,
+  AlertTriangle,
   Cpu,
   ZoomIn,
   ZoomOut,
@@ -302,6 +303,8 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       if (result.cleanedSerial) {
         setSelectedSerial(result.cleanedSerial);
         triggerScanFeedback();
+      } else {
+        setSelectedSerial("");
       }
     } catch (err) {
       console.error("OCR recognition error:", err);
@@ -351,201 +354,166 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   if (!isOpen || !targetPart) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-2xl rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-6 animate-fadeIn">
+      <div className="relative w-full max-w-2xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/70">
+        <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/90">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 shadow-glow-cyan">
               <Camera className="h-5 w-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-white">
-                  부품 명판 인메모리 OCR 인식
-                </h3>
-                <span className="rounded bg-cyan-950 px-2 py-0.5 text-[10px] font-mono text-cyan-300 border border-cyan-800">
-                  {unitIndex}호기 / {targetPart.partName}
+                <span className="font-mono text-xs font-bold text-cyan-400">
+                  {unitIndex}호기
                 </span>
+                <h3 className="text-sm sm:text-base font-bold text-white">
+                  {targetPart.partName}
+                </h3>
               </div>
-              <p className="text-[11px] text-slate-400 font-mono">
-                규격: {targetPart.spec}
+              <p className="text-[11px] text-slate-400">
+                {targetPart.spec} {targetPart.subSpec ? `• ${targetPart.subSpec}` : ""}
               </p>
             </div>
           </div>
+
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white cursor-pointer"
+            className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-4 overflow-y-auto space-y-4 flex-1">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
           {/* Camera Viewfinder Box */}
-          <div className="relative aspect-[4/3] sm:aspect-[16/9] w-full overflow-hidden rounded-xl bg-black border border-slate-700 shadow-inner flex items-center justify-center">
-            {hasCameraError ? (
-              <div className="p-6 text-center space-y-3">
-                <AlertCircle className="mx-auto h-8 w-8 text-amber-400" />
-                <p className="text-xs text-slate-300">{hasCameraError}</p>
-                <div className="flex items-center justify-center gap-2 flex-wrap pt-1">
-                  <button
-                    type="button"
-                    onClick={() => startCamera()}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 border border-slate-700 px-3.5 py-2 text-xs font-bold text-cyan-300 hover:bg-slate-700 shadow-md cursor-pointer"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    <span>카메라 다시 연결</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2 text-xs font-bold text-slate-950 hover:opacity-95 shadow-md cursor-pointer"
-                  >
-                    <Upload className="h-4 w-4" />
-                    <span>사진 직접 촬영 / 앨범 선택</span>
-                  </button>
+          <div className="relative w-full aspect-[4/3] sm:aspect-[16/9] rounded-2xl overflow-hidden bg-black border-2 border-slate-800 shadow-inner">
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              className="w-full h-full object-cover transition-transform duration-100 ease-out"
+              style={{
+                transform: !isHardwareZoom && zoomLevel > 1 ? `scale(${zoomLevel})` : "none",
+                transformOrigin: "center center",
+              }}
+            />
+
+            {/* Industrial Viewfinder Crosshair & Guide Bounding Box */}
+            <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-6">
+              <div className="relative w-4/5 h-3/5 border-2 border-cyan-400/80 rounded-2xl shadow-glow-cyan transition-all duration-300">
+                {/* 4 Corner Markers */}
+                <div className="absolute -top-1.5 -left-1.5 h-4 w-4 border-t-3 border-l-3 border-cyan-300" />
+                <div className="absolute -top-1.5 -right-1.5 h-4 w-4 border-t-3 border-r-3 border-cyan-300" />
+                <div className="absolute -bottom-1.5 -left-1.5 h-4 w-4 border-b-3 border-l-3 border-cyan-300" />
+                <div className="absolute -bottom-1.5 -right-1.5 h-4 w-4 border-b-3 border-r-3 border-cyan-300" />
+
+                {/* Center Scanning Line Animation */}
+                {isProcessing && (
+                  <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-300 to-transparent animate-pulse" />
+                )}
+
+                {/* Guide Text */}
+                <div className="absolute -top-7 inset-x-0 text-center">
+                  <span className="bg-slate-950/80 text-cyan-300 text-[10px] sm:text-xs font-mono font-bold px-2 py-0.5 rounded-full border border-cyan-500/40">
+                    [ 시리얼 번호 명판 타겟 영역 ]
+                  </span>
                 </div>
               </div>
-            ) : (
-              <>
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  style={{
-                    transform:
-                      !isHardwareZoom && zoomLevel > 1 ? `scale(${zoomLevel})` : undefined,
-                    transformOrigin: "center center",
-                    transition: "transform 0.15s ease-out",
-                  }}
-                  className="h-full w-full object-cover"
+            </div>
+
+            {/* Camera Floating Controls (Torch, Flip, Zoom, Upload) */}
+            <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+              <button
+                type="button"
+                onClick={toggleTorch}
+                className={`p-2.5 rounded-xl backdrop-blur-md border text-xs font-semibold transition-all cursor-pointer ${
+                  torchOn
+                    ? "bg-amber-500 text-slate-950 border-amber-400 shadow-glow-cyan font-bold"
+                    : "bg-slate-900/80 text-white border-slate-700 hover:bg-slate-800"
+                }`}
+                title="조명 플래시 토글"
+              >
+                {torchOn ? <Zap className="h-4 w-4 fill-current" /> : <ZapOff className="h-4 w-4" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={switchFacingMode}
+                className="p-2.5 rounded-xl bg-slate-900/80 text-white border border-slate-700 backdrop-blur-md hover:bg-slate-800 transition-all cursor-pointer"
+                title="전면/후면 카메라 전환"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+
+              <label
+                className="p-2.5 rounded-xl bg-slate-900/80 text-white border border-slate-700 backdrop-blur-md hover:bg-slate-800 transition-all cursor-pointer"
+                title="사진 파일 직접 불러오기"
+              >
+                <Upload className="h-4 w-4" />
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
                 />
+              </label>
+            </div>
 
-                {/* Reticle / ROI Overlay */}
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                  <div className="relative w-[80%] h-[45%] rounded-lg border-2 border-dashed border-cyan-400/80 bg-cyan-500/5 shadow-2xl flex flex-col justify-between p-2">
-                    <div className="flex justify-between">
-                      <div className="h-3 w-3 border-t-2 border-l-2 border-cyan-400" />
-                      <div className="h-3 w-3 border-t-2 border-r-2 border-cyan-400" />
-                    </div>
-
-                    <div className="text-center">
-                      <span className="rounded bg-slate-950/85 px-2 py-0.5 text-[10px] font-mono text-cyan-300 backdrop-blur-sm border border-cyan-500/30">
-                        명판의 S/N 또는 Serial No. 영역을 사각 틀에 맞추세요
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between">
-                      <div className="h-3 w-3 border-b-2 border-l-2 border-cyan-400" />
-                      <div className="h-3 w-3 border-b-2 border-r-2 border-cyan-400" />
-                    </div>
-
-                    {/* Scan Line Animation */}
-                    {isProcessing && (
-                      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-scan-line shadow-glow-cyan" />
-                    )}
-                  </div>
-                </div>
-
-                {/* 줌(Zoom) 플로팅 컨트롤 바 */}
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-slate-950/85 backdrop-blur-md px-2.5 py-1.5 rounded-full border border-cyan-500/30 shadow-lg z-10">
+            {/* 🔍 Zoom Quick Controls Floating Pill */}
+            <div className="absolute bottom-3 inset-x-0 flex justify-center items-center gap-1 z-10 pointer-events-auto">
+              <div className="bg-slate-950/85 backdrop-blur-md border border-slate-700/80 rounded-full px-2.5 py-1 flex items-center gap-1.5 shadow-xl">
+                <span className="text-[10px] font-bold text-slate-400 mr-1 flex items-center gap-0.5">
+                  <ZoomIn className="h-3 w-3 text-cyan-400" />
+                  줌:
+                </span>
+                {[1, 1.5, 2, 3, 4].map((z) => (
                   <button
+                    key={z}
                     type="button"
-                    onClick={() => applyZoom(zoomLevel - 0.5)}
-                    disabled={zoomLevel <= 1}
-                    className="p-1 rounded-full text-slate-300 hover:text-cyan-300 disabled:opacity-30 cursor-pointer"
-                    title="축소"
+                    onClick={() => applyZoom(z)}
+                    className={`px-2 py-0.5 rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${
+                      zoomLevel === z
+                        ? "bg-cyan-500 text-slate-950 shadow-glow-cyan scale-105"
+                        : "bg-slate-900/90 text-slate-300 hover:text-white border border-slate-700/60"
+                    }`}
                   >
-                    <ZoomOut className="h-3.5 w-3.5" />
+                    {z}x
                   </button>
+                ))}
+              </div>
+            </div>
 
-                  {[1.0, 1.5, 2.0, 3.0].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => applyZoom(preset)}
-                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold transition-all cursor-pointer ${
-                        Math.abs(zoomLevel - preset) < 0.1
-                          ? "bg-cyan-500 text-slate-950 shadow-glow-cyan scale-105"
-                          : "text-slate-300 hover:text-white"
-                      }`}
-                    >
-                      {preset}x
-                    </button>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() => applyZoom(zoomLevel + 0.5)}
-                    disabled={zoomLevel >= 4}
-                    className="p-1 rounded-full text-slate-300 hover:text-cyan-300 disabled:opacity-30 cursor-pointer"
-                    title="확대"
-                  >
-                    <ZoomIn className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-
-                {/* Viewfinder Action Overlay Controls */}
-                <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
-                  {torchSupported && (
-                    <button
-                      type="button"
-                      onClick={toggleTorch}
-                      className={`p-2 rounded-xl backdrop-blur-md transition-all cursor-pointer ${
-                        torchOn
-                          ? "bg-amber-400 text-slate-950 shadow-glow-amber"
-                          : "bg-slate-900/80 text-slate-300 hover:text-white"
-                      }`}
-                      title={torchOn ? "플래시 끄기" : "플래시 켜기"}
-                    >
-                      {torchOn ? <Zap className="h-4 w-4" /> : <ZapOff className="h-4 w-4" />}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={switchFacingMode}
-                    className="p-2 rounded-xl bg-slate-900/80 text-slate-300 hover:text-white backdrop-blur-md cursor-pointer"
-                    title="전/후면 카메라 전환"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="p-2 rounded-xl bg-slate-900/80 text-white backdrop-blur-md hover:bg-slate-800 cursor-pointer"
-                    title="파일로 선택"
-                  >
-                    <Upload className="h-4 w-4" />
-                  </button>
-                </div>
-              </>
+            {/* Error Overlay */}
+            {hasCameraError && (
+              <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                <AlertCircle className="h-8 w-8 text-amber-400" />
+                <p className="text-xs text-slate-300 max-w-sm">{hasCameraError}</p>
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs"
+                >
+                  카메라 다시 연결
+                </button>
+              </div>
             )}
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={handleFileUpload}
-            />
           </div>
 
-          {/* Trigger Scan Button */}
+          {/* Action Trigger Buttons */}
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => captureAndRecognize()}
               disabled={isProcessing}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 py-3 text-sm font-bold text-slate-950 shadow-glow-cyan hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+              onClick={() => captureAndRecognize()}
+              className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 py-3.5 rounded-xl text-sm shadow-glow-cyan hover:opacity-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               {isProcessing ? (
                 <>
-                  <RefreshCw className="h-4 w-4 animate-spin text-slate-950" />
-                  <span>{ocrStatusText || "인식 진행 중..."}</span>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  <span>인메모리 광학 분석 및 S/N 추출 중...</span>
                 </>
               ) : (
                 <>
@@ -648,12 +616,27 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                 <Cpu className="h-4 w-4 text-cyan-400" />
                 추출된 시리얼 번호 (최종 확인/수정)
               </label>
-              {ocrResult?.confidence !== undefined && (
+              {ocrResult?.confidence !== undefined && ocrResult.cleanedSerial && (
                 <span className="text-[11px] font-mono text-emerald-400">
                   신뢰도: {ocrResult.confidence}%
                 </span>
               )}
             </div>
+
+            {/* 인식 불가 안내 경고 박스 (허공/단색/노이즈 촬영 시) */}
+            {ocrResult && !ocrResult.cleanedSerial && (
+              <div className="rounded-xl bg-amber-950/70 border border-amber-800/80 p-3.5 flex items-start gap-2.5 text-amber-200 animate-fadeIn">
+                <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5 text-left">
+                  <p className="text-xs font-bold text-amber-300">
+                    인식 불가 (문자가 감지되지 않았습니다)
+                  </p>
+                  <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                    허공이나 초점이 맞지 않는 화면에서는 허상값이 자동 차단됩니다. 사각 가이드 영역에 금속 명판을 맞추고 줌(Zoom) 또는 조명을 켠 후 다시 촬영해주세요.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <input
               type="text"
@@ -665,30 +648,36 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-base font-mono font-bold text-cyan-300 tracking-wider uppercase focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
 
-            {/* Serial Candidates Pills */}
+            {/* Serial Candidates Pills (최대 3개 추천) */}
             {ocrResult && ocrResult.candidates.length > 0 && (
               <div className="space-y-1.5 pt-1">
                 <span className="text-[11px] font-semibold text-slate-400">
-                  감지된 시리얼 후보 (터치하여 선택):
+                  추천 시리얼 후보 (최대 3개 • 터치하여 선택):
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {ocrResult.candidates.map((cand, idx) => (
+                  {ocrResult.candidates.slice(0, 3).map((cand, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => setSelectedSerial(cand)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                         selectedSerial === cand
                           ? "bg-cyan-500 text-slate-950 shadow-glow-cyan font-bold ring-2 ring-cyan-300"
                           : "bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700"
                       }`}
                     >
-                      {cand}
-                      {idx === 0 && (
-                        <span className="ml-1.5 rounded bg-cyan-950/80 px-1 py-0.2 text-[9px] text-cyan-300 border border-cyan-700">
-                          S/N 우선
-                        </span>
-                      )}
+                      <span
+                        className={`text-[10px] px-1 py-0.2 rounded font-bold ${
+                          idx === 0
+                            ? selectedSerial === cand
+                              ? "bg-slate-950 text-cyan-300"
+                              : "bg-cyan-950 text-cyan-300 border border-cyan-700"
+                            : "bg-slate-900 text-slate-400"
+                        }`}
+                      >
+                        {idx === 0 ? "1순위 S/N" : `${idx + 1}순위`}
+                      </span>
+                      <span>{cand}</span>
                     </button>
                   ))}
                 </div>
