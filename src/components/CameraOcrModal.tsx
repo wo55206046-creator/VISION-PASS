@@ -294,10 +294,20 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     setOcrStatusText("Tesseract 인메모리 OCR 문자 인식 중...");
 
     try {
-      const result = await performInMemoryOcr(processedCanvas, (progress, status) => {
-        setOcrProgress(50 + Math.round(progress * 0.45));
-        setOcrStatusText(`S/N 키워드 및 번호 분석 중 (${progress}%)...`);
-      });
+      const result = await performInMemoryOcr(
+        processedCanvas,
+        (progress, status) => {
+          setOcrProgress(50 + Math.round(progress * 0.45));
+          setOcrStatusText(`S/N 키워드 및 번호 정밀 분석 중 (${progress}%)...`);
+        },
+        targetPart
+          ? {
+              partName: targetPart.partName,
+              spec: targetPart.spec,
+              subSpec: targetPart.subSpec,
+            }
+          : undefined
+      );
 
       setOcrResult(result);
       if (result.cleanedSerial) {
