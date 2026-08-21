@@ -78,7 +78,7 @@ export default function Home() {
     }
   };
 
-  // 2. 초기 로드 및 백그라운드 3초 주기 자동 실시간 동기화
+  // 2. 초기 로드 및 백그라운드 1.5초 초고속 전자동 실시간 동기화 (버튼 조작 불필요)
   useEffect(() => {
     const saved = loadSavedProjects();
     if (saved && saved.length > 0) {
@@ -90,18 +90,20 @@ export default function Home() {
     // 마운트 즉시 클라우드 최신 확인
     fetchCloudProjects();
 
-    // 3초마다 백그라운드 자동 동기화 (PC ↔ 스마트폰 실시간 연동)
-    const interval = setInterval(fetchCloudProjects, 3000);
+    // 1.5초마다 백그라운드 자동 무소음 동기화 (PC ↔ 스마트폰 실시간 연동)
+    const interval = setInterval(fetchCloudProjects, 1500);
 
-    // 화면 포커스 시(모바일 화면 켜짐 또는 PC 탭 전환 시) 즉시 동기화
-    const handleFocus = () => fetchCloudProjects();
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleFocus);
+    // 화면 포커스, 탭 전환, 마우스/화면 터치 시 즉시 자동 수신
+    const handleQuickSync = () => fetchCloudProjects();
+    window.addEventListener("focus", handleQuickSync);
+    document.addEventListener("visibilitychange", handleQuickSync);
+    window.addEventListener("pointerdown", handleQuickSync, { passive: true });
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleFocus);
+      window.removeEventListener("focus", handleQuickSync);
+      document.removeEventListener("visibilitychange", handleQuickSync);
+      window.removeEventListener("pointerdown", handleQuickSync);
     };
   }, []);
 
