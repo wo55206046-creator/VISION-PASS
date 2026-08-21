@@ -327,30 +327,26 @@ export const TemplateManagerStep: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* 1. Header Banner */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-slate-900 via-cleanroom-850 to-slate-900 p-6 border border-slate-800 shadow-xl">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold text-xs border border-cyan-500/30">
-              04
-            </span>
-            <h2 className="text-xl font-bold text-white tracking-wide flex items-center gap-2">
-              <span>설비 부품 양식 (BOM Template Management)</span>
-              <span className="bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full">
-                총 {templates.length}개 양식
-              </span>
-            </h2>
-          </div>
-          <p className="mt-1.5 text-xs text-slate-400">
-            WITHTECH 제작 설비 모델별 표준 부품 BOM 양식을 조회, 수정, 복제 및 엑셀 일괄 등록하여 관리합니다.
-          </p>
+      {/* 1. Header Banner */}
+      <div className="flex items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-slate-900 via-cleanroom-850 to-slate-900 p-4 sm:p-5 border border-slate-800 shadow-xl">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold text-xs border border-cyan-500/30 shrink-0">
+            04
+          </span>
+          <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
+            설비 부품 양식
+          </h2>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono text-slate-300 bg-slate-950 px-2.5 py-1 rounded-full border border-slate-800 shrink-0 whitespace-nowrap shadow-inner hidden sm:inline">
+            총 <strong className="text-cyan-400 font-bold">{templates.length}</strong>개 양식
+          </span>
           <button
             type="button"
             onClick={handleOpenCreate}
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-xs font-extrabold text-slate-950 shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-3.5 py-2 text-xs font-bold text-slate-950 shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer shrink-0 whitespace-nowrap"
           >
             <Plus className="h-4 w-4 stroke-[3]" />
             <span>+ 신규 PJT 양식 추가</span>
