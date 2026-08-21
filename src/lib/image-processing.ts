@@ -19,7 +19,6 @@ function applySharpenFilter(
   height: number
 ): Uint8Array {
   const output = new Uint8Array(width * height);
-  // 커널: [ 0, -1, 0, -1, 5, -1, 0, -1, 0 ]
   for (let y = 1; y < height - 1; y++) {
     const yOffset = y * width;
     const yPrev = (y - 1) * width;
@@ -37,7 +36,6 @@ function applySharpenFilter(
     }
   }
 
-  // 테두리 복사
   for (let x = 0; x < width; x++) {
     output[x] = gray[x];
     output[(height - 1) * width + x] = gray[(height - 1) * width + x];
@@ -52,7 +50,6 @@ function applySharpenFilter(
 
 /**
  * 인메모리 Canvas 상에서 금속/라벨 명판 초정밀 전처리 파이프라인 수행
- * (다크 명판 자동 반전 + 엣지 샤프닝 + 적응형 이진화)
  */
 export function preprocessCanvas(
   sourceCanvas: HTMLCanvasElement,
@@ -61,7 +58,6 @@ export function preprocessCanvas(
   const width = sourceCanvas.width;
   const height = sourceCanvas.height;
 
-  // 작업용 전처리 캔버스 생성
   const processedCanvas = document.createElement("canvas");
   processedCanvas.width = width;
   processedCanvas.height = height;
@@ -97,20 +93,17 @@ export function preprocessCanvas(
     varianceSum += diff * diff;
   }
   const stdDev = Math.sqrt(varianceSum / (totalPixels / step));
-
-  // 표준편차가 8 미만이면 대비가 거의 없는 허공/단색
-  const isTooLowContrast = stdDev < 8;
+  const isTooLowContrast = stdDev < 7;
 
   // 1-2. 다크 명판(미쓰비시 등 어두운 배경에 흰 글씨) 자동 감지 및 반전
   const shouldAutoInvert = mean < 110 || options.invert;
-
   if (shouldAutoInvert && !isTooLowContrast) {
     for (let i = 0; i < totalPixels; i++) {
       gray[i] = 255 - gray[i];
     }
   }
 
-  // 1-3. 엣지 샤프닝 필터 적용 (명판 글자 윤곽선 강화)
+  // 1-3. 엣지 샤프닝 필터 적용
   if (!isTooLowContrast && options.blurReduction) {
     gray = applySharpenFilter(gray, width, height);
   }
@@ -215,12 +208,12 @@ export function preprocessCanvas(
 }
 
 /**
- * 관심 영역 (ROI) 고해상도 2배 업스케일링 및 크롭
+ * 관심 영역 (ROI) 고해상도 2.5배 업스케일링 및 고화질 크롭
  */
 export function cropCanvasROI(
   sourceCanvas: HTMLCanvasElement,
   roi: { x: number; y: number; width: number; height: number },
-  scale: number = 2.0
+  scale: number = 2.5
 ): HTMLCanvasElement {
   const targetW = Math.max(1, Math.floor(roi.width * scale));
   const targetH = Math.max(1, Math.floor(roi.height * scale));

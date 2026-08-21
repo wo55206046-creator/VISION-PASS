@@ -367,21 +367,21 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-6 animate-fadeIn">
       <div className="relative w-full max-w-2xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/90">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 shadow-glow-cyan">
-              <Camera className="h-5 w-5" />
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950/90">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 shadow-glow-cyan shrink-0">
+              <Camera className="h-4 w-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold text-cyan-400">
+            <div className="min-w-0 truncate">
+              <div className="flex items-center gap-1.5 truncate">
+                <span className="font-mono text-xs font-extrabold text-cyan-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800 shrink-0">
                   {unitIndex}호기
                 </span>
-                <h3 className="text-sm sm:text-base font-bold text-white">
+                <h3 className="text-sm font-bold text-white truncate">
                   {targetPart.partName}
                 </h3>
               </div>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[10px] text-slate-400 truncate">
                 {targetPart.spec} {targetPart.subSpec ? `• ${targetPart.subSpec}` : ""}
               </p>
             </div>
@@ -390,16 +390,16 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer shrink-0"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
-          {/* Camera Viewfinder Box */}
-          <div className="relative w-full aspect-[4/3] sm:aspect-[16/9] rounded-2xl overflow-hidden bg-black border-2 border-slate-800 shadow-inner">
+        {/* Modal Body (컴팩트 스크롤 제로 뷰) */}
+        <div className="p-3 sm:p-4 space-y-2.5 overflow-y-auto max-h-[calc(90vh-110px)]">
+          {/* Compact Camera Viewfinder Box (촬영 화면 축소: h-36 ~ h-44) */}
+          <div className="relative w-full h-36 sm:h-44 rounded-xl overflow-hidden bg-black border-2 border-slate-800 shadow-inner">
             <video
               ref={videoRef}
               playsInline
@@ -412,13 +412,13 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             />
 
             {/* Industrial Viewfinder Crosshair & Guide Bounding Box */}
-            <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-6">
-              <div className="relative w-4/5 h-3/5 border-2 border-cyan-400/80 rounded-2xl shadow-glow-cyan transition-all duration-300">
+            <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-3">
+              <div className="relative w-3/4 h-3/4 border-2 border-cyan-400/80 rounded-xl shadow-glow-cyan transition-all duration-300">
                 {/* 4 Corner Markers */}
-                <div className="absolute -top-1.5 -left-1.5 h-4 w-4 border-t-3 border-l-3 border-cyan-300" />
-                <div className="absolute -top-1.5 -right-1.5 h-4 w-4 border-t-3 border-r-3 border-cyan-300" />
-                <div className="absolute -bottom-1.5 -left-1.5 h-4 w-4 border-b-3 border-l-3 border-cyan-300" />
-                <div className="absolute -bottom-1.5 -right-1.5 h-4 w-4 border-b-3 border-r-3 border-cyan-300" />
+                <div className="absolute -top-1 -left-1 h-3.5 w-3.5 border-t-2 border-l-2 border-cyan-300" />
+                <div className="absolute -top-1 -right-1 h-3.5 w-3.5 border-t-2 border-r-2 border-cyan-300" />
+                <div className="absolute -bottom-1 -left-1 h-3.5 w-3.5 border-b-2 border-l-2 border-cyan-300" />
+                <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 border-b-2 border-r-2 border-cyan-300" />
 
                 {/* Center Scanning Line Animation */}
                 {isProcessing && (
@@ -426,43 +426,43 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                 )}
 
                 {/* Guide Text */}
-                <div className="absolute -top-7 inset-x-0 text-center">
-                  <span className="bg-slate-950/80 text-cyan-300 text-[10px] sm:text-xs font-mono font-bold px-2 py-0.5 rounded-full border border-cyan-500/40">
-                    [ 시리얼 번호 명판 타겟 영역 ]
+                <div className="absolute -top-5 inset-x-0 text-center">
+                  <span className="bg-slate-950/80 text-cyan-300 text-[10px] font-mono font-bold px-2 py-0.2 rounded-full border border-cyan-500/40">
+                    [ 명판 영역 맞춤 ]
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Camera Floating Controls (Torch, Flip, Zoom, Upload) */}
-            <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+            {/* Camera Floating Controls (Torch, Flip, Upload) */}
+            <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
               <button
                 type="button"
                 onClick={toggleTorch}
-                className={`p-2.5 rounded-xl backdrop-blur-md border text-xs font-semibold transition-all cursor-pointer ${
+                className={`p-1.5 rounded-lg backdrop-blur-md border text-xs transition-all cursor-pointer ${
                   torchOn
-                    ? "bg-amber-500 text-slate-950 border-amber-400 shadow-glow-cyan font-bold"
+                    ? "bg-amber-500 text-slate-950 border-amber-400 font-bold"
                     : "bg-slate-900/80 text-white border-slate-700 hover:bg-slate-800"
                 }`}
                 title="조명 플래시 토글"
               >
-                {torchOn ? <Zap className="h-4 w-4 fill-current" /> : <ZapOff className="h-4 w-4" />}
+                {torchOn ? <Zap className="h-3.5 w-3.5 fill-current" /> : <ZapOff className="h-3.5 w-3.5" />}
               </button>
 
               <button
                 type="button"
                 onClick={switchFacingMode}
-                className="p-2.5 rounded-xl bg-slate-900/80 text-white border border-slate-700 backdrop-blur-md hover:bg-slate-800 transition-all cursor-pointer"
+                className="p-1.5 rounded-lg bg-slate-900/80 text-white border border-slate-700 backdrop-blur-md hover:bg-slate-800 transition-all cursor-pointer"
                 title="전면/후면 카메라 전환"
               >
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className="h-3.5 w-3.5" />
               </button>
 
               <label
-                className="p-2.5 rounded-xl bg-slate-900/80 text-white border border-slate-700 backdrop-blur-md hover:bg-slate-800 transition-all cursor-pointer"
+                className="p-1.5 rounded-lg bg-slate-900/80 text-white border border-slate-700 backdrop-blur-md hover:bg-slate-800 transition-all cursor-pointer"
                 title="사진 파일 직접 불러오기"
               >
-                <Upload className="h-4 w-4" />
+                <Upload className="h-3.5 w-3.5" />
                 <input
                   type="file"
                   accept="image/*"
@@ -473,18 +473,18 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             </div>
 
             {/* 🔍 Zoom Quick Controls Floating Pill */}
-            <div className="absolute bottom-3 inset-x-0 flex justify-center items-center gap-1 z-10 pointer-events-auto">
-              <div className="bg-slate-950/85 backdrop-blur-md border border-slate-700/80 rounded-full px-2.5 py-1 flex items-center gap-1.5 shadow-xl">
-                <span className="text-[10px] font-bold text-slate-400 mr-1 flex items-center gap-0.5">
-                  <ZoomIn className="h-3 w-3 text-cyan-400" />
+            <div className="absolute bottom-2 inset-x-0 flex justify-center items-center gap-1 z-10 pointer-events-auto">
+              <div className="bg-slate-950/85 backdrop-blur-md border border-slate-700/80 rounded-full px-2 py-0.5 flex items-center gap-1 shadow-xl">
+                <span className="text-[9px] font-bold text-slate-400 mr-0.5 flex items-center gap-0.5">
+                  <ZoomIn className="h-2.5 w-2.5 text-cyan-400" />
                   줌:
                 </span>
-                {[1, 1.5, 2, 3, 4].map((z) => (
+                {[1, 1.5, 2, 3].map((z) => (
                   <button
                     key={z}
                     type="button"
                     onClick={() => applyZoom(z)}
-                    className={`px-2 py-0.5 rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold transition-all cursor-pointer ${
                       zoomLevel === z
                         ? "bg-cyan-500 text-slate-950 shadow-glow-cyan scale-105"
                         : "bg-slate-900/90 text-slate-300 hover:text-white border border-slate-700/60"
@@ -498,13 +498,13 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
             {/* Error Overlay */}
             {hasCameraError && (
-              <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center space-y-3">
-                <AlertCircle className="h-8 w-8 text-amber-400" />
+              <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-4 text-center space-y-2">
+                <AlertCircle className="h-6 w-6 text-amber-400" />
                 <p className="text-xs text-slate-300 max-w-sm">{hasCameraError}</p>
                 <button
                   type="button"
                   onClick={startCamera}
-                  className="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs"
+                  className="px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold text-xs"
                 >
                   카메라 다시 연결
                 </button>
@@ -518,39 +518,26 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               type="button"
               disabled={isProcessing}
               onClick={() => captureAndRecognize()}
-              className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 py-3.5 rounded-xl text-sm shadow-glow-cyan hover:opacity-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 py-2.5 px-3 rounded-xl text-xs sm:text-sm shadow-glow-cyan hover:opacity-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               {isProcessing ? (
                 <>
                   <RefreshCw className="h-4 w-4 animate-spin" />
-                  <span>인메모리 광학 분석 및 S/N 추출 중...</span>
+                  <span>광학 분석 및 S/N 추출 중...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="h-4 w-4" />
-                  <span>부품 명판 촬영 & 시리얼 즉시 추출 ({zoomLevel}x)</span>
+                  <span>명판 촬영 & 시리얼 즉시 추출 ({zoomLevel}x)</span>
                 </>
               )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowOptions(!showOptions)}
-              className={`p-3 rounded-xl border transition-all cursor-pointer ${
-                showOptions
-                  ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
-                  : "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
-              }`}
-              title="전처리 옵션"
-            >
-              <Sliders className="h-4 w-4" />
             </button>
           </div>
 
           {/* Real-Time Processing Progress Bar */}
           {isProcessing && (
-            <div className="space-y-1.5 rounded-xl bg-slate-950/80 p-3 border border-slate-800">
-              <div className="flex justify-between text-xs font-mono">
+            <div className="space-y-1 rounded-xl bg-slate-950/80 p-2.5 border border-slate-800">
+              <div className="flex justify-between text-[11px] font-mono">
                 <span className="text-cyan-400">{ocrStatusText}</span>
                 <span className="text-slate-400">{ocrProgress}%</span>
               </div>
@@ -563,88 +550,27 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             </div>
           )}
 
-          {/* Preprocessing Options Collapsible Panel */}
-          {showOptions && (
-            <div className="rounded-xl bg-slate-950 p-4 border border-slate-800 space-y-3">
-              <h4 className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
-                <Sliders className="h-3.5 w-3.5" />
-                금속 명판 광학 전처리 파이프라인 튜닝
-              </h4>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={options.contrastStretch}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setOptions((prev) => ({ ...prev, contrastStretch: e.target.checked }))
-                    }
-                    className="rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-0"
-                  />
-                  <span>난반사 억제</span>
-                </label>
-                <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={options.adaptiveThreshold}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setOptions((prev) => ({ ...prev, adaptiveThreshold: e.target.checked }))
-                    }
-                    className="rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-0"
-                  />
-                  <span>적응형 이진화</span>
-                </label>
-                <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={options.invert}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setOptions((prev) => ({ ...prev, invert: e.target.checked }))
-                    }
-                    className="rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-0"
-                  />
-                  <span>명암 반전 (Invert)</span>
-                </label>
-              </div>
-
-              {/* In-Memory Preview Canvas */}
-              <div className="pt-2">
-                <p className="text-[10px] text-slate-500 mb-1">
-                  인메모리 전처리 결과 프리뷰 (Storage Zero Canvas):
-                </p>
-                <canvas
-                  ref={previewCanvasRef}
-                  className="w-full h-16 object-contain rounded bg-black border border-slate-800"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* OCR Result & Serial Confirmation Section */}
-          <div className="rounded-xl bg-slate-950 p-4 border border-slate-800 space-y-3">
+          {/* OCR Result & Serial Confirmation Section (스크롤 없이 바로 노출) */}
+          <div className="rounded-xl bg-slate-950 p-3 border border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                <Cpu className="h-4 w-4 text-cyan-400" />
-                추출된 시리얼 번호 (최종 확인/수정)
+                <Cpu className="h-3.5 w-3.5 text-cyan-400" />
+                <span>추출된 시리얼 번호 (최종 확인/수정)</span>
               </label>
               {ocrResult?.confidence !== undefined && ocrResult.cleanedSerial && (
-                <span className="text-[11px] font-mono text-emerald-400">
+                <span className="text-[10px] font-mono text-emerald-400 font-bold">
                   신뢰도: {ocrResult.confidence}%
                 </span>
               )}
             </div>
 
-            {/* 인식 불가 안내 경고 박스 (허공/단색/노이즈 촬영 시) */}
+            {/* 인식 불가 안내 경고 박스 */}
             {ocrResult && !ocrResult.cleanedSerial && (
-              <div className="rounded-xl bg-amber-950/70 border border-amber-800/80 p-3.5 flex items-start gap-2.5 text-amber-200 animate-fadeIn">
-                <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
-                <div className="space-y-0.5 text-left">
-                  <p className="text-xs font-bold text-amber-300">
-                    인식 불가 (문자가 감지되지 않았습니다)
-                  </p>
-                  <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                    허공이나 초점이 맞지 않는 화면에서는 허상값이 자동 차단됩니다. 사각 가이드 영역에 금속 명판을 맞추고 줌(Zoom) 또는 조명을 켠 후 다시 촬영해주세요.
-                  </p>
-                </div>
+              <div className="rounded-lg bg-amber-950/70 border border-amber-800/80 p-2.5 flex items-start gap-2 text-amber-200 animate-fadeIn text-xs">
+                <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-amber-200/90 leading-tight">
+                  <strong>인식 불가:</strong> 사각 가이드 영역에 명판의 S/N 번호를 맞추고 조명을 켠 후 다시 촬영해주세요.
+                </p>
               </div>
             )}
 
@@ -655,14 +581,14 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 setSelectedSerial(e.target.value.toUpperCase())
               }
-              className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-base font-mono font-bold text-cyan-300 tracking-wider uppercase focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-sm sm:text-base font-mono font-bold text-cyan-300 tracking-wider uppercase focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
 
             {/* Serial Candidates Pills (최대 3개 추천) */}
             {ocrResult && ocrResult.candidates.length > 0 && (
-              <div className="space-y-1.5 pt-1">
-                <span className="text-[11px] font-semibold text-slate-400">
-                  추천 시리얼 후보 (최대 3개 • 터치하여 선택):
+              <div className="space-y-1 pt-0.5">
+                <span className="text-[10px] font-semibold text-slate-400">
+                  추천 시리얼 후보 (터치하여 선택):
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {ocrResult.candidates.slice(0, 3).map((cand, idx) => (
@@ -670,14 +596,14 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                       key={idx}
                       type="button"
                       onClick={() => setSelectedSerial(cand)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                         selectedSerial === cand
                           ? "bg-cyan-500 text-slate-950 shadow-glow-cyan font-bold ring-2 ring-cyan-300"
                           : "bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700"
                       }`}
                     >
                       <span
-                        className={`text-[10px] px-1 py-0.2 rounded font-bold ${
+                        className={`text-[9px] px-1 py-0.2 rounded font-bold ${
                           idx === 0
                             ? selectedSerial === cand
                               ? "bg-slate-950 text-cyan-300"
@@ -695,8 +621,8 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             )}
 
             {/* Verification Checkbox */}
-            <div className="flex items-center gap-2 pt-1">
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer">
+            <div className="flex items-center gap-2 pt-0.5">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={isVerifiedCheck}
@@ -715,11 +641,11 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-slate-800 bg-slate-950/80">
+        <div className="flex items-center justify-between p-3 sm:p-4 border-t border-slate-800 bg-slate-950/90">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-400 hover:bg-slate-800 cursor-pointer"
+            className="rounded-xl px-3 py-2 text-xs font-semibold text-slate-400 hover:bg-slate-800 cursor-pointer"
           >
             닫기
           </button>
@@ -728,7 +654,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             type="button"
             onClick={handleSave}
             disabled={!selectedSerial.trim()}
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 disabled:opacity-40 shadow-glow-emerald transition-all cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400 disabled:opacity-40 shadow-glow-emerald transition-all cursor-pointer"
           >
             <CheckCircle2 className="h-4 w-4" />
             <span>부품 시리얼 확정 및 저장</span>

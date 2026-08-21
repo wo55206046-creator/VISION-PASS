@@ -157,7 +157,7 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
               01
             </span>
             <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
-              PJT List (프로젝트 목록 관리)
+              프로젝트 목록
             </h2>
           </div>
 
