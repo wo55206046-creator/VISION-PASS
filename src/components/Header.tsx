@@ -38,11 +38,10 @@ export const Header: React.FC<HeaderProps> = ({
             <WithtechLogo className="h-6 sm:h-7 w-auto" />
           </div>
 
-          {/* Desktop Stepper Navigation (PC/태블릿에서만 표시) */}
+          {/* Desktop Stepper Navigation (PC/태블릿: 녹색 체크 없이 현재 선택된 단계만 강조) */}
           <nav className="hidden md:flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
             {steps.map((step) => {
               const isActive = currentStep === step.num;
-              const isPast = currentStep > step.num;
 
               return (
                 <button
@@ -52,21 +51,17 @@ export const Header: React.FC<HeaderProps> = ({
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                     isActive
                       ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm font-bold"
-                      : isPast
-                      ? "text-emerald-400 hover:bg-slate-800"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
                   }`}
                 >
                   <span
                     className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${
                       isActive
                         ? "bg-cyan-400 text-slate-950"
-                        : isPast
-                        ? "bg-emerald-500 text-slate-950"
                         : "bg-slate-800 text-slate-400"
                     }`}
                   >
-                    {isPast ? "✓" : step.num}
+                    {step.num}
                   </span>
                   <span>{step.label}</span>
                 </button>
