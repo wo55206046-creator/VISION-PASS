@@ -11,8 +11,48 @@ export const DEFAULT_PREPROCESSING_OPTIONS: PreprocessingOptions = {
 };
 
 /**
- * 인메모리 Canvas 상에서 금속 명판 전처리 파이프라인 수행
- * (스토리지 제로: 메모리 상의 ImageData 직접 조작)
+ * 3x3 샤프닝(Unsharp Mask) 필터 적용 (타각 및 레이저 인쇄 폰트 엣지 극대화)
+ */
+function applySharpenFilter(
+  gray: Uint8Array,
+  width: number,
+  height: number
+): Uint8Array {
+  const output = new Uint8Array(width * height);
+  // 커널: [ 0, -1, 0, -1, 5, -1, 0, -1, 0 ]
+  for (let y = 1; y < height - 1; y++) {
+    const yOffset = y * width;
+    const yPrev = (y - 1) * width;
+    const yNext = (y + 1) * width;
+
+    for (let x = 1; x < width - 1; x++) {
+      const center = gray[yOffset + x];
+      const top = gray[yPrev + x];
+      const bottom = gray[yNext + x];
+      const left = gray[yOffset + x - 1];
+      const right = gray[yOffset + x + 1];
+
+      const val = 5 * center - top - bottom - left - right;
+      output[yOffset + x] = val < 0 ? 0 : val > 255 ? 255 : val;
+    }
+  }
+
+  // 테두리 복사
+  for (let x = 0; x < width; x++) {
+    output[x] = gray[x];
+    output[(height - 1) * width + x] = gray[(height - 1) * width + x];
+  }
+  for (let y = 0; y < height; y++) {
+    output[y * width] = gray[y * width];
+    output[y * width + width - 1] = gray[y * width + width - 1];
+  }
+
+  return output;
+}
+
+/**
+ * 인메모리 Canvas 상에서 금속/라벨 명판 초정밀 전처리 파이프라인 수행
+ * (다크 명판 자동 반전 + 엣지 샤프닝 + 적응형 이진화)
  */
 export function preprocessCanvas(
   sourceCanvas: HTMLCanvasElement,
@@ -29,7 +69,6 @@ export function preprocessCanvas(
 
   if (!ctx) return sourceCanvas;
 
-  // 원본 복사
   ctx.drawImage(sourceCanvas, 0, 0, width, height);
 
   const imgData = ctx.getImageData(0, 0, width, height);
@@ -37,7 +76,7 @@ export function preprocessCanvas(
   const totalPixels = width * height;
 
   // 1. Grayscale 변환 (Luminance: 0.299R + 0.587G + 0.114B)
-  const gray = new Uint8Array(totalPixels);
+  let gray = new Uint8Array(totalPixels);
   let graySum = 0;
   for (let i = 0; i < totalPixels; i++) {
     const idx = i * 4;
@@ -49,10 +88,9 @@ export function preprocessCanvas(
     graySum += val;
   }
 
-  // 1-1. 허공/단색 배경 검출 (표준편차 검사)
+  // 1-1. 배경 밝기 및 대비 표준편차 검사
   const mean = graySum / totalPixels;
   let varianceSum = 0;
-  // 속도를 위해 16픽셀 간격 샘플링
   const step = 16;
   for (let i = 0; i < totalPixels; i += step) {
     const diff = gray[i] - mean;
@@ -60,18 +98,30 @@ export function preprocessCanvas(
   }
   const stdDev = Math.sqrt(varianceSum / (totalPixels / step));
 
-  // 표준편차가 8 미만이면 대비가 거의 없는 허공/단색이므로 이진화 왜곡 방지
+  // 표준편차가 8 미만이면 대비가 거의 없는 허공/단색
   const isTooLowContrast = stdDev < 8;
+
+  // 1-2. 다크 명판(미쓰비시 등 어두운 배경에 흰 글씨) 자동 감지 및 반전
+  const shouldAutoInvert = mean < 110 || options.invert;
+
+  if (shouldAutoInvert && !isTooLowContrast) {
+    for (let i = 0; i < totalPixels; i++) {
+      gray[i] = 255 - gray[i];
+    }
+  }
+
+  // 1-3. 엣지 샤프닝 필터 적용 (명판 글자 윤곽선 강화)
+  if (!isTooLowContrast && options.blurReduction) {
+    gray = applySharpenFilter(gray, width, height);
+  }
 
   // 2. 대비 정규화 (Min-Max Contrast Stretching / Percentile Clipping)
   if (options.contrastStretch && !isTooLowContrast) {
-    // 히스토그램 생성
     const hist = new Int32Array(256);
     for (let i = 0; i < totalPixels; i++) {
       hist[gray[i]]++;
     }
 
-    // 상/하위 2% 클리핑으로 금속 난반사 억제
     const lowCutoff = Math.floor(totalPixels * 0.02);
     const highCutoff = Math.floor(totalPixels * 0.98);
 
@@ -111,7 +161,6 @@ export function preprocessCanvas(
     const s2 = Math.floor(s / 2);
     const delta = (options.thresholdDelta || 15) / 100;
 
-    // Integral Image (적분 영상) 생성 - O(1) 영역 평균 계산용
     const intImg = new Uint32Array((width + 1) * (height + 1));
     const stride = width + 1;
 
@@ -127,7 +176,6 @@ export function preprocessCanvas(
       }
     }
 
-    // 적응형 비교
     for (let y = 0; y < height; y++) {
       const y1 = Math.max(0, y - s2);
       const y2 = Math.min(height - 1, y + s2);
@@ -147,16 +195,8 @@ export function preprocessCanvas(
         const threshold = (sum / count) * (1 - delta);
         const val = gray[rowOffset + x];
 
-        // 텍스트는 어둡고 배경은 밝게
         gray[rowOffset + x] = val < threshold ? 0 : 255;
       }
-    }
-  }
-
-  // 4. 색상 반전 (옵션)
-  if (options.invert) {
-    for (let i = 0; i < totalPixels; i++) {
-      gray[i] = 255 - gray[i];
     }
   }
 
@@ -175,13 +215,12 @@ export function preprocessCanvas(
 }
 
 /**
- * 관심 영역 (ROI: Region Of Interest) 고해상도 업스케일링 및 크롭
- * (1.8배 스케일링으로 Tesseract OCR 인식률을 99% 수준으로 극대화)
+ * 관심 영역 (ROI) 고해상도 2배 업스케일링 및 크롭
  */
 export function cropCanvasROI(
   sourceCanvas: HTMLCanvasElement,
   roi: { x: number; y: number; width: number; height: number },
-  scale: number = 1.8
+  scale: number = 2.0
 ): HTMLCanvasElement {
   const targetW = Math.max(1, Math.floor(roi.width * scale));
   const targetH = Math.max(1, Math.floor(roi.height * scale));
@@ -192,7 +231,6 @@ export function cropCanvasROI(
   const ctx = cropCanvas.getContext("2d", { willReadFrequently: true });
 
   if (ctx) {
-    // 고품질 보간 필터 적용
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(
