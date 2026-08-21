@@ -137,6 +137,9 @@ export default function Home() {
     };
   }, [projects]);
 
+  // 현재 선택된 프로젝트
+  const currentProject = projects.find((p) => p.id === currentProjectId) || projects[0];
+
   // 프로젝트 실시간 업데이트 (즉시 로컬 저장 및 클라우드 즉시 푸시)
   const updateCurrentProject = (updater: (prev: ProjectMaster) => ProjectMaster) => {
     setProjects((prevProjects) => {
@@ -282,7 +285,11 @@ export default function Home() {
             onCreateNewProject={handleCreateNewProject}
             onDuplicateProject={handleDuplicateProject}
             onDeleteProject={handleDeleteProject}
-            onUpdateProjects={(updated) => setProjects(updated)}
+            onUpdateProject={(updated) =>
+              setProjects((prev) =>
+                prev.map((p) => (p.id === updated.id ? updated : p))
+              )
+            }
           />
         )}
 
@@ -297,8 +304,14 @@ export default function Home() {
                 updateCurrentProject(updater);
               }
             }}
-            onSaveAndNext={handleSaveDraftProject}
-            onCancel={() => {
+            onNext={() => {
+              if (draftProject) {
+                handleSaveDraftProject(draftProject);
+              } else {
+                setCurrentStep(3);
+              }
+            }}
+            onBackToPjtList={() => {
               setDraftProject(null);
               setCurrentStep(1);
             }}

@@ -72,7 +72,7 @@ export function preprocessCanvas(
   const totalPixels = width * height;
 
   // 1. Grayscale 변환 (Luminance: 0.299R + 0.587G + 0.114B)
-  let gray = new Uint8Array(totalPixels);
+  let gray: any = new Uint8Array(totalPixels);
   let graySum = 0;
   for (let i = 0; i < totalPixels; i++) {
     const idx = i * 4;
