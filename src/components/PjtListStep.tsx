@@ -331,7 +331,7 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                   <span>PJT 수정</span>
                 </button>
 
-                {/* 3. Excel 다운로드 */}
+                {/* 3. Excel */}
                 <button
                   type="button"
                   disabled={isExportingId === pjt.id}
@@ -340,7 +340,7 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                   title="제작완료 보고서 Excel 즉시 다운로드 (.xlsx)"
                 >
                   <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
-                  <span>Excel 다운로드</span>
+                  <span>Excel</span>
                 </button>
 
                 {/* 4. 삭제 */}
