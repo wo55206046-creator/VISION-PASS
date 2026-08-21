@@ -8,8 +8,7 @@ import { PjtListStep } from "@/components/PjtListStep";
 import { ProjectMasterStep } from "@/components/ProjectMasterStep";
 import { EquipmentUnitStep } from "@/components/EquipmentUnitStep";
 import { TemplateManagerStep } from "@/components/TemplateManagerStep";
-import { SyncModal } from "@/components/SyncModal";
-import { pushProjectsToCloud, pullProjectsFromCloud, getSyncRoomKey } from "@/lib/cloud-sync";
+import { pushProjectsToCloud, pullProjectsFromCloud } from "@/lib/cloud-sync";
 import {
   ShieldCheck,
   Cpu,
@@ -19,7 +18,7 @@ import {
   Layers,
 } from "lucide-react";
 
-const STORAGE_KEY = "VISION_PASS_PROJECTS_DATA_V7";
+const STORAGE_KEY = "VISION_PASS_PROJECTS_DATA_V8";
 
 function loadSavedProjects(): ProjectMaster[] {
   if (typeof window === "undefined") return INITIAL_PROJECT_LIST;
@@ -47,58 +46,92 @@ export default function Home() {
     () => INITIAL_PROJECT_LIST[0]?.id || "pjt-001"
   );
   const [draftProject, setDraftProject] = useState<ProjectMaster | null>(null);
-  const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
-  const isInitialMount = useRef(true);
-  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 1. 클라이언트 마운트 시: 로컬 스토리지 복원 + 클라우드 최신 데이터 자동 풀 시도
+  // 실시간 동기화 제어용 Refs
+  const isInitialMount = useRef(true);
+  const isSyncingInFlight = useRef(false);
+  const lastKnownCloudJson = useRef<string>("");
+  const syncPushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 1. [자동 수신] 클라우드 최신 데이터 실시간 풀 함수
+  const fetchCloudProjects = async () => {
+    if (isSyncingInFlight.current) return;
+    try {
+      isSyncingInFlight.current = true;
+      const res = await pullProjectsFromCloud();
+      if (res.success && res.projects && res.projects.length > 0) {
+        const incomingJson = JSON.stringify(res.projects);
+        if (incomingJson !== lastKnownCloudJson.current) {
+          lastKnownCloudJson.current = incomingJson;
+          setProjects(res.projects);
+          try {
+            localStorage.setItem(STORAGE_KEY, incomingJson);
+          } catch {}
+        }
+      }
+    } catch (err) {
+      // ignore
+    } finally {
+      isSyncingInFlight.current = false;
+    }
+  };
+
+  // 2. 초기 로드 및 백그라운드 3초 주기 자동 실시간 동기화
   useEffect(() => {
     const saved = loadSavedProjects();
     if (saved && saved.length > 0) {
       setProjects(saved);
       setCurrentProjectId(saved[0].id || "pjt-001");
+      lastKnownCloudJson.current = JSON.stringify(saved);
     }
 
-    // 클라우드에서 최신 데이터가 있는지 비동기 확인 후 자동 병합
-    const autoSyncFromCloud = async () => {
-      const roomKey = getSyncRoomKey();
-      const res = await pullProjectsFromCloud(roomKey);
-      if (res.success && res.projects && res.projects.length > 0) {
-        setProjects(res.projects);
-        if (res.projects[0]?.id) {
-          setCurrentProjectId(res.projects[0].id);
-        }
-      }
+    // 마운트 즉시 클라우드 최신 확인
+    fetchCloudProjects();
+
+    // 3초마다 백그라운드 자동 동기화 (PC ↔ 스마트폰 실시간 연동)
+    const interval = setInterval(fetchCloudProjects, 3000);
+
+    // 화면 포커스 시(모바일 화면 켜짐 또는 PC 탭 전환 시) 즉시 동기화
+    const handleFocus = () => fetchCloudProjects();
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
     };
-    autoSyncFromCloud();
   }, []);
 
-  // 2. projects 변경 시: 로컬 스토리지 저장 + 클라우드 자동 동기화 (디바운스 2초)
+  // 3. [자동 발신] 사용자가 프로젝트 수정/추가/삭제/OCR 검증 시 0.5초 내 클라우드 자동 즉시 푸시
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
       return;
     }
 
+    const currentJson = JSON.stringify(projects);
     try {
       if (projects && projects.length > 0) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+        localStorage.setItem(STORAGE_KEY, currentJson);
       }
     } catch (e) {
       console.warn("Failed to save projects to localStorage", e);
     }
 
-    // 클라우드 자동 푸시 디바운스
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
+    // 클라우드와 내용이 다를 때만 500ms 디바운스로 즉시 자동 업로드
+    if (currentJson !== lastKnownCloudJson.current) {
+      if (syncPushTimeoutRef.current) clearTimeout(syncPushTimeoutRef.current);
+      syncPushTimeoutRef.current = setTimeout(async () => {
+        const res = await pushProjectsToCloud(projects);
+        if (res.success) {
+          lastKnownCloudJson.current = currentJson;
+        }
+      }, 500);
     }
-    syncTimeoutRef.current = setTimeout(() => {
-      const roomKey = getSyncRoomKey();
-      pushProjectsToCloud(projects, roomKey);
-    }, 2000);
 
     return () => {
-      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+      if (syncPushTimeoutRef.current) clearTimeout(syncPushTimeoutRef.current);
     };
   }, [projects]);
 
@@ -179,16 +212,6 @@ export default function Home() {
     setCurrentStep(3); // 저장 후 3단계(설비 OCR)로 자동 전환
   };
 
-  const handleResetDefaultProjects = () => {
-    setProjects(INITIAL_PROJECT_LIST);
-    setCurrentProjectId(INITIAL_PROJECT_LIST[0]?.id || "pjt-001");
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_PROJECT_LIST));
-    } catch {}
-    const roomKey = getSyncRoomKey();
-    pushProjectsToCloud(INITIAL_PROJECT_LIST, roomKey);
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950 pb-20 md:pb-6">
       {/* Dynamic Header with Stepper & Logo */}
@@ -197,7 +220,6 @@ export default function Home() {
         onStepChange={(step) => setCurrentStep(step)}
         pjtCode={currentProject?.pjtCode}
         equipmentName={currentProject?.equipmentName}
-        onOpenSyncModal={() => setIsSyncModalOpen(true)}
       />
 
       {/* Main Workspace View */}
@@ -215,7 +237,7 @@ export default function Home() {
           />
         )}
 
-        {/* Step 2: 프로젝트 추가 / 수정 (Project Master Form) */}
+        {/* Step 2: 프로젝트 추가 (Project Master Form) */}
         {currentStep === 2 && (
           <ProjectMasterStep
             project={draftProject || currentProject || INITIAL_PROJECT_LIST[0]}
@@ -282,18 +304,6 @@ export default function Home() {
           })}
         </div>
       </nav>
-
-      {/* Cloud Sync & Backup Modal */}
-      <SyncModal
-        isOpen={isSyncModalOpen}
-        onClose={() => setIsSyncModalOpen(false)}
-        projects={projects}
-        onUpdateProjects={(newProjects) => {
-          setProjects(newProjects);
-          if (newProjects[0]?.id) setCurrentProjectId(newProjects[0].id);
-        }}
-        onResetDefault={handleResetDefaultProjects}
-      />
 
       {/* Industrial Footer */}
       <footer className="mt-auto border-t border-slate-800 bg-slate-950/90 py-6 text-xs text-slate-500 hidden md:block">
