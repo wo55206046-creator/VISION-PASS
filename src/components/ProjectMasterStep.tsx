@@ -436,8 +436,8 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             onClick={handleNextClick}
             className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-3 text-xs font-extrabold text-slate-950 shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer"
           >
-            <span>PJT 추가 & OCR 등록</span>
-            <ArrowRight className="h-4 w-4 stroke-[2.5]" />
+            <Plus className="h-4 w-4 stroke-[3]" />
+            <span>PJT 추가</span>
           </button>
         </div>
 

@@ -203,6 +203,7 @@ export default function Home() {
 
   const handleCreateNewProject = () => {
     const newPjt = createBlankProject();
+    newPjt.id = "pjt-" + Date.now();
     setDraftProject(newPjt);
     setCurrentStep(2); // 2. PJT 입력 단계로 이동
   };
@@ -250,18 +251,32 @@ export default function Home() {
     }
   };
 
+  // 2단계에서 [PJT 추가] 완료 시 신규 프로젝트 목록 추가 후 1단계(PJT List)로 이동
   const handleSaveDraftProject = (pjtToSave: ProjectMaster) => {
-    const isExisting = projects.some((p) => p.id === pjtToSave.id);
-    if (isExisting) {
-      setProjects((prev) =>
-        prev.map((p) => (p.id === pjtToSave.id ? { ...pjtToSave, updatedAt: new Date().toISOString() } : p))
-      );
-    } else {
-      setProjects((prev) => [{ ...pjtToSave, updatedAt: new Date().toISOString() }, ...prev]);
-    }
-    setCurrentProjectId(pjtToSave.id || "");
+    const newId = pjtToSave.id && pjtToSave.id !== "draft" ? pjtToSave.id : "pjt-" + Date.now();
+    const finalizedPjt: ProjectMaster = {
+      ...pjtToSave,
+      id: newId,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setProjects((prev) => {
+      const exists = prev.some((p) => p.id === finalizedPjt.id);
+      const next = exists
+        ? prev.map((p) => (p.id === finalizedPjt.id ? finalizedPjt : p))
+        : [finalizedPjt, ...prev];
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+
+      pushProjectsToCloud(next).catch(console.warn);
+      return next;
+    });
+
+    setCurrentProjectId(finalizedPjt.id);
     setDraftProject(null);
-    setCurrentStep(3); // 저장 후 3단계(설비 OCR)로 자동 전환
+    setCurrentStep(1); // 1. PJT List 목록 화면으로 이동!
   };
 
   return (
@@ -295,7 +310,7 @@ export default function Home() {
           />
         )}
 
-        {/* Step 2: 프로젝트 추가 (Project Master Form) */}
+        {/* Step 2: 프로젝트 추가 (신규 PJT 생성 후 1단계 PJT List로 이동) */}
         {currentStep === 2 && (
           <ProjectMasterStep
             project={draftProject || currentProject || INITIAL_PROJECT_LIST[0]}
@@ -307,10 +322,11 @@ export default function Home() {
               }
             }}
             onNext={() => {
-              if (draftProject) {
-                handleSaveDraftProject(draftProject);
+              const pjtToSave = draftProject || currentProject;
+              if (pjtToSave) {
+                handleSaveDraftProject(pjtToSave);
               } else {
-                setCurrentStep(3);
+                setCurrentStep(1);
               }
             }}
             onBackToPjtList={() => {
