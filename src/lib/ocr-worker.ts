@@ -388,18 +388,23 @@ export function extractSerialCandidates(
       }
     }
 
-    // 6. 실제 명판 형태별 고유 정밀 패턴
-    while ((match = advantechMoxaRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 280);
-    }
-    while ((match = mitsubishiRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 280);
-    }
-    while ((match = industrialCodeRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 260);
-    }
-    while ((match = pureNumberSerialRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 250);
+    // 6. 모든 일반 영문+숫자 혼합 또는 연속 숫자 시리얼 토큰 유연 추출 (하이픈 유무 무관)
+    const tokens = line.split(/[\s,;:()[\]|]+/);
+    for (const rawTok of tokens) {
+      const tok = sanitizeSerialToken(rawTok);
+      if (!tok || !isValidSerialFormat(tok)) continue;
+
+      // A. 영문과 숫자가 모두 포함된 일반 코드 (예: KMA9011219, TBAJB1112637, Z0065234, 25X-0049H, 230600231746059-A)
+      const hasAlpha = /[A-Z]/.test(tok);
+      const hasDigit = /[0-9]/.test(tok);
+
+      if (hasAlpha && hasDigit && tok.length >= 4 && tok.length <= 30) {
+        addCandidate(tok, 280);
+      }
+      // B. 5~18자리의 연속된 숫자 시리얼 (예: 673644, 092402204027, 8821034)
+      else if (!hasAlpha && hasDigit && tok.length >= 5 && tok.length <= 18) {
+        addCandidate(tok, 250);
+      }
     }
   }
 

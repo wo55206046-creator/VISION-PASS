@@ -650,7 +650,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
             <input
               type="text"
-              placeholder="시리얼 번호 (예: STEC-2026-H8821)"
+              placeholder="시리얼 번호 (예: KMA9011219, 230600231746059-A, TBAJB1112637, 673644)"
               value={selectedSerial}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 setSelectedSerial(e.target.value.toUpperCase())
