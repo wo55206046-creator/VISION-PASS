@@ -356,42 +356,43 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
           </div>
         </div>
 
-        {/* 🔢 설비 Serial NO. 입력 */}
-        <div className="rounded-2xl bg-slate-950/80 p-5 border border-cyan-900/40 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2">
+        {/* 🔢 설비 Serial NO. 입력 & 적용된 PJT 양식 헤더 (한 줄 통합 배치) */}
+        <div className="rounded-2xl bg-slate-950/80 p-4 sm:p-5 border border-cyan-900/40 space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800 pb-3">
+            {/* 좌측: 타이틀 */}
+            <div className="flex items-center gap-2 shrink-0">
               <Barcode className="h-4 w-4 text-cyan-400" />
-              <label className="text-xs font-bold text-cyan-300">
+              <label className="text-xs sm:text-sm font-bold text-cyan-300 whitespace-nowrap">
                 설비 Serial NO. 입력 (총 {project.quantity}개 호기)
               </label>
             </div>
-          </div>
 
-          {/* 적용된 PJT 양식 표시 배너 */}
-          <div className="flex items-center justify-between p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-800/50 text-xs">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span>PJT 양식 적용 완료:</span>
+            {/* 우측: PJT 양식 명칭 + 총 품목 수 + 양식 변경 버튼 (상단 한 줄 통합) */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* PJT 양식 명칭 */}
+              <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-700 text-xs shadow-inner min-w-0">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                <span className="text-slate-400 text-[11px] shrink-0">PJT 양식:</span>
+                <span className="font-bold text-cyan-300 font-mono truncate max-w-[160px] sm:max-w-[220px]" title={project.equipmentName}>
+                  {project.equipmentName || "표준 기본 양식"}
+                </span>
+              </div>
+
+              {/* 총 품목 개수 */}
+              <span className="bg-slate-900 text-slate-300 px-2 py-1 rounded-lg text-[11px] font-mono border border-slate-800 font-semibold shrink-0 whitespace-nowrap">
+                총 <strong className="text-white font-bold">{project.equipmentUnits[0]?.parts?.length || 0}</strong>개 품목
               </span>
-              <span className="font-bold text-cyan-300 font-mono bg-slate-900 px-3 py-1 rounded-lg border border-slate-700 text-xs shadow-inner">
-                {project.equipmentName || "표준 기본 양식"}
-              </span>
-              <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-slate-700 font-semibold">
-                총 {project.equipmentUnits[0]?.parts?.length || 0}개 품목 / {new Set(project.equipmentUnits[0]?.parts?.map((p) => p.category)).size || 1}개 모듈
-              </span>
-              <span className="text-slate-400">
-                (전체 {project.quantity}개 모든 호기에 일괄 복제 배정됨)
-              </span>
+
+              {/* 양식 변경 버튼 */}
+              <button
+                type="button"
+                onClick={() => setIsPresetModalOpen(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 font-bold transition-all cursor-pointer shrink-0 text-xs shadow-sm"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                <span>양식 변경</span>
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsPresetModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 font-bold transition-all cursor-pointer shrink-0 text-xs shadow-sm ml-2"
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400" />
-              <span>양식 변경</span>
-            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
