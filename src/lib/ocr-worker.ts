@@ -33,11 +33,11 @@ export async function getOcrWorker(
       },
     });
 
-    // 산업용 문자/숫자 전용 화이트리스트 & 단일 텍스트 블록/가변 컬럼 모드(PSM 6/4) + 300 DPI
+    // 산업용 문자/숫자 전용 화이트리스트 & 분산 텍스트 전방위 탐색 모드(PSM 11/3) + 300 DPI
     await worker.setParameters({
       tessedit_char_whitelist:
-        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_./:#()= ",
-      tessedit_pageseg_mode: "6" as any,
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_./:#()=*|! ",
+      tessedit_pageseg_mode: "11" as any, // Sparse text: 명판 내 구역별 분산 텍스트/바코드/시리얼 완벽 포착
       user_defined_dpi: "300",
       preserve_interword_spaces: "1",
     });
@@ -118,6 +118,15 @@ const IGNORE_WORDS = new Set([
   "PSI",
   "VDC",
   "VAC",
+  "MAX",
+  "MIN",
+  "PUMP",
+  "VALVE",
+  "LINE",
+  "TOTAL",
+  "WITH",
+  "TECH",
+  "WITHTECH",
   "RANGE",
   "GAS",
   "ADVANTECH",
@@ -142,60 +151,48 @@ const IGNORE_WORDS = new Set([
   "REV",
   "UPORT",
   "MELSEC",
-  "WITHTECH",
   "INSPECTION",
 ]);
 
-interface ScoredCandidate {
-  serial: string;
-  score: number;
-}
-
-export interface PartOcrContext {
-  partName?: string;
-  spec?: string;
-  subSpec?: string;
-}
-
 /**
- * 유효한 시리얼 번호(문자+숫자 또는 순수 숫자) 형식 검증
+ * 유효한 시리얼 번호 패턴 검증
  */
-function isValidSerialFormat(token: string): boolean {
-  if (!token || token.length < 3 || token.length > 35) return false;
-  if (IGNORE_WORDS.has(token)) return false;
+function isValidSerialFormat(candidate: string): boolean {
+  if (!candidate || candidate.length < 3 || candidate.length > 35) return false;
 
-  // 1. 단순 반복 문자열 방지 (예: "------", "11111", "AAAAA", ".....", "||||||")
-  if (/^(.)\1+$/.test(token)) return false;
+  const upper = candidate.toUpperCase();
+  if (IGNORE_WORDS.has(upper)) return false;
 
-  // 2. 바코드 노이즈 선 (수직선, 슬래시 잔여물) 방지
-  if (/^[|\-=_/\\.]+$/.test(token)) return false;
+  // 순수 기호 또는 바코드 잔재 필터링
+  if (/^[|\-_.#/:;*!+=]+$/.test(candidate)) return false;
 
-  // 3. 특수기호만으로 구성된 노이즈 방지
-  if (!/[A-Za-z0-9]/.test(token)) return false;
+  // 최소 1개 이상의 숫자 또는 알파벳 포함
+  if (!/[0-9]/.test(candidate) && !/[A-Z]/.test(upper)) return false;
 
-  // 4. 최소 2자 이상의 영문/숫자 포함
-  const alphanumericCount = (token.match(/[A-Za-z0-9]/g) || []).length;
-  if (alphanumericCount < 2) return false;
-
-  // 5. 모음이 없는 단순 1~3글자 영문 노이즈 방지
-  if (token.length <= 3 && !/[0-9]/.test(token)) return false;
+  // 바코드 반복 패턴 필터링 (예: ||||||, llllll, 11111111)
+  if (/^(.)\1{4,}$/.test(candidate)) return false;
 
   return true;
 }
 
 /**
- * 개별 시리얼 토큰 정제 (접두사 기호 및 노이즈 제거)
+ * 시리얼 토큰 정제 (불필요한 접두사, 콜론, 특수기호 제거)
  */
-export function sanitizeSerialToken(token: string): string {
-  if (!token) return "";
-  let clean = token.toUpperCase().trim();
+function sanitizeSerialToken(raw: string): string {
+  if (!raw) return "";
+  let clean = raw.trim();
 
-  // "SN:", "S/N:", "NO:", "SERIAL:" 접두어가 딸려온 경우 잘라내기
-  clean = clean.replace(/^(?:SERIAL|SER\.?NO\.?|S\/N|S\.N\.|SN|NO|N°|CODE)[\s:.\-|=]+/i, "");
+  // 바코드 양끝 별표(*) 제거 (예: *673644* -> 673644)
+  clean = clean.replace(/^\*+|\*+$/g, "");
 
-  // 앞뒤 특수문자, 노이즈 기호 제거
-  clean = clean.replace(/^[^A-Z0-9]+/, "").replace(/[^A-Z0-9]+$/, "");
-  clean = clean.replace(/\s+/g, "");
+  // 앞뒤 콜론, 세미콜론, 슬래시, 바, 해시, 따옴표 제거
+  clean = clean.replace(/^[ :;=|\-#/\\_.,<>()[\]{}]+|[ :;=|\-#/\\_.,<>()[\]{}]+$/g, "");
+
+  // 접두사 자동 제거 (예: "SN:25002481" -> "25002481", "S/N-092402204027" -> "092402204027", "NO.131279307" -> "131279307")
+  clean = clean.replace(/^(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|Prod\s*S[\/\\|\-.]?N|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*NO\.?|S[\/\\|\-.]N|SN|S\.N\.|S\/NO\.?|NO\.?|N°)\s*[:.\-|=#\s]*/i, "");
+
+  // 다시 앞뒤 기호 정리
+  clean = clean.replace(/^[ :;=|\-#/\\_.,]+|[ :;=|\-#/\\_.,]+$/g, "");
 
   return clean;
 }
@@ -225,8 +222,22 @@ export interface SpatialToken {
   centerDistanceRatio: number; // 0.0 (정가운데) ~ 1.0+ (가장자리)
 }
 
+export interface PartOcrContext {
+  partName?: string;
+  spec?: string;
+  subSpec?: string;
+}
+
+interface ScoredCandidate {
+  serial: string;
+  score: number;
+}
+
 /**
- * 텍스트에서 산업용 시리얼 번호를 정밀 추출 (화면 정가운데 중심 가중치 + SN/Serial 키워드 최우선)
+ * 텍스트에서 산업용 시리얼 번호를 정밀 추출
+ * 1. S/N :, Serial Number, SERIAL, Serial, S/N 우측 값 최우선 추출 (+1500점)
+ * 2. 바코드 아래 라인 숫자/알파벳 최우선 추출 (+1300점)
+ * 3. 화면 정가운데 공간 가중치 (+450~700점)
  */
 export function extractSerialCandidates(
   rawText: string,
@@ -259,7 +270,7 @@ export function extractSerialCandidates(
     }
   }
 
-  // 화면 정가운데 보너스 점수 계산기 (0.0=화면중앙 -> +700점, 0.3 이내 -> +450점)
+  // 화면 정가운데 보너스 점수 계산기
   const getCenterBonus = (token: string, lineIndex: number, totalLines: number): number => {
     const clean = sanitizeSerialToken(token);
     const distRatio = tokenDistanceMap.get(clean);
@@ -271,7 +282,6 @@ export function extractSerialCandidates(
       return 0; // 주변부
     }
 
-    // 공간 좌표가 없는 경우 줄 위치 기준 (가운데 줄 가중치)
     if (totalLines > 2) {
       const midLine = (totalLines - 1) / 2;
       const lineDist = Math.abs(lineIndex - midLine) / (totalLines / 2);
@@ -286,9 +296,9 @@ export function extractSerialCandidates(
     if (!cleaned) return;
     if (!isValidSerialFormat(cleaned)) return;
 
-    // 부품 품명/규격(모델번호)과 일치하면 시리얼이 아니므로 점수 삭감
+    // 부품 품명/규격(모델번호)과 일치하면 점수 대폭 삭감
     if (forbiddenSpecTokens.has(cleaned)) {
-      baseScore -= 400;
+      baseScore -= 600;
     }
 
     // 화면 정가운데 보너스 적용
@@ -303,95 +313,110 @@ export function extractSerialCandidates(
     }
   };
 
-  // [1] 명판 고유 S/N 패턴 정규식 목록:
-  // A. Production S/N (Moxa 등): "Production S/N: TBAJB1112637" (+1000점)
-  const productionSnRegex =
-    /(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|Prod\.?\s*S[\/\\|\-.]?N|Mfg\s*S[\/\\|\-.]?N)\s*[:.\-|=]?\s*([A-Za-z0-9\-_./]{3,35})/gi;
+  // ============================================================================
+  // [전략 1] S/N :, Serial Number, SERIAL, Serial, S/N 우측 값 직접 추출
+  // ============================================================================
+  const labelRightRegexes = [
+    {
+      regex: /(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|Prod\.?\s*S[\/\\|\-.]?N|Mfg\s*S[\/\\|\-.]?N)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1500,
+    },
+    {
+      regex: /(?:SERIAL\s*(?:NUMBER|NO\.?|#|CODE)|Serial\s*(?:Number|No\.?|#)|SER\.?\s*NO\.?|SER\.?\s*#)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1450,
+    },
+    {
+      regex: /(?:SERIAL|Serial)\s*[:.\-|=#\s]+([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1400,
+    },
+    {
+      regex: /(?:S\s*[\/\\|\-.]\s*N|S\s*N|S\/NO\.?|S\.NO\.?|S\.N\.)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1350,
+    },
+    {
+      regex: /(?:^|\s)(?:NO\.?|N°|NUMBER|CODE)\s*[:.\-|=#\s]+([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1200,
+    },
+    {
+      regex: /(?:S[I1|l5]N|5\s*[\/\\|\-.]\s*N|S\s*\|\s*N|SER[I1|l]AL\s*(?:NO\.?|#)?|S\/M|S\s*M)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1300,
+    },
+  ];
 
-  // B. Serial Number / Serial No / SERIAL (Mitsubishi, Thomas 등): "Serial Number: 673644", "SERIAL 230600231746059-A" (+950점)
-  const serialWordRegex =
-    /(?:SERIAL\s*(?:NUMBER|NO\.?|#|CODE)?|SER\.?\s*NO\.?|SER\.?\s*#)\s*[:.\-|=]?\s*([A-Za-z0-9\-_./]{3,35})/gi;
+  // ============================================================================
+  // [전략 2] 바코드 라인 탐지 및 바코드 바로 아래 라인 숫자/알파벳 추출
+  // ============================================================================
+  const isBarcodeLine = (l: string): boolean => {
+    const trimmed = l.trim();
+    if (/\*[A-Za-z0-9\-_./]{4,}\*/.test(trimmed)) return true; 
+    if (/^[|!/\\l1I\-_:;\s]{5,}$/.test(trimmed)) return true;
+    const barChars = (trimmed.match(/[|!/\\l1I]/g) || []).length;
+    return barChars >= 5 && barChars / trimmed.length > 0.45;
+  };
 
-  // C. S/N, SN, S.N. (Advantech, Horiba, Brooks 등): "S/N: KMA9011219", "SN: 092402204027", "S/N 25002481" (+900점)
-  const snPrefixRegex =
-    /(?:S\s*[\/\\|\-.]\s*N|S\s*N|S\/NO\.?|S\.NO\.?|S\.N\.)\s*[:.\-|=]?\s*([A-Za-z0-9\-_./]{3,35})/gi;
-
-  // D. No. / Number: "No. 131279307", "NO : 25X-0049H" (+800점)
-  const noPrefixRegex =
-    /(?:^|\s)(?:NO\.?|N°|NUMBER|CODE)\s*[:.\-|=]\s*([A-Za-z0-9\-_./]{3,35})/gi;
-
-  // E. OCR 오인식 보정 패턴: "SIN:", "5/N:", "S|N:", "SER1AL", "S/M" (+850점)
-  const fuzzyPrefixRegex =
-    /(?:S[I1|l5]N|5\s*[\/\\|\-.]\s*N|S\s*\|\s*N|SER[I1|l]AL\s*(?:NO\.?|#)?|S\/M|S\s*M)\s*[:.\-|=]?\s*([A-Za-z0-9\-_./]{3,35})/gi;
-
-  // F. 줄 단독 헤더 (아래 1~2줄에 시리얼 번호가 위치한 경우) (+880점)
-  const headerOnlyRegex =
-    /^(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|SERIAL\s*(?:NUMBER|NO\.?|#|CODE)?|SER\.?\s*(?:NO\.?|#)|S\s*[\/\\|\-.]\s*N|S\s*N|S[I1|l]N|S\/NO\.?|S\.N\.?|NO\.?|N°)$/i;
-
-  // G. 모델/파트번호 접두사 (사전 배제용)
   const modelPrefixRegex =
     /(?:MODEL\s*(?:NO\.?|#|TYPE)?|MOD\.?|TYPE|TYP\.?|P\s*[\/\\|\-.]\s*N|PART\s*NO\.?|ITEM\s*NO\.?|MN\s*:|REV\s*:|INPUT\s*:|OUTPUT\s*:)\s*[:.\-|=]?\s*([A-Za-z0-9\-_./]{3,35})/gi;
 
-  // 1차 패스: 모델명 추출하여 시리얼 후보에서 사전 배제
   for (const line of rawLines) {
     let match: RegExpExecArray | null;
     while ((match = modelPrefixRegex.exec(line)) !== null) {
       if (match[1]) {
         const modelVal = sanitizeSerialToken(match[1]);
-        if (modelVal) {
-          forbiddenSpecTokens.add(modelVal);
-        }
+        if (modelVal) forbiddenSpecTokens.add(modelVal);
       }
     }
   }
 
-  // 2차 패스: 키워드 기반 시리얼 정밀 추출
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i];
 
-    // 1. Production S/N (1000점)
-    let match: RegExpExecArray | null;
-    while ((match = productionSnRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 1000, i);
+    for (const rule of labelRightRegexes) {
+      let match: RegExpExecArray | null;
+      while ((match = rule.regex.exec(line)) !== null) {
+        if (match[1]) {
+          addCandidate(match[1], rule.score, i);
+        }
+      }
     }
 
-    // 2. Serial Number / Serial No / SERIAL (950점)
-    while ((match = serialWordRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 950, i);
-    }
+    if (isBarcodeLine(line)) {
+      const starMatch = line.match(/\*([A-Za-z0-9\-_./]{3,35})\*/);
+      if (starMatch && starMatch[1]) {
+        addCandidate(starMatch[1], 1400, i);
+      }
 
-    // 3. SN: / S/N: / S.N. (900점)
-    while ((match = snPrefixRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 900, i);
-    }
-
-    // 4. No. / Number: (800점)
-    while ((match = noPrefixRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 800, i);
-    }
-
-    // 5. OCR 오인식 보정 (850점)
-    while ((match = fuzzyPrefixRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 850, i);
-    }
-
-    // 6. 헤더 아래 1~2줄 위치 시리얼 추적 (880점 / 820점)
-    if (headerOnlyRegex.test(line.trim())) {
       if (i + 1 < rawLines.length) {
         const nextTokens = rawLines[i + 1].split(/[\s,;:()[\]|=]+/);
         for (const t of nextTokens) {
-          addCandidate(t, 880, i + 1);
+          addCandidate(t, 1300, i + 1);
         }
       }
       if (i + 2 < rawLines.length) {
         const next2Tokens = rawLines[i + 2].split(/[\s,;:()[\]|=]+/);
         for (const t of next2Tokens) {
-          addCandidate(t, 820, i + 2);
+          addCandidate(t, 1150, i + 2);
         }
       }
     }
 
-    // 7. 모든 일반 영문+숫자 혼합 또는 연속 숫자 시리얼 토큰 추출
+    const headerOnlyRegex =
+      /^(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|SERIAL\s*(?:NUMBER|NO\.?|#|CODE)?|Serial\s*(?:Number|No\.?|#)?|SER\.?\s*(?:NO\.?|#)|S\s*[\/\\|\-.]\s*N|S\s*N|S[I1|l]N|S\/NO\.?|S\.N\.?|NO\.?|N°)$/i;
+
+    if (headerOnlyRegex.test(line.trim())) {
+      if (i + 1 < rawLines.length) {
+        const nextTokens = rawLines[i + 1].split(/[\s,;:()[\]|=]+/);
+        for (const t of nextTokens) {
+          addCandidate(t, 1250, i + 1);
+        }
+      }
+      if (i + 2 < rawLines.length) {
+        const next2Tokens = rawLines[i + 2].split(/[\s,;:()[\]|=]+/);
+        for (const t of next2Tokens) {
+          addCandidate(t, 1100, i + 2);
+        }
+      }
+    }
+
     const tokens = line.split(/[\s,;:()[\]|=]+/);
     for (const rawTok of tokens) {
       const tok = sanitizeSerialToken(rawTok);
@@ -400,28 +425,23 @@ export function extractSerialCandidates(
       const hasAlpha = /[A-Z]/.test(tok);
       const hasDigit = /[0-9]/.test(tok);
 
-      // A. 영문+숫자 혼합 (예: KMA9011219, TBAJB1112637, Z0065234, 25X-0049H, 230600231746059-A, TM1L-HK26-1007, KD26030201-013)
       if (hasAlpha && hasDigit && tok.length >= 4 && tok.length <= 30) {
+        addCandidate(tok, 450, i);
+      }
+      else if (!hasAlpha && hasDigit && tok.length >= 5 && tok.length <= 18) {
         addCandidate(tok, 420, i);
       }
-      // B. 5~18자리 연속 숫자 (예: 673644, 092402204027, 25309826, 260518269, 25002481, 131279307)
-      else if (!hasAlpha && hasDigit && tok.length >= 5 && tok.length <= 18) {
-        addCandidate(tok, 380, i);
-      }
-      // C. 특수 패턴: 16.24893336, 260225-09, 251021-49
       else if (hasDigit && (tok.includes("-") || tok.includes(".")) && tok.length >= 5) {
-        addCandidate(tok, 400, i);
+        addCandidate(tok, 430, i);
       }
     }
   }
 
-  // 점수 내림차순 정렬
   const sortedCandidates: ScoredCandidate[] = Array.from(scoredMap.entries())
     .map(([serial, score]) => ({ serial, score }))
     .filter((c) => c.score >= 40)
     .sort((a, b) => b.score - a.score);
 
-  // 최대 3개 추천
   const candidates = sortedCandidates.map((c) => c.serial).slice(0, 3);
   const bestSerial = candidates.length > 0 ? candidates[0] : "";
 
@@ -433,7 +453,7 @@ export function extractSerialCandidates(
 }
 
 /**
- * 캔버스 메모리 상에서 순수 문자/숫자 정밀 광학 OCR 실행 (화면 중앙 가중치 적용 & Storage Zero)
+ * 캔버스 메모리 상에서 순수 문자/숫자 정밀 광학 OCR 실행
  */
 export async function performInMemoryOcr(
   canvas: HTMLCanvasElement,
