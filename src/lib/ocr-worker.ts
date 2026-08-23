@@ -220,12 +220,18 @@ function extractForbiddenSpecTokens(context?: PartOcrContext): Set<string> {
   return forbidden;
 }
 
+export interface SpatialToken {
+  text: string;
+  centerDistanceRatio: number; // 0.0 (정가운데) ~ 1.0+ (가장자리)
+}
+
 /**
- * 텍스트에서 산업용 시리얼 번호를 정밀 추출 (SN, Serial Number, S/N 키워드 최우선)
+ * 텍스트에서 산업용 시리얼 번호를 정밀 추출 (화면 정가운데 중심 가중치 + SN/Serial 키워드 최우선)
  */
 export function extractSerialCandidates(
   rawText: string,
-  context?: PartOcrContext
+  context?: PartOcrContext,
+  spatialTokens?: SpatialToken[]
 ): {
   bestSerial: string;
   candidates: string[];
@@ -239,21 +245,61 @@ export function extractSerialCandidates(
   const scoredMap = new Map<string, number>();
   const forbiddenSpecTokens = extractForbiddenSpecTokens(context);
 
-  const addCandidate = (token: string, score: number) => {
+  // 공간 거리 맵 (토큰별 화면 정가운데 거리 비율 캐시)
+  const tokenDistanceMap = new Map<string, number>();
+  if (spatialTokens && spatialTokens.length > 0) {
+    for (const st of spatialTokens) {
+      const clean = sanitizeSerialToken(st.text);
+      if (clean) {
+        const existing = tokenDistanceMap.get(clean);
+        if (existing === undefined || st.centerDistanceRatio < existing) {
+          tokenDistanceMap.set(clean, st.centerDistanceRatio);
+        }
+      }
+    }
+  }
+
+  // 화면 정가운데 보너스 점수 계산기 (0.0=화면중앙 -> +700점, 0.3 이내 -> +450점)
+  const getCenterBonus = (token: string, lineIndex: number, totalLines: number): number => {
+    const clean = sanitizeSerialToken(token);
+    const distRatio = tokenDistanceMap.get(clean);
+
+    if (distRatio !== undefined) {
+      if (distRatio <= 0.25) return 700; // 정가운데 십자선 영역
+      if (distRatio <= 0.45) return 450; // 중앙 사각 박스 영역
+      if (distRatio <= 0.70) return 200; // 중간 영역
+      return 0; // 주변부
+    }
+
+    // 공간 좌표가 없는 경우 줄 위치 기준 (가운데 줄 가중치)
+    if (totalLines > 2) {
+      const midLine = (totalLines - 1) / 2;
+      const lineDist = Math.abs(lineIndex - midLine) / (totalLines / 2);
+      if (lineDist <= 0.3) return 350;
+      if (lineDist <= 0.6) return 180;
+    }
+    return 100;
+  };
+
+  const addCandidate = (token: string, baseScore: number, lineIndex: number = 0) => {
     const cleaned = sanitizeSerialToken(token);
     if (!cleaned) return;
     if (!isValidSerialFormat(cleaned)) return;
 
     // 부품 품명/규격(모델번호)과 일치하면 시리얼이 아니므로 점수 삭감
     if (forbiddenSpecTokens.has(cleaned)) {
-      score -= 400;
+      baseScore -= 400;
     }
 
-    if (score < 40) return;
+    // 화면 정가운데 보너스 적용
+    const centerBonus = getCenterBonus(cleaned, lineIndex, rawLines.length);
+    const totalScore = baseScore + centerBonus;
+
+    if (totalScore < 40) return;
 
     const currentScore = scoredMap.get(cleaned) || 0;
-    if (score > currentScore) {
-      scoredMap.set(cleaned, score);
+    if (totalScore > currentScore) {
+      scoredMap.set(cleaned, totalScore);
     }
   };
 
@@ -306,27 +352,27 @@ export function extractSerialCandidates(
     // 1. Production S/N (1000점)
     let match: RegExpExecArray | null;
     while ((match = productionSnRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 1000);
+      if (match[1]) addCandidate(match[1], 1000, i);
     }
 
     // 2. Serial Number / Serial No / SERIAL (950점)
     while ((match = serialWordRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 950);
+      if (match[1]) addCandidate(match[1], 950, i);
     }
 
     // 3. SN: / S/N: / S.N. (900점)
     while ((match = snPrefixRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 900);
+      if (match[1]) addCandidate(match[1], 900, i);
     }
 
     // 4. No. / Number: (800점)
     while ((match = noPrefixRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 800);
+      if (match[1]) addCandidate(match[1], 800, i);
     }
 
     // 5. OCR 오인식 보정 (850점)
     while ((match = fuzzyPrefixRegex.exec(line)) !== null) {
-      if (match[1]) addCandidate(match[1], 850);
+      if (match[1]) addCandidate(match[1], 850, i);
     }
 
     // 6. 헤더 아래 1~2줄 위치 시리얼 추적 (880점 / 820점)
@@ -334,13 +380,13 @@ export function extractSerialCandidates(
       if (i + 1 < rawLines.length) {
         const nextTokens = rawLines[i + 1].split(/[\s,;:()[\]|=]+/);
         for (const t of nextTokens) {
-          addCandidate(t, 880);
+          addCandidate(t, 880, i + 1);
         }
       }
       if (i + 2 < rawLines.length) {
         const next2Tokens = rawLines[i + 2].split(/[\s,;:()[\]|=]+/);
         for (const t of next2Tokens) {
-          addCandidate(t, 820);
+          addCandidate(t, 820, i + 2);
         }
       }
     }
@@ -356,15 +402,15 @@ export function extractSerialCandidates(
 
       // A. 영문+숫자 혼합 (예: KMA9011219, TBAJB1112637, Z0065234, 25X-0049H, 230600231746059-A, TM1L-HK26-1007, KD26030201-013)
       if (hasAlpha && hasDigit && tok.length >= 4 && tok.length <= 30) {
-        addCandidate(tok, 420);
+        addCandidate(tok, 420, i);
       }
       // B. 5~18자리 연속 숫자 (예: 673644, 092402204027, 25309826, 260518269, 25002481, 131279307)
       else if (!hasAlpha && hasDigit && tok.length >= 5 && tok.length <= 18) {
-        addCandidate(tok, 380);
+        addCandidate(tok, 380, i);
       }
       // C. 특수 패턴: 16.24893336, 260225-09, 251021-49
       else if (hasDigit && (tok.includes("-") || tok.includes(".")) && tok.length >= 5) {
-        addCandidate(tok, 400);
+        addCandidate(tok, 400, i);
       }
     }
   }
@@ -387,7 +433,7 @@ export function extractSerialCandidates(
 }
 
 /**
- * 캔버스 메모리 상에서 순수 문자/숫자 정밀 광학 OCR 실행 (Storage Zero)
+ * 캔버스 메모리 상에서 순수 문자/숫자 정밀 광학 OCR 실행 (화면 중앙 가중치 적용 & Storage Zero)
  */
 export async function performInMemoryOcr(
   canvas: HTMLCanvasElement,
@@ -400,9 +446,33 @@ export async function performInMemoryOcr(
   const rawText = result.data.text || "";
   const confidence = Math.round(result.data.confidence || 0);
 
+  // 화면 정가운데 거리 좌표 계산 (화면 중심 = 0.0, 모서리 = 1.0+)
+  const imgWidth = canvas.width || 1280;
+  const imgHeight = canvas.height || 720;
+  const cX = imgWidth / 2;
+  const cY = imgHeight / 2;
+
+  const spatialTokens: SpatialToken[] = [];
+  const words = (result.data as any).words || [];
+
+  for (const w of words) {
+    if (w && w.text && w.bbox) {
+      const boxX = (w.bbox.x0 + w.bbox.x1) / 2;
+      const boxY = (w.bbox.y0 + w.bbox.y1) / 2;
+      const dx = (boxX - cX) / (imgWidth / 2);
+      const dy = (boxY - cY) / (imgHeight / 2);
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      spatialTokens.push({
+        text: w.text,
+        centerDistanceRatio: dist,
+      });
+    }
+  }
+
   const { bestSerial, candidates, lines } = extractSerialCandidates(
     rawText,
-    context
+    context,
+    spatialTokens
   );
 
   const finalSerial = candidates.length > 0 ? bestSerial : "";

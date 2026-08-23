@@ -156,79 +156,95 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       {/* Top Banner & Multi-Unit Tabs */}
-      <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-cleanroom-850 to-slate-900 p-5 border border-slate-800 shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold text-xs border border-cyan-500/30">
-                03
-              </span>
-              <h2 className="text-lg font-bold text-white">
-                PJT 부품 시리얼 OCR 인식
-              </h2>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs">
-              <span
-                className={`font-bold flex items-center gap-1 px-2.5 py-0.5 rounded-lg border shadow-sm ${
-                  getSiteBadgeStyle(project.site).bg
-                }`}
-              >
-                <Building2 className={`h-3.5 w-3.5 ${getSiteBadgeStyle(project.site).icon}`} />
-                <span>{project.site || "사업장 미지정"}</span>
-              </span>
-              <span className="text-slate-400">
-                PJT: <strong className="text-cyan-300 font-mono font-extrabold">{project.pjtCode}</strong> / 설비명:{" "}
-                <strong className="text-white">{project.equipmentName}</strong> (총 {project.quantity}대)
-              </span>
-            </div>
+      <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-cleanroom-850 to-slate-900 p-4 sm:p-5 border border-slate-800 shadow-xl space-y-3.5">
+        {/* 1. 최상단 행: 좌측 [03 PJT 부품 시리얼 OCR 인식] & 우측 [Excel] 다운로드 버튼 */}
+        <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold text-xs border border-cyan-500/30 shrink-0">
+              03
+            </span>
+            <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
+              PJT 부품 시리얼 OCR 인식
+            </h2>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
-            {/* 📥 엑셀 보고서 다운로드 (.xlsx) - 상단 메인 액션 버튼 */}
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await exportSemiconductorReportToExcel(project);
-                } catch (err) {
-                  console.error(err);
-                  alert("엑셀 파일 생성 중 오류가 발생했습니다.");
-                }
-              }}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2 text-xs font-extrabold text-slate-950 shadow-glow-cyan hover:opacity-95 transition-all shrink-0 cursor-pointer"
-              title="모든 호기의 부품 시리얼 리스트를 시트별로 매칭하여 단일 엑셀 파일로 다운로드"
-            >
-              <FileSpreadsheet className="h-4 w-4 stroke-[2.5]" />
-              <span>엑셀 보고서 다운로드 (.xlsx)</span>
-            </button>
+          {/* 📊 우측 상단 Excel 다운로드 버튼 */}
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await exportSemiconductorReportToExcel(project);
+              } catch (err) {
+                console.error(err);
+                alert("엑셀 파일 생성 중 오류가 발생했습니다.");
+              }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 shadow-glow-emerald transition-all shrink-0 cursor-pointer"
+            title="모든 호기의 부품 시리얼 리스트를 엑셀 파일로 다운로드"
+          >
+            <FileSpreadsheet className="h-4 w-4 stroke-[2.5]" />
+            <span>Excel</span>
+          </button>
+        </div>
 
-            {/* Quick Edit Project Button */}
-            <button
-              type="button"
-              onClick={() => {
-                setEditingPjt(JSON.parse(JSON.stringify(project)));
-                setIsEditModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-950/80 px-3.5 py-2 text-xs font-semibold text-cyan-300 border border-cyan-700/60 hover:bg-cyan-900 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer"
-              title="프로젝트 정보 및 Serial NO. 수정"
+        {/* 2. 프로젝트 정보 표시 영역 */}
+        <div className="space-y-1.5 text-xs">
+          {/* 라인 1: [고객사 배지] PJT: <코드> 동시 표현 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={`font-bold flex items-center gap-1 px-2.5 py-0.5 rounded-lg border shadow-sm ${
+                getSiteBadgeStyle(project?.site || "").bg
+              }`}
             >
-              <Edit2 className="h-3.5 w-3.5" />
-              <span>프로젝트 정보 수정</span>
-            </button>
-
-            {/* Replicate Template Button */}
-            {project.quantity > 1 && (
-              <button
-                type="button"
-                onClick={handleReplicateToAllUnits}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer"
-                title="현재 호기의 부품 리스트(부품명/규격)를 나머지 모든 호기에 일괄 복제"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                <span>1호기 부품 목록 전체 복제</span>
-              </button>
-            )}
+              <Building2 className={`h-3.5 w-3.5 ${getSiteBadgeStyle(project?.site || "").icon}`} />
+              <span>{project?.site || "고객사 미지정"}</span>
+            </span>
+            <span className="text-slate-300 font-semibold flex items-center gap-1">
+              <span className="text-slate-400">PJT:</span>
+              <strong className="text-cyan-300 font-mono font-extrabold text-sm">{project?.pjtCode}</strong>
+            </span>
           </div>
+
+          {/* 라인 2: 설비명 한 줄 단독 표시 */}
+          <div className="flex items-center gap-1.5 text-slate-300 pt-0.5">
+            <span className="text-slate-400 font-medium shrink-0">설비명:</span>
+            <strong className="text-white font-bold truncate" title={project?.equipmentName}>
+              {project?.equipmentName || "미지정"}
+            </strong>
+            <span className="text-slate-400 font-mono text-[11px] shrink-0">
+              (총 {project?.quantity || 1}대)
+            </span>
+          </div>
+        </div>
+
+        {/* 3. 보조 액션 버튼 행: [프로젝트 정보 수정] [1호기 부품 목록 전체 복제] */}
+        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          {/* Quick Edit Project Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setEditingPjt(JSON.parse(JSON.stringify(project)));
+              setIsEditModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800/90 px-3 py-1.5 text-xs font-semibold text-cyan-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer"
+            title="프로젝트 정보 및 Serial NO. 수정"
+          >
+            <Edit2 className="h-3.5 w-3.5" />
+            <span>프로젝트 정보 수정</span>
+          </button>
+
+          {/* Replicate Template Button */}
+          {(project?.quantity || 1) > 1 && (
+            <button
+              type="button"
+              onClick={handleReplicateToAllUnits}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer"
+              title="현재 호기의 부품 리스트(부품명/규격)를 나머지 모든 호기에 일괄 복제"
+            >
+              <Copy className="h-3.5 w-3.5" />
+              <span>1호기 부품 목록 전체 복제</span>
+            </button>
+          )}
         </div>
 
         {/* 🔢 등록된 설비 Serial NO. 및 호기 선택 탭 (단일 통합) */}
