@@ -67,61 +67,74 @@ export async function performGeminiDeepOcr(
       // Canvas -> Base64 JPEG 변환
       const base64Data = canvas.toDataURL("image/jpeg", 0.95).split(",")[1];
 
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const modelCandidates = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
+      let parsed: any = null;
 
-      const requestBody = {
-        contents: [
-          {
-            parts: [
-              { text: GEMINI_SYSTEM_PROMPT },
+      for (const model of modelCandidates) {
+        try {
+          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+          const requestBody = {
+            contents: [
               {
-                text: `대상 부품 정보: 품명=[${context?.partName || "-"}], 규격=[${context?.spec || "-"}]\n이 이미지에서 설비 명판 및 수기 시리얼 번호를 정밀 추출해주세요.`,
-              },
-              {
-                inline_data: {
-                  mime_type: "image/jpeg",
-                  data: base64Data,
-                },
+                parts: [
+                  { text: GEMINI_SYSTEM_PROMPT },
+                  {
+                    text: `대상 부품 정보: 품명=[${context?.partName || "-"}], 규격=[${context?.spec || "-"}]\n이 이미지에서 설비 명판 및 수기 시리얼 번호를 정밀 추출해주세요.`,
+                  },
+                  {
+                    inline_data: {
+                      mime_type: "image/jpeg",
+                      data: base64Data,
+                    },
+                  },
+                ],
               },
             ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.0,
-          response_mime_type: "application/json",
-        },
-      };
-
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (res.ok) {
-        const jsonRes = await res.json();
-        const rawContent = jsonRes?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (rawContent) {
-          const parsed = JSON.parse(rawContent);
-          const best = (parsed.best_serial || "").trim().toUpperCase();
-          const cands: string[] = Array.isArray(parsed.candidates)
-            ? parsed.candidates.map((c: string) => String(c).trim().toUpperCase()).filter(Boolean)
-            : [];
-
-          if (best && !cands.includes(best)) {
-            cands.unshift(best);
-          }
-
-          onProgress?.(100, "✨ Gemini AI 심층 추출 완료!");
-
-          return {
-            rawText: parsed.raw_text || rawContent,
-            cleanedSerial: best || (cands[0] || ""),
-            confidence: parsed.confidence || 98,
-            lines: (parsed.raw_text || "").split("\n"),
-            candidates: cands.slice(0, 3),
+            generationConfig: {
+              temperature: 0.0,
+              response_mime_type: "application/json",
+            },
           };
+
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
+          });
+
+          if (res.ok) {
+            const jsonRes = await res.json();
+            const rawContent = jsonRes?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (rawContent) {
+              parsed = JSON.parse(rawContent);
+              break;
+            }
+          }
+        } catch (e) {
+          // 다음 모델로 순차 시도
         }
+      }
+
+      if (parsed) {
+        const best = (parsed.best_serial || "").trim().toUpperCase();
+        const cands: string[] = Array.isArray(parsed.candidates)
+          ? parsed.candidates.map((c: string) => String(c).trim().toUpperCase()).filter(Boolean)
+          : [];
+
+        if (best && !cands.includes(best)) {
+          cands.unshift(best);
+        }
+
+        onProgress?.(100, "✨ Gemini AI 심층 추출 완료!");
+
+        return {
+          rawText: parsed.raw_text || JSON.stringify(parsed),
+          cleanedSerial: best || (cands[0] || ""),
+          confidence: parsed.confidence || 98,
+          lines: (parsed.raw_text || "").split("\n"),
+          candidates: cands.slice(0, 3),
+        };
       }
     } catch (geminiError) {
       console.warn("Gemini API call failed, falling back to local OCR:", geminiError);

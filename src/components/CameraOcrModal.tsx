@@ -25,8 +25,6 @@ import {
   AlertCircle,
   AlertTriangle,
   Cpu,
-  ZoomIn,
-  ZoomOut,
   Bot,
   KeyRound,
 } from "lucide-react";
@@ -56,10 +54,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
 
-  // Zoom State (Hardware + Software Hybrid Zoom)
-  const [zoomLevel, setZoomLevel] = useState<number>(1);
-  const [isHardwareZoom, setIsHardwareZoom] = useState(false);
-
   // Preview & Processing State
   const [previewMode, setPreviewMode] = useState<"live" | "enhanced" | "binary">("live");
   const [options, setOptions] = useState<PreprocessingOptions>(DEFAULT_PREPROCESSING_OPTIONS);
@@ -81,34 +75,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   // Canvas Refs (In-Memory Only, Zero-Storage)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // 줌 변경 핸들러 (하드웨어 줌 시도 후 미지원 시 소프트웨어 줌으로 연동)
-  const applyZoom = useCallback(
-    async (newZoom: number, activeStream: MediaStream | null = stream) => {
-      const clampedZoom = Math.min(4, Math.max(1, +(newZoom.toFixed(1))));
-      setZoomLevel(clampedZoom);
-
-      if (activeStream) {
-        const videoTrack = activeStream.getVideoTracks()[0];
-        try {
-          const capabilities = (videoTrack?.getCapabilities?.() || {}) as {
-            zoom?: { min: number; max: number; step: number };
-          };
-          if (capabilities.zoom && (videoTrack as any).applyConstraints) {
-            await (videoTrack as any).applyConstraints({
-              advanced: [{ zoom: clampedZoom }],
-            });
-            setIsHardwareZoom(true);
-            return;
-          }
-        } catch {
-          // Hardware zoom unsupported on this device/browser -> fallback to software zoom
-        }
-      }
-      setIsHardwareZoom(false);
-    },
-    [stream]
-  );
 
   // 카메라 시작 (다단계 장애 극복 & 안드로이드 호환)
   const startCamera = useCallback(async () => {
@@ -166,24 +132,20 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         };
       }
 
-      // 플래시(토치) 및 하드웨어 줌 지원 여부 확인
+      // 플래시(토치) 지원 여부 확인
       const videoTrack = mediaStream.getVideoTracks()[0];
       const capabilities = (videoTrack?.getCapabilities?.() || {}) as {
         torch?: boolean;
-        zoom?: { min: number; max: number; step: number };
       };
 
       setTorchSupported(Boolean(capabilities.torch));
-
-      // 기본 1x 줌 적용
-      applyZoom(1, mediaStream);
     } catch (err: unknown) {
       console.warn("Camera access failed:", err);
       setHasCameraError(
         "카메라 연결에 실패하였습니다. 브라우저/앱 설정에서 [카메라 권한]이 허용되어 있는지 확인하시거나, 아래의 [📷 사진 직접 촬영 / 앨범 업로드] 버튼을 이용해주세요."
       );
     }
-  }, [facingMode, applyZoom]);
+  }, [facingMode]);
 
   // 카메라 스트림 정리 (스토리지 제로)
   const stopCamera = useCallback(() => {
@@ -205,7 +167,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       setIsVerifiedCheck(true);
       setOcrResult(null);
       setIsFrozen(false);
-      setZoomLevel(1);
       startCamera();
     } else {
       stopCamera();
@@ -293,17 +254,11 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       // 1. 직접 사진 업로드 시: 전체 이미지 전체 해상도 사용
       processedCanvas = preprocessCanvas(customCanvas, options);
     } else {
-      // 2. 카메라 촬영 시: 줌에 맞춘 96% x 90% 초광각 전체 캡처 ROI 적용
-      const effectiveZoom = isHardwareZoom ? 1 : zoomLevel;
-      const visibleWidth = rawCanvas.width / effectiveZoom;
-      const visibleHeight = rawCanvas.height / effectiveZoom;
-      const visibleX = (rawCanvas.width - visibleWidth) / 2;
-      const visibleY = (rawCanvas.height - visibleHeight) / 2;
-
-      const roiWidth = visibleWidth * 0.96;
-      const roiHeight = visibleHeight * 0.90;
-      const roiX = visibleX + (visibleWidth - roiWidth) / 2;
-      const roiY = visibleY + (visibleHeight - roiHeight) / 2;
+      // 2. 카메라 촬영 시: 96% x 90% 와이드 전체 캡처 ROI 적용
+      const roiWidth = rawCanvas.width * 0.96;
+      const roiHeight = rawCanvas.height * 0.90;
+      const roiX = (rawCanvas.width - roiWidth) / 2;
+      const roiY = (rawCanvas.height - roiHeight) / 2;
 
       croppedCanvas = cropCanvasROI(rawCanvas, {
         x: roiX,
@@ -444,11 +399,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               ref={videoRef}
               playsInline
               muted
-              className="w-full h-full object-cover transition-transform duration-100 ease-out"
-              style={{
-                transform: !isHardwareZoom && zoomLevel > 1 ? `scale(${zoomLevel})` : "none",
-                transformOrigin: "center center",
-              }}
+              className="w-full h-full object-cover"
             />
 
             {/* Industrial Viewfinder Crosshair & Guide Bounding Box */}
@@ -529,30 +480,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                   className="hidden"
                 />
               </label>
-            </div>
-
-            {/* 🔍 Zoom Quick Controls Floating Pill */}
-            <div className="absolute bottom-2.5 inset-x-0 flex justify-center items-center gap-1 z-10 pointer-events-auto">
-              <div className="bg-slate-950/85 backdrop-blur-md border border-slate-700/80 rounded-full px-2.5 py-0.5 flex items-center gap-1 shadow-xl">
-                <span className="text-[9px] font-bold text-slate-400 mr-0.5 flex items-center gap-0.5">
-                  <ZoomIn className="h-2.5 w-2.5 text-cyan-400" />
-                  줌:
-                </span>
-                {[1, 1.5, 2, 3].map((z) => (
-                  <button
-                    key={z}
-                    type="button"
-                    onClick={() => applyZoom(z)}
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold transition-all cursor-pointer ${
-                      zoomLevel === z
-                        ? "bg-cyan-500 text-slate-950 shadow-glow-cyan scale-105"
-                        : "bg-slate-900/90 text-slate-300 hover:text-white border border-slate-700/60"
-                    }`}
-                  >
-                    {z}x
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* Error Overlay */}

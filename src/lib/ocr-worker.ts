@@ -483,6 +483,19 @@ export function extractSerialCandidates(
       }
     }
 
+    // 1-7. 자간이 넓은 라인 자동 병합 파싱 (예: "6 7 3 6 4 4" -> "673644", "S / N : 1 3 1 2 7 9 3 0 7")
+    const deSpacedLine = line.replace(/(?<=\b[A-Za-z0-9])\s+(?=[A-Za-z0-9]\b)/g, "");
+    if (deSpacedLine !== line) {
+      for (const rule of labelRightRegexes) {
+        let match: RegExpExecArray | null;
+        while ((match = rule.regex.exec(deSpacedLine)) !== null) {
+          if (match[1]) {
+            addCandidate(match[1], rule.score + 50, i);
+          }
+        }
+      }
+    }
+
     if (isBarcodeLine(line)) {
       const starMatch = line.match(/\*([A-Za-z0-9\-_./]{3,35})\*/);
       if (starMatch && starMatch[1]) {
@@ -531,11 +544,9 @@ export function extractSerialCandidates(
 
       if (hasAlpha && hasDigit && tok.length >= 4 && tok.length <= 30) {
         addCandidate(tok, 450, i);
-      }
-      else if (!hasAlpha && hasDigit && tok.length >= 5 && tok.length <= 18) {
+      } else if (!hasAlpha && hasDigit && tok.length >= 5 && tok.length <= 18) {
         addCandidate(tok, 420, i);
-      }
-      else if (hasDigit && (tok.includes("-") || tok.includes(".")) && tok.length >= 5) {
+      } else if (hasDigit && (tok.includes("-") || tok.includes(".")) && tok.length >= 5) {
         addCandidate(tok, 430, i);
       }
     }
@@ -557,7 +568,7 @@ export function extractSerialCandidates(
 }
 
 /**
- * 캔버스 메모리 상에서 순수 문자/숫자 정밀 광학 OCR 실행
+ * 캔버스 메모리 상에서 순수 문자/숫자 정밀 광학 OCR 실행 (하드웨어 바코드 + Tesseract 5 LSTM)
  */
 export async function performInMemoryOcr(
   canvas: HTMLCanvasElement,

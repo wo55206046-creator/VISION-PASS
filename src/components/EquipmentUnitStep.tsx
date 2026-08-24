@@ -260,13 +260,19 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
               const verified = u.parts.filter((p) => p.isVerified).length;
               const total = u.parts.length;
               const isAllPass = total > 0 && verified === total;
+              const displaySerial = u.equipmentSerial
+                ? u.equipmentSerial.length > 4
+                  ? u.equipmentSerial.slice(-4)
+                  : u.equipmentSerial
+                : "(미입력)";
 
               return (
                 <button
                   key={u.unitIndex}
                   type="button"
                   onClick={() => setActiveUnitIndex(u.unitIndex)}
-                  className={`px-3 py-2 sm:py-1.5 rounded-lg border text-xs font-semibold cursor-pointer flex items-center gap-2 transition-all shrink-0 ${
+                  title={u.equipmentSerial ? `${u.unitIndex}호기: ${u.equipmentSerial}` : `${u.unitIndex}호기 (시리얼 미입력)`}
+                  className={`px-3 py-2 sm:py-1.5 rounded-lg border text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-all shrink-0 ${
                     isCurrent
                       ? "bg-cyan-500 text-slate-950 font-bold border-cyan-400 shadow-glow-cyan"
                       : "bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700"
@@ -276,7 +282,7 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
                     {u.unitIndex}호기:
                   </span>
                   <span className={`font-bold ${isCurrent ? "text-slate-950 font-extrabold" : "text-cyan-300"}`}>
-                    {u.equipmentSerial || "(미입력)"}
+                    {displaySerial}
                   </span>
                   <span
                     className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold shrink-0 ${
