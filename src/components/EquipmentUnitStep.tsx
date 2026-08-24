@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { EquipmentUnit, PartItem, ProjectMaster } from "@/types";
-import { PartsTable } from "./PartsTable";
+import { PartsTable } from "./PartsTableComponent";
 import { PresetModal } from "./PresetModal";
 import { CameraOcrModal } from "./CameraOcrModal";
 import {
@@ -10,7 +10,7 @@ import {
   formatSerialRangeForFilename,
 } from "@/lib/excel-export";
 import { DEFAULT_SITES } from "@/lib/default-presets";
-import { generateNextSerial, cascadeSerialFromUnit1 } from "@/lib/utils";
+import { generateId, generateNextSerial, cascadeSerialFromUnit1 } from "@/lib/utils";
 import {
   Layers,
   Copy,

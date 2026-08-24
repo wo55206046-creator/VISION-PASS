@@ -22,6 +22,9 @@ import {
   Save,
   RotateCcw,
   FolderPlus,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 
 interface PresetModalProps {
@@ -78,6 +81,42 @@ export const PresetModal: React.FC<PresetModalProps> = ({
   const [editorModelName, setEditorModelName] = useState("");
   const [editorDescription, setEditorDescription] = useState("");
   const [editorParts, setEditorParts] = useState<PartItem[]>([]);
+  const [draggedEditorIdx, setDraggedEditorIdx] = useState<number | null>(null);
+  const [dragOverEditorIdx, setDragOverEditorIdx] = useState<number | null>(null);
+
+  // 드래그 앤 드롭 순서 변경 핸들러
+  const handleEditorDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedEditorIdx(index);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", index.toString());
+  };
+
+  const handleEditorDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverEditorIdx !== index) {
+      setDragOverEditorIdx(index);
+    }
+  };
+
+  const handleEditorDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedEditorIdx === null || draggedEditorIdx === dropIndex) {
+      setDraggedEditorIdx(null);
+      setDragOverEditorIdx(null);
+      return;
+    }
+
+    setEditorParts((prev) => {
+      const updated = [...prev];
+      const [moved] = updated.splice(draggedEditorIdx, 1);
+      updated.splice(dropIndex, 0, moved);
+      return updated;
+    });
+
+    setDraggedEditorIdx(null);
+    setDragOverEditorIdx(null);
+  };
 
   // Tab 2: Excel Upload State
   const [isUploading, setIsUploading] = useState(false);
@@ -926,8 +965,9 @@ export const PresetModal: React.FC<PresetModalProps> = ({
               {/* Editable Parts Table */}
               <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-800">
                 <table className="w-full text-left">
-                  <thead className="bg-slate-950 text-slate-400 font-semibold sticky top-0 text-[11px]">
+                  <thead className="bg-slate-950 text-slate-400 font-semibold sticky top-0 text-[11px] z-10">
                     <tr>
+                      <th className="p-2 w-8 text-center" title="마우스로 잡고 드래그하여 순서 변경">이동</th>
                       <th className="p-2 w-8 text-center">No</th>
                       <th className="p-2 w-28">모듈 구분</th>
                       <th className="p-2 min-w-[120px]">품명</th>
@@ -938,7 +978,34 @@ export const PresetModal: React.FC<PresetModalProps> = ({
                   </thead>
                   <tbody className="divide-y divide-slate-800 text-[11px]">
                     {editorParts.map((p, idx) => (
-                      <tr key={p.id || idx} className="hover:bg-slate-900/40">
+                      <tr
+                        key={p.id || idx}
+                        draggable
+                        onDragStart={(e) => handleEditorDragStart(e, idx)}
+                        onDragOver={(e) => handleEditorDragOver(e, idx)}
+                        onDrop={(e) => handleEditorDrop(e, idx)}
+                        onDragEnd={() => {
+                          setDraggedEditorIdx(null);
+                          setDragOverEditorIdx(null);
+                        }}
+                        className={`transition-colors ${
+                          draggedEditorIdx === idx
+                            ? "opacity-30 bg-cyan-950/70"
+                            : dragOverEditorIdx === idx
+                            ? "border-t-2 border-cyan-400 bg-cyan-950/50"
+                            : "hover:bg-slate-900/50"
+                        }`}
+                      >
+                        {/* ⠿ 드래그 핸들 */}
+                        <td className="p-1 text-center">
+                          <div
+                            className="flex items-center justify-center text-slate-500 hover:text-cyan-300 cursor-grab active:cursor-grabbing p-1 rounded hover:bg-slate-800"
+                            title="마우스로 잡고 위/아래로 드래그하여 순서 변경"
+                          >
+                            <GripVertical className="h-4 w-4" />
+                          </div>
+                        </td>
+
                         <td className="p-2 text-center text-slate-500 font-mono font-bold">
                           {idx + 1}
                         </td>
