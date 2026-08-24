@@ -268,104 +268,107 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                     </div>
                   </div>
                 ) : (
-                  /* 모바일 일반 카드 뷰 (초고밀도 컴팩트 원화면 뷰) */
-                  <div className="flex items-center justify-between gap-2.5">
-                    {/* 왼쪽: 부품 품명, 규격, 세부사항 및 S/N */}
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[10px] font-mono font-bold text-slate-500 shrink-0">
-                          #{String(index + 1).padStart(2, "0")}
-                        </span>
-                        <h4 className="text-xs font-bold text-white truncate">
-                          {part.partName}
-                        </h4>
+                  /* 모바일 일반 카드 뷰 (상단 액션 툴바 + 하단 100% 전폭 S/N 라인) */
+                  <div className="space-y-2">
+                    {/* 상단 1행: [좌측 부품명/규격] + [우측 액션: OCR스캔 + 완료배지/수정삭제] */}
+                    <div className="flex items-center justify-between gap-2">
+                      {/* 좌측: 부품 품명 및 세부 규격 */}
+                      <div className="flex-1 min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[10px] font-mono font-bold text-slate-500 shrink-0">
+                            #{String(index + 1).padStart(2, "0")}
+                          </span>
+                          <h4 className="text-xs sm:text-sm font-bold text-white truncate">
+                            {part.partName}
+                          </h4>
+                        </div>
+
+                        <div className="flex items-center gap-1 text-[10px] text-slate-400 font-mono truncate">
+                          <span className="bg-slate-950 px-1 py-0.2 rounded border border-slate-800 text-slate-300 shrink-0 text-[9px]">
+                            {part.subSpec || "-"}
+                          </span>
+                          <span className="text-slate-400 truncate text-[10px]">
+                            {part.spec || "-"}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-1 text-[10px] text-slate-400 font-mono truncate">
-                        <span className="bg-slate-950 px-1 py-0.2 rounded border border-slate-800 text-slate-300 shrink-0 text-[9px]">
-                          {part.subSpec || "-"}
-                        </span>
-                        <span className="text-slate-400 truncate text-[10px]">
-                          {part.spec || "-"}
-                        </span>
-                      </div>
+                      {/* 우측 상단 액션 그룹: [OCR 스캔] + [완료/미검증 & 수정/삭제] */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {/* 📸 [OCR 스캔] 버튼 (상단 배치) */}
+                        <button
+                          type="button"
+                          onClick={() => onOpenOcrModal(part)}
+                          className="h-12 px-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 shadow-glow-cyan active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer shrink-0"
+                          title="명판 OCR 스캔"
+                        >
+                          <Camera className="h-3.5 w-3.5 stroke-[2.5]" />
+                          <span className="text-[9.5px] font-black tracking-tight whitespace-nowrap">
+                            OCR 스캔
+                          </span>
+                        </button>
 
-                      {/* S/N 상태 표시 */}
-                      <div className="flex items-center gap-1.5 text-[11px] font-mono">
-                        <span className="text-slate-500 text-[10px] shrink-0 font-bold">S/N:</span>
-                        {hasSerial ? (
-                          <span className="font-bold text-xs tracking-wider text-cyan-300 truncate">
-                            {part.detectedSerial}
-                          </span>
-                        ) : (
-                          <span className="text-slate-600 text-[10px] italic">
-                            (스캔 전 - 미인식)
-                          </span>
-                        )}
+                        {/* 우측 컬럼: 상단 완료/미검증 배지 + 하단 수정/삭제 버튼 */}
+                        <div className="flex flex-col items-end justify-between h-12 py-0.5">
+                          {/* 검증 상태 토글 버튼 (크기/모형 100% 고정형) */}
+                          <button
+                            type="button"
+                            onClick={() => toggleVerify(part.id)}
+                            className={`w-14 h-5 rounded-md text-[10px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer select-none shrink-0 ${
+                              part.isVerified
+                                ? "bg-emerald-500 text-slate-950 font-extrabold shadow-glow-emerald"
+                                : "bg-slate-800 text-amber-400 border border-slate-700 hover:bg-slate-700"
+                            }`}
+                            title="검증 상태 변경"
+                          >
+                            {part.isVerified ? (
+                              <>
+                                <CheckCircle2 className="h-3 w-3 shrink-0" />
+                                <span>완료</span>
+                              </>
+                            ) : (
+                              <>
+                                <AlertCircle className="h-3 w-3 shrink-0 text-amber-400" />
+                                <span>미검증</span>
+                              </>
+                            )}
+                          </button>
+
+                          {/* 수정 & 삭제 버튼 (사진 요청: 크기 확대 및 정밀 정렬) */}
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => startEditing(part)}
+                              className="w-6.5 h-5.5 rounded-md bg-slate-800 text-slate-300 hover:text-white border border-slate-700 hover:border-cyan-500 transition-all flex items-center justify-center cursor-pointer"
+                              title="직접 수정"
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deletePart(part.id)}
+                              className="w-6.5 h-5.5 rounded-md bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-500 transition-all flex items-center justify-center cursor-pointer"
+                              title="삭제"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* 오른쪽: [OCR 스캔] 액션 버튼 & [검증상태 / 수정 / 삭제] 툴바 */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      {/* 📸 [OCR 스캔] 버튼 (상단 카메라 아이콘 + 하단 "OCR 스캔" 텍스트) */}
-                      <button
-                        type="button"
-                        onClick={() => onOpenOcrModal(part)}
-                        className="h-13 px-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 shadow-glow-cyan active:scale-95 transition-all flex flex-col items-center justify-center gap-1 cursor-pointer shrink-0"
-                        title="명판 OCR 스캔"
-                      >
-                        <Camera className="h-4 w-4 stroke-[2.5]" />
-                        <span className="text-[10px] font-black tracking-tight whitespace-nowrap">
-                          OCR 스캔
+                    {/* 하단 2행: S/N 전폭(100% Full-Width) 단독 라인 (긴 시리얼도 짤림 없이 시원하게 표시) */}
+                    <div className="pt-1.5 border-t border-slate-800/80 flex items-center gap-2 text-xs font-mono">
+                      <span className="text-slate-500 text-[10px] font-bold shrink-0">S/N:</span>
+                      {hasSerial ? (
+                        <span className="font-bold text-xs sm:text-sm tracking-wider text-cyan-300 break-all select-all">
+                          {part.detectedSerial}
                         </span>
-                      </button>
-
-                      {/* 우측 상단/하단: 검증배지 (크기 고정형) & 수정/삭제 미니버튼 */}
-                      <div className="flex flex-col items-end justify-between h-13 py-0.5">
-                        {/* 검증 상태 토글 버튼 (크기/모형 100% 고정, 색상만 변동) */}
-                        <button
-                          type="button"
-                          onClick={() => toggleVerify(part.id)}
-                          className={`w-14 h-5.5 rounded-md text-[10px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer select-none shrink-0 ${
-                            part.isVerified
-                              ? "bg-emerald-500 text-slate-950 font-extrabold shadow-glow-emerald"
-                              : "bg-slate-800 text-amber-400 border border-slate-700 hover:bg-slate-700"
-                          }`}
-                          title="검증 상태 변경"
-                        >
-                          {part.isVerified ? (
-                            <>
-                              <CheckCircle2 className="h-3 w-3 shrink-0" />
-                              <span>완료</span>
-                            </>
-                          ) : (
-                            <>
-                              <AlertCircle className="h-3 w-3 shrink-0 text-amber-400" />
-                              <span>미검증</span>
-                            </>
-                          )}
-                        </button>
-
-                        {/* 수정 & 삭제 미니 버튼 */}
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => startEditing(part)}
-                            className="w-6.5 h-6 rounded-md bg-slate-800 text-slate-300 hover:text-white border border-slate-700 hover:border-cyan-500 transition-all flex items-center justify-center cursor-pointer"
-                            title="직접 수정"
-                          >
-                            <Edit2 className="h-3 w-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deletePart(part.id)}
-                            className="w-6.5 h-6 rounded-md bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-500 transition-all flex items-center justify-center cursor-pointer"
-                            title="삭제"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
+                      ) : (
+                        <span className="text-slate-600 text-xs italic font-mono">
+                          (스캔 전 - 미인식)
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
