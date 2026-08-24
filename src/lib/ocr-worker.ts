@@ -176,7 +176,51 @@ function isValidSerialFormat(candidate: string): boolean {
 }
 
 /**
- * 시리얼 토큰 정제 (불필요한 접두사, 콜론, 특수기호 제거)
+ * 0 vs O, 1 vs I/l, 5 vs S, 8 vs B 지능형 시각/문맥적 오인식 자동 보정
+ */
+function disambiguateSerialToken(token: string): string {
+  if (!token || token.length < 3) return token;
+
+  // 1. 대부분 숫자로 구성된 시리얼 (예: "O924O22O4O27", "673644", "25OO2481", "1312793O7")
+  const digitsCount = (token.match(/[0-9]/g) || []).length;
+  const lettersCount = (token.match(/[A-Za-z]/g) || []).length;
+  
+  if (digitsCount >= 3 && lettersCount <= 3) {
+    // 숫자 사이에 낀 O, I, l, S 보정
+    let corrected = token
+      .replace(/(?<=\d)[Oo](?=\d)/g, "0")
+      .replace(/(?<=\d)[Il|](?=\d)/g, "1")
+      .replace(/(?<=\d)[Ss$](?=\d)/g, "5");
+
+    // 전체의 65% 이상이 숫자인 경우 앞/뒤 O, I도 0, 1로 자동 보정
+    if (digitsCount / token.length >= 0.65) {
+      corrected = corrected
+        .replace(/^O(?=\d)/i, "0")
+        .replace(/(?<=\d)O$/i, "0")
+        .replace(/^I(?=\d)/i, "1")
+        .replace(/(?<=\d)I$/i, "1");
+    }
+    return corrected;
+  }
+
+  // 2. 산업용 하이픈 복합 시리얼 패턴 (예: "25X-0049H", "TM1L-HK26-1007", "KD26030201-013")
+  if (token.includes("-")) {
+    const parts = token.split("-");
+    const fixedParts = parts.map((p) => {
+      const pDigits = (p.match(/[0-9]/g) || []).length;
+      if (pDigits >= 2 && p.length <= 6) {
+        return p.replace(/O/g, "0").replace(/[Il|]/g, "1");
+      }
+      return p;
+    });
+    return fixedParts.join("-");
+  }
+
+  return token;
+}
+
+/**
+ * 시리얼 토큰 정제 (불필요한 접두사, 한글 라벨, 콜론, 특수기호 제거 및 오인식 문자 보정)
  */
 function sanitizeSerialToken(raw: string): string {
   if (!raw) return "";
@@ -188,11 +232,17 @@ function sanitizeSerialToken(raw: string): string {
   // 앞뒤 콜론, 세미콜론, 슬래시, 바, 해시, 따옴표 제거
   clean = clean.replace(/^[ :;=|\-#/\\_.,<>()[\]{}]+|[ :;=|\-#/\\_.,<>()[\]{}]+$/g, "");
 
-  // 접두사 자동 제거 (예: "SN:25002481" -> "25002481", "S/N-092402204027" -> "092402204027", "NO.131279307" -> "131279307")
-  clean = clean.replace(/^(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|Prod\s*S[\/\\|\-.]?N|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*NO\.?|S[\/\\|\-.]N|SN|S\.N\.|S\/NO\.?|NO\.?|N°)\s*[:.\-|=#\s]*/i, "");
+  // 영문/한글 접두사 자동 제거 (예: "SN:25002481", "시리얼:673644", "일련번호:092402204027")
+  clean = clean.replace(
+    /^(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|Prod\s*S[\/\\|\-.]?N|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*NO\.?|S[\/\\|\-.]N|SN|S\.N\.|S\/NO\.?|NO\.?|N°|시리얼\s*넘버|시리얼\s*번호|시리얼|일련\s*번호|제조\s*번호|식별\s*번호|관리\s*번호|호기|단품|부품)\s*[:.\-|=#\s]*/i,
+    ""
+  );
 
   // 다시 앞뒤 기호 정리
   clean = clean.replace(/^[ :;=|\-#/\\_.,]+|[ :;=|\-#/\\_.,]+$/g, "");
+
+  // 0 vs O, 1 vs I, 5 vs S 지능형 오인식 보정 적용
+  clean = disambiguateSerialToken(clean);
 
   return clean;
 }

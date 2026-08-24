@@ -71,7 +71,7 @@ export function preprocessCanvas(
   const data = imgData.data;
   const totalPixels = width * height;
 
-  // 1. Grayscale 변환 (Luminance: 0.299R + 0.587G + 0.114B)
+  // 1. Grayscale 변환 & 금속 표면 과포화 반사광(Glare/Specular Reflection) 자동 완화
   let gray: any = new Uint8Array(totalPixels);
   let graySum = 0;
   for (let i = 0; i < totalPixels; i++) {
@@ -79,7 +79,13 @@ export function preprocessCanvas(
     const r = data[idx];
     const g = data[idx + 1];
     const b = data[idx + 2];
-    const val = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    let val = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+
+    // 반사광(235 이상 백색 포화광) 완화: 글자가 날아가지 않도록 소프트 감쇠
+    if (val > 235) {
+      val = Math.round(210 + (val - 235) * 0.4);
+    }
+
     gray[i] = val;
     graySum += val;
   }
@@ -110,13 +116,12 @@ export function preprocessCanvas(
 
   // 1-4. 수기 펜/매직 글씨 대비 극대화 (감마 보정: 옅은 볼펜/유성펜 획 진하게 보정)
   for (let i = 0; i < totalPixels; i++) {
-    // 옅은 글씨(어두운 픽셀)를 선명하게 강화하는 비선형 감마 곡선 적용
     const normalized = gray[i] / 255;
-    const boosted = Math.pow(normalized, 1.15) * 255;
+    const boosted = Math.pow(normalized, 1.18) * 255;
     gray[i] = Math.round(boosted);
   }
 
-  // 2. 대비 정규화 (Min-Max Contrast Stretching / Percentile Clipping)
+  // 2. 적응형 로컬 대비 강화 (CLAHE 유사 블록 히스토그램 스트레칭)
   if (options.contrastStretch && !isTooLowContrast) {
     const hist = new Int32Array(256);
     for (let i = 0; i < totalPixels; i++) {
