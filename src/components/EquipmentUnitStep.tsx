@@ -368,6 +368,25 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
         onClose={() => setIsPresetModalOpen(false)}
         onAddParts={handleAddPresetParts}
         onReplaceParts={handleUpdateCurrentParts}
+        onSelectTemplate={(template) => {
+          onUpdate((prev) => {
+            const templateParts = template.parts.map((p) => ({
+              ...p,
+              id: generateId(),
+              detectedSerial: "",
+              isVerified: false,
+            }));
+            return {
+              ...prev,
+              templateName: template.modelName,
+              equipmentUnits: prev.equipmentUnits.map((u) =>
+                u.unitIndex === activeUnitIndex
+                  ? { ...u, parts: templateParts }
+                  : u
+              ),
+            };
+          });
+        }}
         currentUnitParts={currentUnit?.parts || []}
       />
 

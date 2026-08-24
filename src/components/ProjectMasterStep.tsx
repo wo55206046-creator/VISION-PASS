@@ -155,7 +155,8 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
 
       return {
         ...prev,
-        equipmentName: template.modelName, // 선택한 양식명으로 즉시 통일
+        templateName: template.modelName, // 선택된 모델 양식명 명시적 저장
+        equipmentName: prev?.equipmentName || template.modelName, // 모델명이 비어있을 경우 자동 채움
         equipmentUnits: updatedUnits,
       };
     });
@@ -259,28 +260,15 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
         {/* 3. 설비 담당자 (좌) & 검수일자 (우) */}
         <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
           {/* 설비 담당자 */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-                <UserCheck className="h-3.5 w-3.5 text-cyan-400" />
-                <span>설비 담당자</span>
-              </label>
-              {lastInspector && (
-                <button
-                  type="button"
-                  onClick={() => onUpdate((prev) => ({ ...prev, inspectorName: lastInspector }))}
-                  className="text-[10px] font-bold text-cyan-300 bg-cyan-950/80 border border-cyan-700/80 px-2 py-0.5 rounded-md hover:bg-cyan-900 transition-all flex items-center gap-1 cursor-pointer shadow-sm"
-                  title="최근 사용된 설비 담당자로 즉시 입력"
-                >
-                  <Sparkles className="h-2.5 w-2.5 text-amber-400" />
-                  <span>최근: {lastInspector}</span>
-                </button>
-              )}
-            </div>
+          <div className="space-y-1.5 min-w-0">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+              <UserCheck className="h-3.5 w-3.5 text-cyan-400" />
+              <span>설비 담당자</span>
+            </label>
             <input
               type="text"
               list="inspector-datalist-step2"
-              placeholder="예: 홍길동"
+              placeholder="예: 홍길동, 김철수"
               value={project.inspectorName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 onUpdate((prev) => ({ ...prev, inspectorName: e.target.value }))
@@ -293,19 +281,20 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               ))}
             </datalist>
 
-            {/* 최근 설비 담당자 퀵 추천 태그 (원터치 선택) */}
+            {/* 최근 설비 담당자 퀵 추천 태그 (오른쪽으로 ㅡ자 수평 1행 배치) */}
             {recentInspectors.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                <span className="text-[9px] text-slate-500 font-semibold shrink-0">최근:</span>
-                {recentInspectors.slice(0, 3).map((name) => (
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar whitespace-nowrap pt-0.5">
+                <span className="text-[10px] text-slate-500 font-semibold shrink-0">최근:</span>
+                {recentInspectors.map((name) => (
                   <button
                     key={name}
                     type="button"
                     onClick={() => onUpdate((prev) => ({ ...prev, inspectorName: name }))}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition-all cursor-pointer ${project.inspectorName === name
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all cursor-pointer shrink-0 ${
+                      project.inspectorName === name
                         ? "bg-cyan-500 text-slate-950 font-bold shadow-glow-cyan"
                         : "bg-slate-800/90 text-slate-300 hover:bg-slate-700 hover:text-cyan-300 border border-slate-700/60"
-                      }`}
+                    }`}
                   >
                     {name}
                   </button>
@@ -405,16 +394,19 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
           {/* 2. 하단 행: 좌측 PJT 양식 명칭 & 우측 총 N개 품목 */}
           <div className="flex items-center justify-between gap-2">
             {/* PJT 양식 명칭 */}
-            <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-700 text-xs shadow-inner min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-700 text-xs shadow-inner min-w-0 flex-1">
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-              <span className="text-slate-400 text-[11px] shrink-0">PJT 양식:</span>
-              <span className="font-bold text-cyan-300 font-mono truncate" title={project.equipmentName}>
-                {project.equipmentName || "표준 기본 양식"}
+              <span className="text-slate-400 text-[11px] shrink-0 font-bold">PJT 양식:</span>
+              <span
+                className="font-bold text-cyan-300 font-mono truncate text-xs"
+                title={project.templateName || project.equipmentName || "표준 기본 양식"}
+              >
+                {project.templateName || project.equipmentName || "표준 기본 양식"}
               </span>
             </div>
 
             {/* 총 품목 개수 (양식변경 버튼 바로 아래) */}
-            <span className="bg-slate-900 text-slate-300 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-slate-800 font-semibold shrink-0 whitespace-nowrap">
+            <span className="bg-slate-900 text-slate-300 px-2.5 py-1.5 rounded-lg text-[11px] font-mono border border-slate-800 font-semibold shrink-0 whitespace-nowrap">
               총 <strong className="text-white font-bold">{project.equipmentUnits[0]?.parts?.length || 0}</strong>개 품목
             </span>
           </div>

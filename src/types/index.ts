@@ -24,6 +24,7 @@ export interface ProjectMaster {
   site: string;                 // 사업장 (ex. SEC_천안, SEC_화성, SKH_이천 등)
   pjtCode: string;              // PJT CODE (ex. S26-01-14)
   equipmentName: string;        // 설비명 (ex. SOT-200S)
+  templateName?: string;        // 적용된 PJT BOM 양식 모델명 (ex. TM100L (NaVi-TM100L-0312))
   quantity: number;             // 설비 수량 (ex. 2)
   equipmentUnits: EquipmentUnit[]; // 수량에 맞춰 동적으로 생성/관리되는 개별 설비 리스트
   inspectorName: string;        // 검사자/작업자명

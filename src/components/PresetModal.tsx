@@ -105,8 +105,7 @@ export const PresetModal: React.FC<PresetModalProps> = ({
 
     if (onSelectTemplate) {
       onSelectTemplate(template);
-    }
-    if (replace && onReplaceParts) {
+    } else if (replace && onReplaceParts) {
       onReplaceParts(newItems);
     } else {
       onAddParts(newItems);
@@ -522,21 +521,16 @@ export const PresetModal: React.FC<PresetModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800 bg-slate-950/70">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shrink-0">
               <FileSpreadsheet className="h-5 w-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-white">
-                  PJT 양식 (모델별 표준 BOM & 엑셀 양식 관리)
-                </h3>
-                <span className="bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  총 {templates.length}개 양식
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                표준 모델 양식을 선택하여 품명을 쫙 나열하거나, 새로운 설비 양식을 추가·수정하여 관리할 수 있습니다.
-              </p>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h3 className="text-base sm:text-lg font-bold text-white whitespace-nowrap">
+                PJT 양식
+              </h3>
+              <span className="bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 text-xs font-mono font-bold px-3 py-1 rounded-full shadow-sm whitespace-nowrap">
+                총 {templates.length}개 양식
+              </span>
             </div>
           </div>
           <button
@@ -590,21 +584,12 @@ export const PresetModal: React.FC<PresetModalProps> = ({
         </div>
 
         {/* Body Content */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
           {/* TAB 1: 모델별 표준 PJT 양식 */}
           {activeTab === "TEMPLATES" && (
             <div className="space-y-3">
-              <div className="rounded-xl bg-cyan-950/40 p-3 border border-cyan-800/50 text-xs text-cyan-300 flex items-center justify-between">
-                <span>
-                  💡 모델을 선택하시면 엑셀 사진과 동일한 <strong>모듈별 전체 부품 목록(품명, 세부사항, 규격)</strong>이 품명 테이블에 쫙 나열됩니다.
-                  <span className="ml-2 font-bold text-white bg-slate-800 px-2 py-0.5 rounded-full text-[11px] font-mono border border-slate-700">
-                    총 {templates.length}개 양식
-                  </span>
-                </span>
-              </div>
-
               {/* 📜 10~20개 이상의 양식도 편안하게 탐색 가능한 전용 스크롤 컨테이너 */}
-              <div className="max-h-[470px] overflow-y-auto pr-1.5 space-y-3 custom-scrollbar">
+              <div className="max-h-[500px] overflow-y-auto pr-1 space-y-3 custom-scrollbar">
                 {templates.length === 0 ? (
                   <div className="py-12 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/40">
                     <p className="text-sm text-slate-400 font-semibold mb-3">등록된 PJT 양식이 없습니다.</p>
@@ -621,72 +606,68 @@ export const PresetModal: React.FC<PresetModalProps> = ({
                     return (
                       <div
                         key={tpl.id}
-                        className="p-3.5 sm:p-4 rounded-2xl border bg-slate-950/60 border-slate-800 hover:border-slate-700 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md group"
+                        className="p-3.5 sm:p-4 rounded-2xl border bg-slate-950/70 border-slate-800 hover:border-slate-700 transition-all space-y-3 shadow-md group"
                       >
-                        {/* 좌측: 순번 뱃지 & 모델 정보 */}
-                        <div className="flex items-center gap-3 flex-1 min-w-0 w-full sm:w-auto">
-                          {/* 🔢 순번 뱃지 */}
-                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 border border-slate-800 font-mono font-extrabold text-cyan-400 text-xs shrink-0 shadow-inner group-hover:border-cyan-500/40 group-hover:text-cyan-300 transition-all">
-                            {String(idx + 1).padStart(2, "0")}
-                          </div>
+                        {/* 상단 1행: [01 순번 + 모델명] (좌측) & [🗑️ 삭제 버튼] (우측) */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            {/* 🔢 순번 뱃지 */}
+                            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900 border border-slate-800 font-mono font-extrabold text-cyan-400 text-xs shrink-0 shadow-inner group-hover:border-cyan-500/40 group-hover:text-cyan-300 transition-all">
+                              {String(idx + 1).padStart(2, "0")}
+                            </div>
 
-                          <div className="space-y-1 min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-white truncate" title={tpl.modelName}>
+                            {/* 모델명 타이틀 */}
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <span className="font-bold text-sm sm:text-base text-white truncate" title={tpl.modelName}>
                                 {tpl.modelName}
                               </span>
                               {tpl.isCustom && (
-                                <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 px-2 py-0.5 rounded text-[9px] font-bold shrink-0">
+                                <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 px-2 py-0.5 rounded text-[10px] font-bold shrink-0">
                                   사용자 등록
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-slate-400 truncate" title={tpl.description}>{tpl.description}</p>
                           </div>
-                        </div>
 
-                        {/* 📌 가운데 고정 위치: 품목 수 & 모듈 수 뱃지 (빨간 박스 영역 고정 정렬) */}
-                        <div className="flex items-center gap-1.5 shrink-0 px-2.5 py-1 rounded-xl bg-slate-900/80 border border-slate-800 self-start sm:self-auto">
-                          <span className="bg-cyan-950/90 text-cyan-300 border border-cyan-700/60 px-2.5 py-1 rounded-lg text-xs font-mono font-bold whitespace-nowrap shadow-sm">
-                            {tpl.parts?.length || tpl.partsCount || 0}개 품목
-                          </span>
-                          <span className="bg-slate-800 text-slate-300 border border-slate-700/80 px-2 py-1 rounded-lg text-xs font-mono font-semibold whitespace-nowrap">
-                            {tpl.moduleCount || 1}개 모듈
-                          </span>
-                        </div>
-
-                        {/* 우측: Action Buttons: 수정, 삭제, 로드 */}
-                        <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
-                          {/* ✏️ 양식 수정 버튼 */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditTemplate(tpl)}
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-300 border border-slate-700 hover:bg-slate-750 hover:text-white transition-all cursor-pointer shrink-0"
-                            title="양식명, 설명 및 부품 구성 수정"
-                          >
-                            <Edit2 className="h-3.5 w-3.5 text-slate-400" />
-                            <span>양식 수정</span>
-                          </button>
-
-                          {/* 🗑️ 양식 삭제 버튼 (모든 양식 삭제 가능) */}
+                          {/* 🗑️ 모델명 옆 삭제 버튼 */}
                           <button
                             type="button"
                             onClick={() => handleDeleteTemplate(tpl.id, tpl.modelName)}
-                            className="p-2 rounded-xl bg-slate-800 text-slate-400 border border-slate-700 hover:bg-red-950 hover:text-red-400 hover:border-red-800 transition-all cursor-pointer shrink-0"
+                            className="p-2 rounded-xl bg-slate-900 text-slate-400 border border-slate-800 hover:bg-red-950 hover:text-red-400 hover:border-red-800 transition-all cursor-pointer shrink-0"
                             title="이 양식 삭제"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-4 w-4" />
                           </button>
+                        </div>
 
-                          {/* ✨ PJT 양식 선택 버튼 */}
-                          <button
-                            type="button"
-                            onClick={() => handleApplyTemplate(tpl, true)}
-                            className="bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 cursor-pointer flex items-center gap-1.5 shrink-0"
-                          >
-                            <Sparkles className="h-3.5 w-3.5" />
-                            <span>PJT 양식 선택</span>
-                          </button>
+                        {/* 하단 2행: [N개 품목 뱃지] (좌측) & [양식 수정 + PJT 양식 선택 버튼] (우측) */}
+                        <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-800/80">
+                          {/* 좌측: N개 품목 뱃지 */}
+                          <span className="bg-cyan-950/90 text-cyan-300 border border-cyan-700/60 px-3 py-1.5 rounded-xl text-xs font-mono font-bold whitespace-nowrap shadow-sm">
+                            {tpl.parts?.length || tpl.partsCount || 0}개 품목
+                          </span>
+
+                          {/* 우측: 양식 수정 & PJT 양식 선택 버튼 */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditTemplate(tpl)}
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all cursor-pointer shrink-0"
+                              title="양식명 및 부품 구성 수정"
+                            >
+                              <Edit2 className="h-3.5 w-3.5 text-slate-400" />
+                              <span>양식 수정</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleApplyTemplate(tpl, true)}
+                              className="bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-extrabold px-3.5 py-1.5 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 cursor-pointer flex items-center gap-1.5 shrink-0"
+                            >
+                              <Sparkles className="h-3.5 w-3.5" />
+                              <span>PJT 양식 선택</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
