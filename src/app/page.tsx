@@ -86,15 +86,9 @@ export default function Home() {
       setProjects(saved);
       setCurrentProjectId(saved[0].id || "pjt-001");
       lastKnownCloudJson.current = JSON.stringify(saved);
-
-      // 클라우드 룸 초기화 (첫 구동 시 404 방지용 백그라운드 시딩)
-      pushProjectsToCloud(saved).catch(() => {});
     }
 
-    // 5초 주기 백그라운드 동기화 (탭 활성화 시에만 정숙하게 수행)
-    const interval = setInterval(fetchCloudProjects, 5000);
-
-    // 화면 포커스, 탭 전환 시 즉시 자동 수신
+    // 화면 포커스, 탭 전환 시 자동 수신
     const handleQuickSync = () => fetchCloudProjects();
     window.addEventListener("focus", handleQuickSync);
     document.addEventListener("visibilitychange", handleQuickSync);
@@ -115,7 +109,6 @@ export default function Home() {
     });
 
     return () => {
-      clearInterval(interval);
       window.removeEventListener("focus", handleQuickSync);
       document.removeEventListener("visibilitychange", handleQuickSync);
       unsubscribeBroadcast();

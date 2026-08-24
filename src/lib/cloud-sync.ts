@@ -2,30 +2,31 @@ import { ProjectMaster } from "@/types";
 
 const CLOUD_STORAGE_KEY_STORAGE = "VISION_PASS_SYNC_ROOM_KEY";
 const DEFAULT_ROOM_KEY = "WITHTECH-VISIONPASS-2026";
-const KVDB_BUCKET_STORAGE = "VISION_PASS_KVDB_BUCKET_ID";
+const JSONBLOB_STORAGE_MAP = "VISION_PASS_JSONBLOB_MAP";
 
 /**
- * KVDB 영구 버킷 자동 발급/캐시 (만료/삭제 시 자동 재생성)
+ * JSONBlob ID 매핑 관리 (룸키별 영구 Blob ID 보관)
  */
-async function getOrProvisionKvdbBucket(): Promise<string | null> {
+function getStoredBlobId(roomKey: string): string | null {
   if (typeof window === "undefined") return null;
-  let bucket = localStorage.getItem(KVDB_BUCKET_STORAGE);
-
-  if (!bucket) {
-    try {
-      const res = await fetch("https://kvdb.io", { method: "POST" });
-      if (res.ok) {
-        const text = (await res.text()).trim();
-        if (text && text.length > 5) {
-          bucket = text;
-          localStorage.setItem(KVDB_BUCKET_STORAGE, bucket);
-        }
-      }
-    } catch {
-      return null;
+  try {
+    const raw = localStorage.getItem(JSONBLOB_STORAGE_MAP);
+    if (raw) {
+      const map = JSON.parse(raw);
+      return map[roomKey] || null;
     }
-  }
-  return bucket;
+  } catch {}
+  return null;
+}
+
+function setStoredBlobId(roomKey: string, blobId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = localStorage.getItem(JSONBLOB_STORAGE_MAP);
+    const map = raw ? JSON.parse(raw) : {};
+    map[roomKey] = blobId;
+    localStorage.setItem(JSONBLOB_STORAGE_MAP, JSON.stringify(map));
+  } catch {}
 }
 
 export function getSyncRoomKey(): string {
@@ -88,7 +89,7 @@ export function subscribeLocalBroadcast(onUpdate: (projects: ProjectMaster[]) =>
 }
 
 /**
- * 클라우드로 프로젝트 데이터 실시간 푸시 (자동 버킷 발급 & 무중단 동기화)
+ * 클라우드로 프로젝트 데이터 실시간 푸시 (BroadcastChannel + JSONBlob)
  */
 export async function pushProjectsToCloud(
   projects: ProjectMaster[],
@@ -105,43 +106,40 @@ export async function pushProjectsToCloud(
   };
   const payloadJson = JSON.stringify(payload);
 
-  const cleanKey = encodeURIComponent(roomKey.replace(/[^a-zA-Z0-9_-]/g, ""));
-  let bucket = await getOrProvisionKvdbBucket();
-
-  if (!bucket) {
-    return { success: true, message: "로컬 동기화 완료" };
-  }
-
   try {
-    const url = `https://kvdb.io/${bucket}/${cleanKey}`;
-    const res = await fetch(url, {
+    const existingBlobId = getStoredBlobId(roomKey);
+
+    if (existingBlobId) {
+      // 기존 Blob 업데이트 (PUT)
+      const res = await fetch(`https://jsonblob.com/api/jsonBlob/${existingBlobId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: payloadJson,
+      });
+
+      if (res.ok) return { success: true };
+    }
+
+    // 신규 Blob 생성 (POST)
+    const createRes = await fetch("https://jsonblob.com/api/jsonBlob", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: payloadJson,
     });
 
-    if (res.ok) {
+    if (createRes.ok) {
+      const location = createRes.headers.get("Location");
+      if (location) {
+        const blobId = location.split("/").pop();
+        if (blobId) setStoredBlobId(roomKey, blobId);
+      }
       return { success: true };
     }
-
-    // 만약 이전 버킷이 만료(404)된 경우 버킷 재발급 후 재시도
-    if (res.status === 404) {
-      localStorage.removeItem(KVDB_BUCKET_STORAGE);
-      const newBucket = await getOrProvisionKvdbBucket();
-      if (newBucket) {
-        const retryRes = await fetch(`https://kvdb.io/${newBucket}/${cleanKey}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: payloadJson,
-        });
-        if (retryRes.ok) return { success: true };
-      }
-    }
   } catch (err) {
-    // 오프라인 / 네트워크 지연 시에도 로컬 데이터는 안전하게 보존
+    // 오프라인 / 네트워크 지연 시에도 로컬 동기화는 정상 보장
   }
 
-  return { success: true, message: "로컬 캐시 동기화 완료" };
+  return { success: true, message: "로컬 동기화 완료" };
 }
 
 /**
@@ -156,20 +154,16 @@ export async function pullProjectsFromCloud(
   message?: string;
 }> {
   if (typeof window === "undefined") return { success: false };
-  const bucket = localStorage.getItem(KVDB_BUCKET_STORAGE);
-  if (!bucket) {
-    return { success: false, message: "동기화 버킷 미등록" };
-  }
-
-  const cleanKey = encodeURIComponent(roomKey.replace(/[^a-zA-Z0-9_-]/g, ""));
+  const blobId = getStoredBlobId(roomKey);
+  if (!blobId) return { success: false };
 
   try {
-    const url = `https://kvdb.io/${bucket}/${cleanKey}?t=${Date.now()}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
 
-    const res = await fetch(url, {
+    const res = await fetch(`https://jsonblob.com/api/jsonBlob/${blobId}?t=${Date.now()}`, {
       method: "GET",
+      headers: { Accept: "application/json" },
       cache: "no-store",
       signal: controller.signal,
     });
