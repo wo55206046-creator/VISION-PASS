@@ -57,6 +57,7 @@ export default function Home() {
   // 1. [자동 수신] 클라우드 최신 데이터 실시간 풀 함수
   const fetchCloudProjects = async () => {
     if (isSyncingInFlight.current) return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
     try {
       isSyncingInFlight.current = true;
       const res = await pullProjectsFromCloud();
@@ -71,35 +72,34 @@ export default function Home() {
         }
         setSyncStatus("connected");
       }
-    } catch (err) {
-      setSyncStatus("error");
+    } catch {
+      // 백그라운드 네트워크 상태 무소음 처리
     } finally {
       isSyncingInFlight.current = false;
     }
   };
 
-  // 2. 초기 로드 및 백그라운드 1.5초 초고속 전자동 실시간 동기화 (버튼 조작 불필요)
+  // 2. 초기 로드 및 백그라운드 자동 동기화
   useEffect(() => {
     const saved = loadSavedProjects();
     if (saved && saved.length > 0) {
       setProjects(saved);
       setCurrentProjectId(saved[0].id || "pjt-001");
       lastKnownCloudJson.current = JSON.stringify(saved);
+
+      // 클라우드 룸 초기화 (첫 구동 시 404 방지용 백그라운드 시딩)
+      pushProjectsToCloud(saved).catch(() => {});
     }
 
-    // 마운트 즉시 클라우드 최신 확인
-    fetchCloudProjects();
+    // 5초 주기 백그라운드 동기화 (탭 활성화 시에만 정숙하게 수행)
+    const interval = setInterval(fetchCloudProjects, 5000);
 
-    // 1.5초마다 백그라운드 자동 무소음 동기화 (PC ↔ 스마트폰 실시간 연동)
-    const interval = setInterval(fetchCloudProjects, 1500);
-
-    // 화면 포커스, 탭 전환, 마우스/화면 터치 시 즉시 자동 수신
+    // 화면 포커스, 탭 전환 시 즉시 자동 수신
     const handleQuickSync = () => fetchCloudProjects();
     window.addEventListener("focus", handleQuickSync);
     document.addEventListener("visibilitychange", handleQuickSync);
-    window.addEventListener("pointerdown", handleQuickSync, { passive: true });
 
-    // 로컬 브로드캐스트 채널 구독 (동일 네트워크/브라우저 탭 간 0.001초 즉각 동기화)
+    // 로컬 브로드캐스트 채널 구독 (동일 브라우저 탭 간 0.001초 즉각 동기화)
     const unsubscribeBroadcast = subscribeLocalBroadcast((incoming) => {
       if (incoming && incoming.length > 0) {
         const incomingJson = JSON.stringify(incoming);
@@ -118,7 +118,6 @@ export default function Home() {
       clearInterval(interval);
       window.removeEventListener("focus", handleQuickSync);
       document.removeEventListener("visibilitychange", handleQuickSync);
-      window.removeEventListener("pointerdown", handleQuickSync);
       unsubscribeBroadcast();
     };
   }, []);

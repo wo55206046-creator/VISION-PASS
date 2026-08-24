@@ -8,17 +8,7 @@ const SYNC_ENDPOINTS = [
   // 1차: KVDB 고속 공개 엔드포인트
   {
     type: "kvdb",
-    getUrl: (key: string) => `https://kvdb.io/6P7u8Y2jX5v9K4w1/${encodeURIComponent(key)}`,
-  },
-  // 2차: myjson 글로벌 REST 스토리지
-  {
-    type: "rest",
-    getUrl: (key: string) => `https://api.myjson.online/v1/records/${encodeURIComponent(key)}`,
-  },
-  // 3차: npoint 무제한 공개 엔드포인트
-  {
-    type: "npoint",
-    getUrl: (key: string) => `https://api.npoint.io/sync_${encodeURIComponent(key).replace(/[^a-zA-Z0-9]/g, "")}`,
+    getUrl: (key: string) => `https://kvdb.io/6P7u8Y2jX5v9K4w1/${encodeURIComponent(key.replace(/[^a-zA-Z0-9_-]/g, ""))}`,
   },
 ];
 
