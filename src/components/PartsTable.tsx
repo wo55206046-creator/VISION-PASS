@@ -123,13 +123,13 @@ export const PartsTable: React.FC<PartsTableProps> = ({
       {/* Search Input Bar & Quick Action Tools (단일 1행: 검색창 + 양식변경 + 부품추가) */}
       <div className="flex items-center gap-1.5">
         <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
+          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
           <input
             type="text"
-            placeholder="품명, 규격, 세부사항, 시리얼 검색..."
+            placeholder="품명, 규격, 세부사항 검색..."
             value={searchFilter}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchFilter(e.target.value)}
-            className="w-full rounded-xl bg-slate-900 border border-slate-800 pl-8.5 pr-2.5 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 shadow-inner"
+            className="w-full rounded-xl bg-slate-900 border border-slate-800 pl-7.5 pr-2.5 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 shadow-inner"
           />
         </div>
 
