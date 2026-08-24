@@ -33,11 +33,11 @@ export async function getOcrWorker(
       },
     });
 
-    // 산업용 문자/숫자 전용 화이트리스트 & 분산 텍스트 전방위 탐색 모드(PSM 11/3) + 300 DPI
+    // 산업용 명판 및 수기(Handwriting) 메모 전방위 탐색 모드(PSM 11) + 300 DPI
     await worker.setParameters({
       tessedit_char_whitelist:
-        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_./:#()=*|! ",
-      tessedit_pageseg_mode: "11" as any, // Sparse text: 명판 내 구역별 분산 텍스트/바코드/시리얼 완벽 포착
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_./:#()=*|! +~ㄱ-ㅎㅏ-ㅣ가-힣",
+      tessedit_pageseg_mode: "11" as any, // Sparse text: 인쇄 명판뿐만 아니라 불규칙한 수기 펜글씨/메모 완벽 포착
       user_defined_dpi: "300",
       preserve_interword_spaces: "1",
     });
@@ -314,29 +314,45 @@ export function extractSerialCandidates(
   };
 
   // ============================================================================
-  // [전략 1] S/N :, Serial Number, SERIAL, Serial, S/N 우측 값 직접 추출
+  // [전략 1] S/N :, Serial Number, SERIAL, Serial, S/N 및 수기/한글 라벨 우측 값 직접 추출
   // ============================================================================
   const labelRightRegexes = [
+    // 1-0. 한글 수기 라벨: "시리얼 :", "일련번호 :", "제조번호 :", "시리얼넘버 :", "관리번호 :" (1500점)
+    {
+      regex: /(?:시리얼\s*넘버|시리얼\s*번호|시리얼|일련\s*번호|제조\s*번호|식별\s*번호|관리\s*번호)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1500,
+    },
+    // 1-0-1. 수기 파트 표기: "호기 :", "단품 :", "부품 :", "샘플 :", "LOT :" (1350점)
+    {
+      regex: /(?:호기|단품|설비|부품|샘플|LOT|TAG)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1350,
+    },
+    // 1-1. Production S/N : (1500점)
     {
       regex: /(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|Prod\.?\s*S[\/\\|\-.]?N|Mfg\s*S[\/\\|\-.]?N)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1500,
     },
+    // 1-2. Serial Number : / Serial No : / SERIAL NO. : (1450점)
     {
       regex: /(?:SERIAL\s*(?:NUMBER|NO\.?|#|CODE)|Serial\s*(?:Number|No\.?|#)|SER\.?\s*NO\.?|SER\.?\s*#)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1450,
     },
+    // 1-3. SERIAL : / Serial : (1400점)
     {
       regex: /(?:SERIAL|Serial)\s*[:.\-|=#\s]+([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1400,
     },
+    // 1-4. S/N : / SN : / S.N. : / S/N / SN (1350점)
     {
       regex: /(?:S\s*[\/\\|\-.]\s*N|S\s*N|S\/NO\.?|S\.NO\.?|S\.N\.)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1350,
     },
+    // 1-5. No. : / Number : (1200점)
     {
       regex: /(?:^|\s)(?:NO\.?|N°|NUMBER|CODE)\s*[:.\-|=#\s]+([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1200,
     },
+    // 1-6. OCR 오인식 보정 접두사: SIN:, 5/N:, S|N:, SER1AL (1300점)
     {
       regex: /(?:S[I1|l5]N|5\s*[\/\\|\-.]\s*N|S\s*\|\s*N|SER[I1|l]AL\s*(?:NO\.?|#)?|S\/M|S\s*M)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1300,
@@ -400,7 +416,7 @@ export function extractSerialCandidates(
     }
 
     const headerOnlyRegex =
-      /^(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|SERIAL\s*(?:NUMBER|NO\.?|#|CODE)?|Serial\s*(?:Number|No\.?|#)?|SER\.?\s*(?:NO\.?|#)|S\s*[\/\\|\-.]\s*N|S\s*N|S[I1|l]N|S\/NO\.?|S\.N\.?|NO\.?|N°)$/i;
+      /^(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|SERIAL\s*(?:NUMBER|NO\.?|#|CODE)?|Serial\s*(?:Number|No\.?|#)?|SER\.?\s*(?:NO\.?|#)|S\s*[\/\\|\-.]\s*N|S\s*N|S[I1|l]N|S\/NO\.?|S\.N\.?|NO\.?|N°|시리얼|일련번호|제조번호|식별번호|관리번호)$/i;
 
     if (headerOnlyRegex.test(line.trim())) {
       if (i + 1 < rawLines.length) {

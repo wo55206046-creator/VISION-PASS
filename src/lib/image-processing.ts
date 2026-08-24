@@ -103,9 +103,17 @@ export function preprocessCanvas(
     }
   }
 
-  // 1-3. 엣지 샤프닝 필터 적용
+  // 1-3. 엣지 샤프닝 & 수기 잉크/펜 글씨 획(Stroke) 강화 필터 적용
   if (!isTooLowContrast && options.blurReduction) {
     gray = applySharpenFilter(gray, width, height);
+  }
+
+  // 1-4. 수기 펜/매직 글씨 대비 극대화 (감마 보정: 옅은 볼펜/유성펜 획 진하게 보정)
+  for (let i = 0; i < totalPixels; i++) {
+    // 옅은 글씨(어두운 픽셀)를 선명하게 강화하는 비선형 감마 곡선 적용
+    const normalized = gray[i] / 255;
+    const boosted = Math.pow(normalized, 1.15) * 255;
+    gray[i] = Math.round(boosted);
   }
 
   // 2. 대비 정규화 (Min-Max Contrast Stretching / Percentile Clipping)
@@ -115,8 +123,8 @@ export function preprocessCanvas(
       hist[gray[i]]++;
     }
 
-    const lowCutoff = Math.floor(totalPixels * 0.02);
-    const highCutoff = Math.floor(totalPixels * 0.98);
+    const lowCutoff = Math.floor(totalPixels * 0.015);
+    const highCutoff = Math.floor(totalPixels * 0.985);
 
     let minVal = 0;
     let maxVal = 255;
