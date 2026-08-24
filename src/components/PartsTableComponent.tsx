@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, Fragment } from "react";
 import { PartItem } from "@/types";
 import { generateId, triggerScanFeedback } from "@/lib/utils";
 import {
@@ -502,12 +502,11 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                 </button>
               </th>
               <th className="py-3 px-2 text-center w-12">순번</th>
-              <th className="py-3 px-3 w-28">모듈/섹션</th>
-              <th className="py-3 px-3 min-w-[140px]">품명 (Part Name)</th>
-              <th className="py-3 px-3 min-w-[120px]">세부 사양</th>
-              <th className="py-3 px-3 min-w-[120px]">규격 (Spec)</th>
+              <th className="py-3 px-3 min-w-[150px]">품명 (Part Name)</th>
+              <th className="py-3 px-3 min-w-[130px]">세부 사양</th>
+              <th className="py-3 px-3 min-w-[130px]">규격 (Spec)</th>
               <th className="py-3 px-3 min-w-[180px]">시리얼 번호 (S/N)</th>
-              <th className="py-3 px-3 text-center w-28">OCR 인식</th>
+              <th className="py-3 px-3 text-center w-24">OCR 인식</th>
               <th className="py-3 px-3 text-center w-24">검증</th>
               <th className="py-3 px-3 text-center w-24">관리</th>
             </tr>
@@ -515,7 +514,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
           <tbody className="divide-y divide-slate-800/80">
             {filteredParts.length === 0 ? (
               <tr>
-                <td colSpan={10} className="py-12 text-center text-slate-500">
+                <td colSpan={9} className="py-12 text-center text-slate-500">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <AlertCircle className="h-8 w-8 text-slate-600" />
                     <p className="text-sm font-semibold">등록된 부품이 없거나 검색 결과가 없습니다.</p>
@@ -546,79 +545,96 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                 const isEditing = editingSerialId === part.id;
                 const hasSerial = Boolean(part.detectedSerial && part.detectedSerial.trim());
 
+                // 모듈 카테고리 구분 헤더 표시 여부 계산
+                const prevPart = index > 0 ? filteredParts[index - 1] : null;
+                const currentCat = part.category || "[ MAIN ]";
+                const prevCat = prevPart ? prevPart.category || "[ MAIN ]" : null;
+                const showCategoryHeader = !prevPart || currentCat !== prevCat;
+
                 return (
-                  <tr
-                    key={part.id}
-                    className={`transition-colors hover:bg-slate-800/50 ${
-                      part.isVerified
-                        ? "bg-emerald-950/10"
-                        : isSelected
-                        ? "bg-cyan-950/20"
-                        : ""
-                    }`}
-                  >
-                    {/* 1. 선택 체크박스 */}
-                    <td className="py-2.5 px-2 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleSelect(part.id)}
-                        className="text-slate-400 hover:text-white"
-                      >
-                        {isSelected ? (
-                          <CheckSquare className="h-3.5 w-3.5 text-cyan-400" />
-                        ) : (
-                          <Square className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    </td>
+                  <Fragment key={part.id}>
+                    {/* 🏷️ 모듈별 구분 상단 배너 행 */}
+                    {showCategoryHeader && (
+                      <tr className="bg-slate-950/95 border-y border-slate-800 shadow-sm">
+                        <td colSpan={9} className="py-2 px-3.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-extrabold border shadow-sm ${getCategoryBadgeStyle(
+                                  part.category
+                                )}`}
+                              >
+                                <Layers className="h-3 w-3" />
+                                <span>{part.category || "[ MAIN ]"}</span>
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                (해당 모듈 부품 {parts.filter(p => (p.category || "[ MAIN ]") === currentCat).length}개)
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
 
-                    {/* 2. 순번 및 순서 이동 */}
-                    <td className="py-2.5 px-2 text-center font-mono text-[11px] text-slate-400">
-                      <div className="flex items-center justify-center gap-0.5">
-                        <span>{index + 1}</span>
-                        <div className="flex flex-col">
-                          <button
-                            type="button"
-                            onClick={() => handleMovePart(index, -1)}
-                            disabled={index === 0}
-                            className="text-slate-500 hover:text-cyan-300 disabled:opacity-20"
-                            title="위로 이동"
-                          >
-                            <ArrowUp className="h-2.5 w-2.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleMovePart(index, 1)}
-                            disabled={index === filteredParts.length - 1}
-                            className="text-slate-500 hover:text-cyan-300 disabled:opacity-20"
-                            title="아래로 이동"
-                          >
-                            <ArrowDown className="h-2.5 w-2.5" />
-                          </button>
+                    <tr
+                      className={`transition-colors hover:bg-slate-800/50 ${
+                        part.isVerified
+                          ? "bg-emerald-950/10"
+                          : isSelected
+                          ? "bg-cyan-950/20"
+                          : ""
+                      }`}
+                    >
+                      {/* 1. 선택 체크박스 */}
+                      <td className="py-2.5 px-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSelect(part.id)}
+                          className="text-slate-400 hover:text-white"
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="h-3.5 w-3.5 text-cyan-400" />
+                          ) : (
+                            <Square className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </td>
+
+                      {/* 2. 순번 및 순서 이동 */}
+                      <td className="py-2.5 px-2 text-center font-mono text-[11px] text-slate-400">
+                        <div className="flex items-center justify-center gap-0.5">
+                          <span>{index + 1}</span>
+                          <div className="flex flex-col">
+                            <button
+                              type="button"
+                              onClick={() => handleMovePart(index, -1)}
+                              disabled={index === 0}
+                              className="text-slate-500 hover:text-cyan-300 disabled:opacity-20"
+                              title="위로 이동"
+                            >
+                              <ArrowUp className="h-2.5 w-2.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMovePart(index, 1)}
+                              disabled={index === filteredParts.length - 1}
+                              className="text-slate-500 hover:text-cyan-300 disabled:opacity-20"
+                              title="아래로 이동"
+                            >
+                              <ArrowDown className="h-2.5 w-2.5" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* 3. 모듈/섹션 카테고리 */}
-                    <td className="py-2.5 px-3">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border truncate max-w-[110px] ${getCategoryBadgeStyle(
-                          part.category
-                        )}`}
-                        title={part.category || "[ MAIN ]"}
-                      >
-                        {part.category || "[ MAIN ]"}
-                      </span>
-                    </td>
-
-                    {/* 4. 품명 (Part Name) */}
-                    <td className="py-2.5 px-3 font-semibold text-white">
-                      <div className="flex items-center gap-1.5">
-                        <span className="truncate" title={part.partName}>
-                          {part.partName}
-                        </span>
-                      </div>
-                    </td>
+                      {/* 3. 품명 (Part Name) */}
+                      <td className="py-2.5 px-3 font-semibold text-white">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate" title={part.partName}>
+                            {part.partName}
+                          </span>
+                        </div>
+                      </td>
 
                     {/* 5. 세부 사양 */}
                     <td className="py-2.5 px-3 text-slate-300">
@@ -782,7 +798,8 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                         </button>
                       </div>
                     </td>
-                  </tr>
+                    </tr>
+                  </Fragment>
                 );
               })
             )}
