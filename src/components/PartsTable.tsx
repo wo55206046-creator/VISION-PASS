@@ -306,26 +306,27 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                     </div>
 
                     {/* 오른쪽: [OCR 스캔] 액션 버튼 & [검증상태 / 수정 / 삭제] 툴바 */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {/* 📸 [OCR 스캔] 버튼 (요청 서식: "OCR\n스캔" 컴팩트 액션) */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* 📸 [OCR 스캔] 버튼 (상단 카메라 아이콘 + 하단 "OCR 스캔" 텍스트) */}
                       <button
                         type="button"
                         onClick={() => onOpenOcrModal(part)}
-                        className="h-13 w-14 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 font-extrabold text-slate-950 shadow-glow-cyan active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer shrink-0"
+                        className="h-13 px-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 shadow-glow-cyan active:scale-95 transition-all flex flex-col items-center justify-center gap-1 cursor-pointer shrink-0"
                         title="명판 OCR 스캔"
                       >
-                        <Camera className="h-3.5 w-3.5 stroke-[2.5]" />
-                        <span className="text-[9px] leading-none font-black tracking-tight">OCR</span>
-                        <span className="text-[9px] leading-none font-black tracking-tight">스캔</span>
+                        <Camera className="h-4 w-4 stroke-[2.5]" />
+                        <span className="text-[10px] font-black tracking-tight whitespace-nowrap">
+                          OCR 스캔
+                        </span>
                       </button>
 
-                      {/* 우측 상단/하단: 검증배지 & 수정/삭제 미니버튼 */}
+                      {/* 우측 상단/하단: 검증배지 (크기 고정형) & 수정/삭제 미니버튼 */}
                       <div className="flex flex-col items-end justify-between h-13 py-0.5">
-                        {/* 검증 상태 토글 */}
+                        {/* 검증 상태 토글 버튼 (크기/모형 100% 고정, 색상만 변동) */}
                         <button
                           type="button"
                           onClick={() => toggleVerify(part.id)}
-                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold transition-all cursor-pointer ${
+                          className={`w-14 h-5.5 rounded-md text-[10px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer select-none shrink-0 ${
                             part.isVerified
                               ? "bg-emerald-500 text-slate-950 font-extrabold shadow-glow-emerald"
                               : "bg-slate-800 text-amber-400 border border-slate-700 hover:bg-slate-700"
@@ -334,12 +335,12 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                         >
                           {part.isVerified ? (
                             <>
-                              <CheckCircle2 className="h-2.5 w-2.5" />
-                              <span>검증</span>
+                              <CheckCircle2 className="h-3 w-3 shrink-0" />
+                              <span>완료</span>
                             </>
                           ) : (
                             <>
-                              <AlertCircle className="h-2.5 w-2.5" />
+                              <AlertCircle className="h-3 w-3 shrink-0 text-amber-400" />
                               <span>미검증</span>
                             </>
                           )}
@@ -350,7 +351,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                           <button
                             type="button"
                             onClick={() => startEditing(part)}
-                            className="p-1 rounded-md bg-slate-800 text-slate-300 hover:text-white border border-slate-700 hover:border-cyan-500 transition-all cursor-pointer"
+                            className="w-6.5 h-6 rounded-md bg-slate-800 text-slate-300 hover:text-white border border-slate-700 hover:border-cyan-500 transition-all flex items-center justify-center cursor-pointer"
                             title="직접 수정"
                           >
                             <Edit2 className="h-3 w-3" />
@@ -358,7 +359,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                           <button
                             type="button"
                             onClick={() => deletePart(part.id)}
-                            className="p-1 rounded-md bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-500 transition-all cursor-pointer"
+                            className="w-6.5 h-6 rounded-md bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-500 transition-all flex items-center justify-center cursor-pointer"
                             title="삭제"
                           >
                             <Trash2 className="h-3 w-3" />
