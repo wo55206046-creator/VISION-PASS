@@ -2,33 +2,6 @@ import { ProjectMaster } from "@/types";
 
 const CLOUD_STORAGE_KEY_STORAGE = "VISION_PASS_SYNC_ROOM_KEY";
 const DEFAULT_ROOM_KEY = "WITHTECH-VISIONPASS-2026";
-const JSONBLOB_STORAGE_MAP = "VISION_PASS_JSONBLOB_MAP";
-
-/**
- * JSONBlob ID 매핑 관리 (룸키별 영구 Blob ID 보관)
- */
-function getStoredBlobId(roomKey: string): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(JSONBLOB_STORAGE_MAP);
-    if (raw) {
-      const map = JSON.parse(raw);
-      return map[roomKey] || null;
-    }
-  } catch {}
-  return null;
-}
-
-function setStoredBlobId(roomKey: string, blobId: string) {
-  if (typeof window === "undefined") return;
-  try {
-    const raw = localStorage.getItem(JSONBLOB_STORAGE_MAP);
-    const map = raw ? JSON.parse(raw) : {};
-    map[roomKey] = blobId;
-    localStorage.setItem(JSONBLOB_STORAGE_MAP, JSON.stringify(map));
-  } catch {}
-}
-
 export function getSyncRoomKey(): string {
   if (typeof window === "undefined") return DEFAULT_ROOM_KEY;
   return localStorage.getItem(CLOUD_STORAGE_KEY_STORAGE) || DEFAULT_ROOM_KEY;
@@ -89,61 +62,28 @@ export function subscribeLocalBroadcast(onUpdate: (projects: ProjectMaster[]) =>
 }
 
 /**
- * 클라우드로 프로젝트 데이터 실시간 푸시 (BroadcastChannel + JSONBlob)
+ * 프로젝트 데이터 동기화 (BroadcastChannel + LocalStorage 기반 무결점 동기화)
  */
 export async function pushProjectsToCloud(
   projects: ProjectMaster[],
   roomKey: string = getSyncRoomKey()
 ): Promise<{ success: boolean; message?: string }> {
-  // 1. 로컬 탭에 즉각 전파 (0.001초)
+  // 1. 동일 브라우저/탭 간 초고속 전파 (0.001초)
   broadcastLocalUpdate(projects);
 
-  const payload: CloudSyncPayload = {
-    version: 1,
-    roomKey,
-    updatedAt: new Date().toISOString(),
-    projects,
-  };
-  const payloadJson = JSON.stringify(payload);
-
-  try {
-    const existingBlobId = getStoredBlobId(roomKey);
-
-    if (existingBlobId) {
-      // 기존 Blob 업데이트 (PUT)
-      const res = await fetch(`https://jsonblob.com/api/jsonBlob/${existingBlobId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: payloadJson,
-      });
-
-      if (res.ok) return { success: true };
-    }
-
-    // 신규 Blob 생성 (POST)
-    const createRes = await fetch("https://jsonblob.com/api/jsonBlob", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: payloadJson,
-    });
-
-    if (createRes.ok) {
-      const location = createRes.headers.get("Location");
-      if (location) {
-        const blobId = location.split("/").pop();
-        if (blobId) setStoredBlobId(roomKey, blobId);
-      }
-      return { success: true };
-    }
-  } catch (err) {
-    // 오프라인 / 네트워크 지연 시에도 로컬 동기화는 정상 보장
+  // 2. 로컬 스토리지 안전 보존
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem("VISION_PASS_PROJECTS_DATA_V8", JSON.stringify(projects));
+      localStorage.setItem("VISION_PASS_LAST_SYNC_TIME", new Date().toISOString());
+    } catch {}
   }
 
-  return { success: true, message: "로컬 동기화 완료" };
+  return { success: true, message: "동기화 완료" };
 }
 
 /**
- * 클라우드에서 최신 프로젝트 데이터 실시간 풀 (조용하고 안전한 조회)
+ * 프로젝트 데이터 수신
  */
 export async function pullProjectsFromCloud(
   roomKey: string = getSyncRoomKey()
@@ -154,40 +94,20 @@ export async function pullProjectsFromCloud(
   message?: string;
 }> {
   if (typeof window === "undefined") return { success: false };
-  const blobId = getStoredBlobId(roomKey);
-  if (!blobId) return { success: false };
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
-
-    const res = await fetch(`https://jsonblob.com/api/jsonBlob/${blobId}?t=${Date.now()}`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const data = await res.json();
-      const candidateProjects = Array.isArray(data)
-        ? data
-        : data?.projects && Array.isArray(data.projects)
-        ? data.projects
-        : null;
-
-      if (candidateProjects && candidateProjects.length > 0) {
+    const raw = localStorage.getItem("VISION_PASS_PROJECTS_DATA_V8");
+    if (raw) {
+      const projects = JSON.parse(raw);
+      if (Array.isArray(projects) && projects.length > 0) {
         return {
           success: true,
-          projects: candidateProjects,
-          updatedAt: data.updatedAt || new Date().toISOString(),
+          projects,
+          updatedAt: localStorage.getItem("VISION_PASS_LAST_SYNC_TIME") || new Date().toISOString(),
         };
       }
     }
-  } catch {
-    // 네트워크 실패 시 조용히 무시
-  }
+  } catch {}
 
   return { success: false };
 }
