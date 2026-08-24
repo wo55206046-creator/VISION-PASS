@@ -189,62 +189,63 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
 
         {/* 2. 프로젝트 정보 표시 영역 */}
         <div className="space-y-1.5 text-xs">
-          {/* 라인 1: [고객사 배지] PJT: <코드> 동시 표현 */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className={`font-bold flex items-center gap-1 px-2.5 py-0.5 rounded-lg border shadow-sm ${
-                getSiteBadgeStyle(project?.site || "").bg
-              }`}
+          {/* 라인 1: [고객사 배지] PJT: <코드> (좌) & [PJT 수정] 버튼 (우) */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className={`font-bold flex items-center gap-1 px-2.5 py-0.5 rounded-lg border shadow-sm ${
+                  getSiteBadgeStyle(project?.site || "").bg
+                }`}
+              >
+                <Building2 className={`h-3.5 w-3.5 ${getSiteBadgeStyle(project?.site || "").icon}`} />
+                <span>{project?.site || "고객사 미지정"}</span>
+              </span>
+              <span className="text-slate-300 font-semibold flex items-center gap-1">
+                <span className="text-slate-400">PJT:</span>
+                <strong className="text-cyan-300 font-mono font-extrabold text-sm">{project?.pjtCode}</strong>
+              </span>
+            </div>
+
+            {/* ✏️ 우측 상단 PJT 수정 버튼 */}
+            <button
+              type="button"
+              onClick={() => {
+                setEditingPjt(JSON.parse(JSON.stringify(project)));
+                setIsEditModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-950/80 px-2.5 py-1 text-[11px] font-bold text-cyan-300 border border-cyan-700/70 hover:bg-cyan-900 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer"
+              title="프로젝트 정보 및 호기별 Serial NO. 수정"
             >
-              <Building2 className={`h-3.5 w-3.5 ${getSiteBadgeStyle(project?.site || "").icon}`} />
-              <span>{project?.site || "고객사 미지정"}</span>
-            </span>
-            <span className="text-slate-300 font-semibold flex items-center gap-1">
-              <span className="text-slate-400">PJT:</span>
-              <strong className="text-cyan-300 font-mono font-extrabold text-sm">{project?.pjtCode}</strong>
-            </span>
+              <Edit2 className="h-3 w-3" />
+              <span>PJT 수정</span>
+            </button>
           </div>
 
           {/* 라인 2: 설비명 한 줄 단독 표시 */}
-          <div className="flex items-center gap-1.5 text-slate-300 pt-0.5">
-            <span className="text-slate-400 font-medium shrink-0">설비명:</span>
-            <strong className="text-white font-bold truncate" title={project?.equipmentName}>
-              {project?.equipmentName || "미지정"}
-            </strong>
-            <span className="text-slate-400 font-mono text-[11px] shrink-0">
-              (총 {project?.quantity || 1}대)
-            </span>
+          <div className="flex items-center justify-between gap-2 text-slate-300 pt-0.5">
+            <div className="flex items-center gap-1.5 truncate">
+              <span className="text-slate-400 font-medium shrink-0">설비명:</span>
+              <strong className="text-white font-bold truncate" title={project?.equipmentName}>
+                {project?.equipmentName || "미지정"}
+              </strong>
+              <span className="text-slate-400 font-mono text-[11px] shrink-0">
+                (총 {project?.quantity || 1}대)
+              </span>
+            </div>
+
+            {/* Replicate Template Button (호기 수가 2대 이상일 때만 표시) */}
+            {(project?.quantity || 1) > 1 && (
+              <button
+                type="button"
+                onClick={handleReplicateToAllUnits}
+                className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer"
+                title="1호기 부품 목록을 나머지 모든 호기에 일괄 복제"
+              >
+                <Copy className="h-2.5 w-2.5" />
+                <span>1호기 부품 전체 복제</span>
+              </button>
+            )}
           </div>
-        </div>
-
-        {/* 3. 보조 액션 버튼 행: [프로젝트 정보 수정] [1호기 부품 목록 전체 복제] */}
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
-          {/* Quick Edit Project Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setEditingPjt(JSON.parse(JSON.stringify(project)));
-              setIsEditModalOpen(true);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800/90 px-3 py-1.5 text-xs font-semibold text-cyan-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer"
-            title="프로젝트 정보 및 Serial NO. 수정"
-          >
-            <Edit2 className="h-3.5 w-3.5" />
-            <span>프로젝트 정보 수정</span>
-          </button>
-
-          {/* Replicate Template Button */}
-          {(project?.quantity || 1) > 1 && (
-            <button
-              type="button"
-              onClick={handleReplicateToAllUnits}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer"
-              title="현재 호기의 부품 리스트(부품명/규격)를 나머지 모든 호기에 일괄 복제"
-            >
-              <Copy className="h-3.5 w-3.5" />
-              <span>1호기 부품 목록 전체 복제</span>
-            </button>
-          )}
         </div>
 
         {/* 🔢 등록된 설비 Serial NO. 및 호기 선택 탭 (단일 통합) */}

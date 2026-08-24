@@ -204,6 +204,15 @@ export default function Home() {
   const handleCreateNewProject = () => {
     const newPjt = createBlankProject();
     newPjt.id = "pjt-" + Date.now();
+    // 최근 설비 담당자 자동 추천/기본값 반영
+    try {
+      if (typeof window !== "undefined") {
+        const lastInspector = localStorage.getItem("VISION_PASS_LAST_INSPECTOR");
+        if (lastInspector) {
+          newPjt.inspectorName = lastInspector;
+        }
+      }
+    } catch {}
     setDraftProject(newPjt);
     setCurrentStep(2); // 2. PJT 입력 단계로 이동
   };
@@ -259,6 +268,13 @@ export default function Home() {
       id: newId,
       updatedAt: new Date().toISOString(),
     };
+
+    // 최근 설비 담당자 기억
+    if (finalizedPjt.inspectorName?.trim()) {
+      try {
+        localStorage.setItem("VISION_PASS_LAST_INSPECTOR", finalizedPjt.inspectorName.trim());
+      } catch {}
+    }
 
     setProjects((prev) => {
       const exists = prev.some((p) => p.id === finalizedPjt.id);

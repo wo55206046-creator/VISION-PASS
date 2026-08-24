@@ -41,26 +41,37 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isPresetModalOpen, setIsPresetModalOpen] = useState(false);
 
-  // 기존 등록된 프로젝트들에서 설비 담당자 목록 자동 추출 (중복 제거)
-  const existingInspectors = React.useMemo(() => {
+  // 최근 설비 담당자 목록 및 최신 1순위 담당자 추출
+  const { recentInspectors, lastInspector } = React.useMemo(() => {
+    let list: string[] = [];
+    let latest = "";
     try {
       if (typeof window !== "undefined") {
+        latest = localStorage.getItem("VISION_PASS_LAST_INSPECTOR") || "";
         const saved =
           localStorage.getItem("VISION_PASS_PROJECTS_V2") ||
           localStorage.getItem("VISION_PASS_PROJECTS_V1");
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
+          if (Array.isArray(parsed) && parsed.length > 0) {
             const names = parsed
               .map((p: any) => p.inspectorName?.trim())
               .filter(Boolean);
-            const unique = Array.from(new Set(names)) as string[];
-            if (unique.length > 0) return unique;
+            if (!latest && names.length > 0) {
+              latest = names[0];
+            }
+            list = Array.from(new Set([latest, ...names].filter(Boolean))) as string[];
           }
         }
       }
-    } catch (e) {}
-    return ["홍길동", "김철수", "이영희", "박민수", "최동현", "장준혁"];
+    } catch (e) { }
+
+    if (list.length === 0) {
+      list = ["김충환, 김태현", "김형태, 유병준", "손홍렬, 정재헌"];
+      if (!latest) latest = "홍길동";
+    }
+
+    return { recentInspectors: list, lastInspector: latest || list[0] };
   }, []);
 
   // 수량 변경 시 equipmentUnits 동기화 (기존 데이터 보존)
@@ -254,6 +265,17 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
                 <UserCheck className="h-3.5 w-3.5 text-cyan-400" />
                 <span>설비 담당자</span>
               </label>
+              {lastInspector && (
+                <button
+                  type="button"
+                  onClick={() => onUpdate((prev) => ({ ...prev, inspectorName: lastInspector }))}
+                  className="text-[10px] font-bold text-cyan-300 bg-cyan-950/80 border border-cyan-700/80 px-2 py-0.5 rounded-md hover:bg-cyan-900 transition-all flex items-center gap-1 cursor-pointer shadow-sm"
+                  title="최근 사용된 설비 담당자로 즉시 입력"
+                >
+                  <Sparkles className="h-2.5 w-2.5 text-amber-400" />
+                  <span>최근: {lastInspector}</span>
+                </button>
+              )}
             </div>
             <input
               type="text"
@@ -266,10 +288,30 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
             <datalist id="inspector-datalist-step2">
-              {existingInspectors.map((name) => (
+              {recentInspectors.map((name) => (
                 <option key={name} value={name} />
               ))}
             </datalist>
+
+            {/* 최근 설비 담당자 퀵 추천 태그 (원터치 선택) */}
+            {recentInspectors.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                <span className="text-[9px] text-slate-500 font-semibold shrink-0">최근:</span>
+                {recentInspectors.slice(0, 3).map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => onUpdate((prev) => ({ ...prev, inspectorName: name }))}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition-all cursor-pointer ${project.inspectorName === name
+                        ? "bg-cyan-500 text-slate-950 font-bold shadow-glow-cyan"
+                        : "bg-slate-800/90 text-slate-300 hover:bg-slate-700 hover:text-cyan-300 border border-slate-700/60"
+                      }`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 검수일자 */}
@@ -284,7 +326,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               onClick={(e: React.MouseEvent<HTMLInputElement>) => {
                 try {
                   (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
-                } catch (err) {}
+                } catch (err) { }
               }}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 onUpdate((prev) => ({ ...prev, inspectionDate: e.target.value }))
@@ -337,110 +379,110 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
         </div>
       </div>
 
-        {/* 🔢 설비 Serial NO. 입력 & 적용된 PJT 양식 헤더 */}
-        <div className="rounded-2xl bg-slate-950/80 p-4 sm:p-5 border border-cyan-900/40 space-y-3.5">
-          <div className="space-y-2 border-b border-slate-800 pb-3">
-            {/* 1. 상단 행: 좌측 타이틀 & 우측 [양식 변경] 버튼 */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 shrink-0">
-                <Barcode className="h-4 w-4 text-cyan-400" />
-                <label className="text-xs sm:text-sm font-bold text-cyan-300 whitespace-nowrap">
-                  설비 Serial NO. 입력 (총 {project.quantity}개 호기)
-                </label>
-              </div>
-
-              {/* 양식 변경 버튼 (우측 상단 배치) */}
-              <button
-                type="button"
-                onClick={() => setIsPresetModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 font-bold transition-all cursor-pointer shrink-0 text-xs shadow-sm"
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                <span>양식 변경</span>
-              </button>
+      {/* 🔢 설비 Serial NO. 입력 & 적용된 PJT 양식 헤더 */}
+      <div className="rounded-2xl bg-slate-950/80 p-4 sm:p-5 border border-cyan-900/40 space-y-3.5">
+        <div className="space-y-2 border-b border-slate-800 pb-3">
+          {/* 1. 상단 행: 좌측 타이틀 & 우측 [양식 변경] 버튼 */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 shrink-0">
+              <Barcode className="h-4 w-4 text-cyan-400" />
+              <label className="text-xs sm:text-sm font-bold text-cyan-300 whitespace-nowrap">
+                설비 Serial NO. 입력 (총 {project.quantity}개 호기)
+              </label>
             </div>
 
-            {/* 2. 하단 행: 좌측 PJT 양식 명칭 & 우측 총 N개 품목 */}
-            <div className="flex items-center justify-between gap-2">
-              {/* PJT 양식 명칭 */}
-              <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-700 text-xs shadow-inner min-w-0 flex-1">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                <span className="text-slate-400 text-[11px] shrink-0">PJT 양식:</span>
-                <span className="font-bold text-cyan-300 font-mono truncate" title={project.equipmentName}>
-                  {project.equipmentName || "표준 기본 양식"}
-                </span>
-              </div>
-
-              {/* 총 품목 개수 (양식변경 버튼 바로 아래) */}
-              <span className="bg-slate-900 text-slate-300 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-slate-800 font-semibold shrink-0 whitespace-nowrap">
-                총 <strong className="text-white font-bold">{project.equipmentUnits[0]?.parts?.length || 0}</strong>개 품목
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {(project?.equipmentUnits || []).map((u) => (
-              <div
-                key={u.unitIndex}
-                className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 flex items-center gap-2.5"
-              >
-                <span className="text-xs font-bold text-slate-300 font-mono shrink-0 whitespace-nowrap">
-                  {u.unitIndex}호기 S/N
-                </span>
-                <input
-                  type="text"
-                  placeholder={`예: SOTSU-SK26-100${u.unitIndex}`}
-                  value={u.equipmentSerial || ""}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    const val = e.target.value.toUpperCase();
-                    if (u.unitIndex === 1) {
-                      // 1호기 수정 시 뒤에 있는 모든 호기에 +1 자동 연속 채번
-                      onUpdate((prev) => ({
-                        ...prev,
-                        equipmentUnits: (prev?.equipmentUnits || []).map((unit) => ({
-                          ...unit,
-                          equipmentSerial: cascadeSerialFromUnit1(val, unit.unitIndex),
-                        })),
-                      }));
-                    } else {
-                      // 2호기 이후는 해당 호기만 개별 수정
-                      onUpdate((prev) => ({
-                        ...prev,
-                        equipmentUnits: (prev?.equipmentUnits || []).map((unit) =>
-                          unit.unitIndex === u.unitIndex ? { ...unit, equipmentSerial: val } : unit
-                        ),
-                      }));
-                    }
-                  }}
-                  className="flex-1 min-w-0 rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-xs font-mono font-bold text-cyan-300 uppercase focus:border-cyan-500 focus:outline-none"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Action Button */}
-        <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
-          {onBackToPjtList ? (
+            {/* 양식 변경 버튼 (우측 상단 배치) */}
             <button
               type="button"
-              onClick={onBackToPjtList}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 px-5 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-all cursor-pointer"
+              onClick={() => setIsPresetModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 font-bold transition-all cursor-pointer shrink-0 text-xs shadow-sm"
             >
-              <ArrowLeft className="h-4 w-4" />
-              <span>1. PJT List 목록</span>
+              <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+              <span>양식 변경</span>
             </button>
-          ) : <div />}
+          </div>
 
+          {/* 2. 하단 행: 좌측 PJT 양식 명칭 & 우측 총 N개 품목 */}
+          <div className="flex items-center justify-between gap-2">
+            {/* PJT 양식 명칭 */}
+            <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-700 text-xs shadow-inner min-w-0 flex-1">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+              <span className="text-slate-400 text-[11px] shrink-0">PJT 양식:</span>
+              <span className="font-bold text-cyan-300 font-mono truncate" title={project.equipmentName}>
+                {project.equipmentName || "표준 기본 양식"}
+              </span>
+            </div>
+
+            {/* 총 품목 개수 (양식변경 버튼 바로 아래) */}
+            <span className="bg-slate-900 text-slate-300 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-slate-800 font-semibold shrink-0 whitespace-nowrap">
+              총 <strong className="text-white font-bold">{project.equipmentUnits[0]?.parts?.length || 0}</strong>개 품목
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {(project?.equipmentUnits || []).map((u) => (
+            <div
+              key={u.unitIndex}
+              className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 flex items-center gap-2.5"
+            >
+              <span className="text-xs font-bold text-slate-300 font-mono shrink-0 whitespace-nowrap">
+                {u.unitIndex}호기 S/N
+              </span>
+              <input
+                type="text"
+                placeholder={`예: SOTSU-SK26-100${u.unitIndex}`}
+                value={u.equipmentSerial || ""}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const val = e.target.value.toUpperCase();
+                  if (u.unitIndex === 1) {
+                    // 1호기 수정 시 뒤에 있는 모든 호기에 +1 자동 연속 채번
+                    onUpdate((prev) => ({
+                      ...prev,
+                      equipmentUnits: (prev?.equipmentUnits || []).map((unit) => ({
+                        ...unit,
+                        equipmentSerial: cascadeSerialFromUnit1(val, unit.unitIndex),
+                      })),
+                    }));
+                  } else {
+                    // 2호기 이후는 해당 호기만 개별 수정
+                    onUpdate((prev) => ({
+                      ...prev,
+                      equipmentUnits: (prev?.equipmentUnits || []).map((unit) =>
+                        unit.unitIndex === u.unitIndex ? { ...unit, equipmentSerial: val } : unit
+                      ),
+                    }));
+                  }
+                }}
+                className="flex-1 min-w-0 rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-xs font-mono font-bold text-cyan-300 uppercase focus:border-cyan-500 focus:outline-none"
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Action Button */}
+      <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+        {onBackToPjtList ? (
           <button
             type="button"
-            onClick={handleNextClick}
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-3 text-xs font-extrabold text-slate-950 shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer"
+            onClick={onBackToPjtList}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 px-5 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-all cursor-pointer"
           >
-            <Plus className="h-4 w-4 stroke-[3]" />
-            <span>PJT 추가</span>
+            <ArrowLeft className="h-4 w-4" />
+            <span>1. PJT List 목록</span>
           </button>
-        </div>
+        ) : <div />}
+
+        <button
+          type="button"
+          onClick={handleNextClick}
+          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-3 text-xs font-extrabold text-slate-950 shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer"
+        >
+          <Plus className="h-4 w-4 stroke-[3]" />
+          <span>PJT 추가</span>
+        </button>
+      </div>
 
       {/* 📑 PJT 양식 Modal */}
       <PresetModal

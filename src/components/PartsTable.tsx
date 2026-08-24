@@ -130,49 +130,39 @@ export const PartsTable: React.FC<PartsTableProps> = ({
   );
 
   return (
-    <div className="space-y-4">
-      {/* Action Toolbar & Progress Stats */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5 rounded-2xl bg-slate-900/90 p-4 border border-slate-800 shadow-lg">
-        {/* Progress Bar & Stats */}
-        <div className="flex items-center gap-3.5">
-          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-950 border border-slate-800">
-            <span className="font-mono text-sm font-extrabold text-cyan-400">
-              {progressPercent}%
-            </span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-white">
-                {unitIndex}호기 부품 검증 진행률
-              </span>
-              <span className="rounded-full bg-cyan-950 px-2 py-0.5 text-[11px] font-mono text-cyan-300 border border-cyan-800">
-                {verifiedCount} / {totalCount} 완료
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              카메라 스캔 또는 입력을 통해 부품 시리얼을 확인하세요.
-            </p>
-          </div>
+    <div className="space-y-3">
+      {/* Search Input Bar & Quick Action Tools (컴팩트 1행 바) */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-500" />
+          <input
+            type="text"
+            placeholder="품명, 규격, 세부사항, 시리얼 검색..."
+            value={searchFilter}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchFilter(e.target.value)}
+            className="w-full rounded-xl bg-slate-900 border border-slate-800 pl-10 pr-4 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 shadow-inner"
+          />
         </div>
 
-        {/* Action Buttons (Mobile Wrap) */}
-        <div className="flex flex-wrap items-center gap-2 pt-1 sm:pt-0">
+        {/* Quick Action Buttons (컴팩트 버튼) */}
+        <div className="flex items-center gap-1.5 shrink-0 justify-end">
           <button
             type="button"
             onClick={onOpenPresetModal}
-            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-xl bg-cyan-500/15 px-3.5 py-2.5 sm:py-2 text-xs font-semibold text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/25 transition-all shadow-sm cursor-pointer"
-            title="모델별 표준 BOM 템플릿 불러오기 또는 엑셀 업로드"
+            className="inline-flex items-center justify-center gap-1 rounded-xl bg-slate-900 px-2.5 py-2 text-xs font-semibold text-cyan-300 border border-slate-800 hover:border-cyan-700 hover:bg-slate-800 transition-all cursor-pointer shadow-sm"
+            title="BOM 양식 변경"
           >
-            <PackagePlus className="h-4 w-4 text-cyan-400" />
+            <PackagePlus className="h-3.5 w-3.5 text-cyan-400" />
             <span>양식 변경</span>
           </button>
 
           <button
             type="button"
             onClick={addNewEmptyPart}
-            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-800 px-3.5 py-2.5 sm:py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-all border border-slate-700 cursor-pointer"
+            className="inline-flex items-center justify-center gap-1 rounded-xl bg-slate-800 px-2.5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-all border border-slate-700 cursor-pointer shadow-sm"
+            title="부품 추가"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5 text-cyan-400" />
             <span>부품 추가</span>
           </button>
 
@@ -180,31 +170,14 @@ export const PartsTable: React.FC<PartsTableProps> = ({
             <button
               type="button"
               onClick={markAllVerified}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500/15 px-3.5 py-2 text-xs font-bold text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-all cursor-pointer"
-              title="전체 항목을 검증 완료로 처리"
+              className="inline-flex items-center justify-center gap-1 rounded-xl bg-emerald-950/80 px-2.5 py-2 text-xs font-bold text-emerald-400 border border-emerald-700/60 hover:bg-emerald-900 transition-all cursor-pointer shadow-sm"
+              title="전체 일괄 검증 완료"
             >
-              <CheckCheck className="h-4 w-4" />
-              <span>전체 일괄 검증</span>
+              <CheckCheck className="h-3.5 w-3.5" />
+              <span>일괄 검증</span>
             </button>
           )}
         </div>
-      </div>
-
-      {/* Search Input Bar */}
-      <div className="relative">
-        <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-500" />
-        <input
-          type="text"
-          placeholder="품명, 규격, 세부사항, 시리얼 검색..."
-          value={searchFilter}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchFilter(e.target.value)}
-          className="w-full rounded-xl bg-slate-900 border border-slate-800 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none shadow-inner"
-        />
-        {searchFilter && (
-          <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-mono">
-            {filteredParts.length}건
-          </span>
-        )}
       </div>
 
       {/* ========================================================================= */}
