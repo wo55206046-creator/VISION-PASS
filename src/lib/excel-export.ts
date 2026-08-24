@@ -2,9 +2,9 @@ import ExcelJS from "exceljs";
 import { ProjectMaster, EquipmentUnit, PartItem } from "@/types";
 
 /**
- * 파일명용 시리얼 범위 포맷 생성기 (예: "TM1L-HK26-1007~1009", 단일 호기 시 "TM1L-HK26-1007")
+ * 파일명 및 헤더용 시리얼 범위 포맷 생성기 (예: "TM1L-HK26-1007~1009", 단일 호기 시 "TM1L-HK26-1007")
  */
-function formatSerialRangeForFilename(units: EquipmentUnit[], fallback: string = "S_N"): string {
+export function formatSerialRangeForFilename(units: EquipmentUnit[], fallback: string = ""): string {
   const validSerials = units.map((u) => (u.equipmentSerial || "").trim()).filter(Boolean);
   if (validSerials.length === 0) {
     return fallback;

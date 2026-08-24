@@ -14,7 +14,6 @@ import {
   PackagePlus,
   Sparkles,
   Search,
-  CheckCheck,
 } from "lucide-react";
 
 interface PartsTableProps {
@@ -110,16 +109,6 @@ export const PartsTable: React.FC<PartsTableProps> = ({
     startEditing(newPart);
   };
 
-  // 전체 검증 일괄 토글
-  const markAllVerified = () => {
-    onUpdateParts(
-      parts.map((p) => ({
-        ...p,
-        isVerified: true,
-      }))
-    );
-  };
-
   const filteredParts = parts.filter(
     (p) =>
       p.partName.toLowerCase().includes(searchFilter.toLowerCase()) ||
@@ -131,52 +120,40 @@ export const PartsTable: React.FC<PartsTableProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Search Input Bar & Quick Action Tools (컴팩트 1행 바) */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-500" />
+      {/* Search Input Bar & Quick Action Tools (단일 1행: 검색창 + 양식변경 + 부품추가) */}
+      <div className="flex items-center gap-1.5">
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
           <input
             type="text"
             placeholder="품명, 규격, 세부사항, 시리얼 검색..."
             value={searchFilter}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchFilter(e.target.value)}
-            className="w-full rounded-xl bg-slate-900 border border-slate-800 pl-10 pr-4 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 shadow-inner"
+            className="w-full rounded-xl bg-slate-900 border border-slate-800 pl-8.5 pr-2.5 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 shadow-inner"
           />
         </div>
 
-        {/* Quick Action Buttons (컴팩트 버튼) */}
-        <div className="flex items-center gap-1.5 shrink-0 justify-end">
+        {/* Quick Action Buttons (양식 변경 + 부품 추가) */}
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={onOpenPresetModal}
-            className="inline-flex items-center justify-center gap-1 rounded-xl bg-slate-900 px-2.5 py-2 text-xs font-semibold text-cyan-300 border border-slate-800 hover:border-cyan-700 hover:bg-slate-800 transition-all cursor-pointer shadow-sm"
+            className="inline-flex items-center justify-center gap-1 rounded-xl bg-slate-900 px-2.5 py-2 text-xs font-semibold text-cyan-300 border border-slate-800 hover:border-cyan-700 hover:bg-slate-800 transition-all cursor-pointer shadow-sm shrink-0"
             title="BOM 양식 변경"
           >
             <PackagePlus className="h-3.5 w-3.5 text-cyan-400" />
-            <span>양식 변경</span>
+            <span className="whitespace-nowrap">양식 변경</span>
           </button>
 
           <button
             type="button"
             onClick={addNewEmptyPart}
-            className="inline-flex items-center justify-center gap-1 rounded-xl bg-slate-800 px-2.5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-all border border-slate-700 cursor-pointer shadow-sm"
+            className="inline-flex items-center justify-center gap-1 rounded-xl bg-slate-800 px-2.5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-all border border-slate-700 cursor-pointer shadow-sm shrink-0"
             title="부품 추가"
           >
             <Plus className="h-3.5 w-3.5 text-cyan-400" />
-            <span>부품 추가</span>
+            <span className="whitespace-nowrap">부품 추가</span>
           </button>
-
-          {parts.length > 0 && (
-            <button
-              type="button"
-              onClick={markAllVerified}
-              className="inline-flex items-center justify-center gap-1 rounded-xl bg-emerald-950/80 px-2.5 py-2 text-xs font-bold text-emerald-400 border border-emerald-700/60 hover:bg-emerald-900 transition-all cursor-pointer shadow-sm"
-              title="전체 일괄 검증 완료"
-            >
-              <CheckCheck className="h-3.5 w-3.5" />
-              <span>일괄 검증</span>
-            </button>
-          )}
         </div>
       </div>
 

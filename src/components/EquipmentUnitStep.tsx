@@ -5,7 +5,10 @@ import { EquipmentUnit, PartItem, ProjectMaster } from "@/types";
 import { PartsTable } from "./PartsTable";
 import { PresetModal } from "./PresetModal";
 import { CameraOcrModal } from "./CameraOcrModal";
-import { exportSemiconductorReportToExcel } from "@/lib/excel-export";
+import {
+  exportSemiconductorReportToExcel,
+  formatSerialRangeForFilename,
+} from "@/lib/excel-export";
 import { DEFAULT_SITES } from "@/lib/default-presets";
 import { generateNextSerial, cascadeSerialFromUnit1 } from "@/lib/utils";
 import {
@@ -249,11 +252,18 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
         </div>
 
         {/* 🔢 등록된 설비 Serial NO. 및 호기 선택 탭 (단일 통합) */}
-        <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80 flex flex-col sm:flex-row sm:items-center gap-2.5 text-xs">
-          <span className="text-slate-400 font-bold flex items-center gap-1.5 shrink-0">
-            <Barcode className="h-4 w-4 text-cyan-400" />
-            <span>호기 선택 (Serial NO.) :</span>
-          </span>
+        <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80 space-y-2 text-xs">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+              <Barcode className="h-4 w-4 text-cyan-400 shrink-0" />
+              <span className="text-slate-400 font-bold">호기 선택 (Serial NO.) :</span>
+              {formatSerialRangeForFilename(project.equipmentUnits) && (
+                <span className="font-mono font-extrabold text-cyan-300 bg-cyan-950/90 border border-cyan-600/60 px-2 py-0.5 rounded-md text-xs shadow-inner ml-1 tracking-tight">
+                  {formatSerialRangeForFilename(project.equipmentUnits)}
+                </span>
+              )}
+            </div>
+          </div>
           <div className="flex items-center gap-2 font-mono overflow-x-auto no-scrollbar py-0.5 scroll-smooth -mx-1 px-1">
             {project.equipmentUnits.map((u) => {
               const isCurrent = u.unitIndex === activeUnitIndex;
