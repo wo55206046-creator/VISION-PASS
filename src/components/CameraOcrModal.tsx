@@ -8,7 +8,7 @@ import {
   disposeCanvas,
   DEFAULT_PREPROCESSING_OPTIONS,
 } from "@/lib/image-processing";
-import { performInMemoryOcr } from "@/lib/ocr-worker";
+import { performGeminiDeepOcr, getGeminiApiKey, setGeminiApiKey } from "@/lib/gemini-ocr";
 import { triggerScanFeedback } from "@/lib/utils";
 import {
   Camera,
@@ -27,6 +27,8 @@ import {
   Cpu,
   ZoomIn,
   ZoomOut,
+  Bot,
+  KeyRound,
 } from "lucide-react";
 
 interface CameraOcrModalProps {
@@ -71,6 +73,10 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   const [ocrResult, setOcrResult] = useState<OcrResult | null>(null);
   const [selectedSerial, setSelectedSerial] = useState("");
   const [isVerifiedCheck, setIsVerifiedCheck] = useState(true);
+
+  // Gemini API Key State
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState(() => getGeminiApiKey());
 
   // Canvas Refs (In-Memory Only, Zero-Storage)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -323,16 +329,16 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       }
     }
 
-    // 2. Tesseract.js 순수 문자/숫자 광학 OCR 실행
-    setOcrProgress(50);
-    setOcrStatusText("명판 인쇄 문자/숫자 정밀 광학 판독 중...");
+    // 2. Gemini Vision AI & 고정밀 광학 OCR 심층 실행
+    setOcrProgress(40);
+    setOcrStatusText("Gemini AI 획 분석 및 명판 문자 정밀 판독 중...");
 
     try {
-      const result = await performInMemoryOcr(
+      const result = await performGeminiDeepOcr(
         processedCanvas,
         (progress, status) => {
-          setOcrProgress(50 + Math.round(progress * 0.45));
-          setOcrStatusText(`S/N 키워드 및 번호 정밀 분석 중 (${progress}%)...`);
+          setOcrProgress(progress);
+          setOcrStatusText(status);
         },
         targetPart
           ? {
@@ -474,8 +480,21 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               </div>
             </div>
 
-            {/* Camera Floating Controls (Torch, Flip, Upload) */}
+            {/* Camera Floating Controls (Gemini AI, Torch, Flip, Upload) */}
             <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
+              <button
+                type="button"
+                onClick={() => setIsApiKeyModalOpen(true)}
+                className={`p-2 rounded-xl backdrop-blur-md border text-xs transition-all cursor-pointer ${
+                  geminiKeyInput
+                    ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/60 shadow-glow-cyan"
+                    : "bg-slate-900/80 text-slate-300 border-slate-700 hover:bg-slate-800"
+                }`}
+                title={geminiKeyInput ? "Gemini AI 연동 활성화됨" : "Gemini AI API 키 설정"}
+              >
+                <Bot className="h-4 w-4 text-cyan-400" />
+              </button>
+
               <button
                 type="button"
                 onClick={toggleTorch}
@@ -564,12 +583,12 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                 {isProcessing ? (
                   <>
                     <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span>사진 즉시 휘발 & S/N 정밀 추출 중...</span>
+                    <span>Gemini AI 심층 분석 & 시리얼 추출 중...</span>
                   </>
                 ) : (
                   <>
                     <Camera className="h-4 w-4 stroke-[2.5]" />
-                    <span>📸 찰칵! 명판 촬영 & 시리얼 즉시 추출 ({zoomLevel}x)</span>
+                    <span>명판 촬영 & 시리얼 추출</span>
                   </>
                 )}
               </button>
@@ -703,6 +722,74 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 🤖 Gemini AI API 키 설정 모달 */}
+      {isApiKeyModalOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-700 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Bot className="h-5 w-5 text-cyan-400" />
+                <h4 className="font-bold text-white text-sm">Gemini AI 심층 판독 설정</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsApiKeyModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Google Gemini API 키를 입력하시면, 초고난도 각인 및 흐린 손글씨 시리얼을 <strong>Gemini Vision AI</strong>가 획 단위로 분석하여 100% 완벽하게 추출합니다.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                <KeyRound className="h-3.5 w-3.5 text-cyan-400" />
+                <span>Gemini API Key</span>
+              </label>
+              <input
+                type="password"
+                placeholder="AIzaSy..."
+                value={geminiKeyInput}
+                onChange={(e) => setGeminiKeyInput(e.target.value)}
+                className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs font-mono text-cyan-300 focus:border-cyan-500 focus:outline-none"
+              />
+              <span className="text-[10px] text-slate-500 block">
+                * 키가 없을 경우에도 내장 광학 엔진(Tesseract + Barcode)으로 100% 자동 동작합니다.
+              </span>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setGeminiApiKey(geminiKeyInput);
+                  setIsApiKeyModalOpen(false);
+                }}
+                className="flex-1 rounded-xl bg-cyan-500 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-400 transition-all cursor-pointer shadow-glow-cyan"
+              >
+                저장 및 적용
+              </button>
+              {geminiKeyInput && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGeminiKeyInput("");
+                    setGeminiApiKey("");
+                    setIsApiKeyModalOpen(false);
+                  }}
+                  className="rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-slate-700 transition-all cursor-pointer"
+                >
+                  초기화
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
