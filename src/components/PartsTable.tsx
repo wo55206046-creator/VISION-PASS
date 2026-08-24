@@ -293,28 +293,28 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                         </div>
                       </div>
 
-                      {/* 우측 상단 액션 그룹: [OCR 스캔] + [완료/미검증 & 수정/삭제] */}
+                      {/* 우측 상단 액션 그룹: [OCR 스캔] + [완료/미검증 & 수정/삭제 (크고 뚜렷한 버튼)] */}
                       <div className="flex items-center gap-2 shrink-0">
-                        {/* 📸 [OCR 스캔] 버튼 (상단 카메라 아이콘 + 하단 텍스트) */}
+                        {/* 📸 [OCR 스캔] 버튼 (카메라 아이콘 & "OCR 스캔" 글자 최대 확대) */}
                         <button
                           type="button"
                           onClick={() => onOpenOcrModal(part)}
-                          className="h-14 w-16 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 shadow-glow-cyan active:scale-95 transition-all flex flex-col items-center justify-center gap-1 cursor-pointer shrink-0"
+                          className="h-15 w-[72px] rounded-xl bg-gradient-to-br from-cyan-400 via-cyan-500 to-blue-600 font-black text-slate-950 shadow-glow-cyan active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer shrink-0 py-1"
                           title="명판 OCR 스캔"
                         >
-                          <Camera className="h-4 w-4 stroke-[2.5]" />
-                          <span className="text-[10px] font-black tracking-tight whitespace-nowrap">
+                          <Camera className="h-5 w-5 stroke-[2.8]" />
+                          <span className="text-xs font-black tracking-tighter leading-tight whitespace-nowrap">
                             OCR 스캔
                           </span>
                         </button>
 
-                        {/* 우측 컬럼: 상단 완료/미검증 배지 + 하단 수정/삭제 버튼 (크기 확대 & 100% 정렬) */}
-                        <div className="flex flex-col items-end justify-between h-14 w-16">
-                          {/* 검증 상태 토글 버튼 (w-16 고정 너비) */}
+                        {/* 우측 컬럼: 상단 완료/미검증 배지 + 하단 수정/삭제 대형 버튼 */}
+                        <div className="flex flex-col justify-between h-15 w-[76px]">
+                          {/* 검증 상태 토글 버튼 (전폭 w-full) */}
                           <button
                             type="button"
                             onClick={() => toggleVerify(part.id)}
-                            className={`w-16 h-6.5 rounded-lg text-[10.5px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer select-none shrink-0 ${
+                            className={`w-full h-6.5 rounded-lg text-[10.5px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer select-none shrink-0 ${
                               part.isVerified
                                 ? "bg-emerald-500 text-slate-950 font-extrabold shadow-glow-emerald"
                                 : "bg-slate-800 text-amber-400 border border-slate-700 hover:bg-slate-700"
@@ -323,34 +323,34 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                           >
                             {part.isVerified ? (
                               <>
-                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 stroke-[2.5]" />
                                 <span>완료</span>
                               </>
                             ) : (
                               <>
-                                <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                                <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-400 stroke-[2.5]" />
                                 <span>미검증</span>
                               </>
                             )}
                           </button>
 
-                          {/* 수정 & 삭제 버튼 (크기 확대: w-7.5 h-6.5) */}
-                          <div className="flex items-center justify-between w-16">
+                          {/* ✏️ 수정 & 🗑️ 삭제 버튼 (사용자 요청: 큼직하고 뚜렷한 사각 버튼 2개) */}
+                          <div className="flex items-center gap-1.5 w-full">
                             <button
                               type="button"
                               onClick={() => startEditing(part)}
-                              className="w-7.5 h-6.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white border border-slate-700 hover:border-cyan-500 transition-all flex items-center justify-center cursor-pointer active:scale-95"
+                              className="flex-1 h-7 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-400 transition-all flex items-center justify-center cursor-pointer active:scale-95 shadow-sm"
                               title="직접 수정"
                             >
-                              <Edit2 className="h-3.5 w-3.5" />
+                              <Edit2 className="h-4 w-4" />
                             </button>
                             <button
                               type="button"
                               onClick={() => deletePart(part.id)}
-                              className="w-7.5 h-6.5 rounded-lg bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-500 transition-all flex items-center justify-center cursor-pointer active:scale-95"
+                              className="flex-1 h-7 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-rose-400 border border-slate-700 hover:border-rose-400 transition-all flex items-center justify-center cursor-pointer active:scale-95 shadow-sm"
                               title="삭제"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
                         </div>
