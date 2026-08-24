@@ -166,8 +166,8 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold text-xs border border-cyan-500/30 shrink-0">
               03
             </span>
-            <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
-              PJT 부품 시리얼 OCR 인식
+            <h2 className="text-base sm:text-lg font-bold text-white tracking-wide whitespace-nowrap">
+              PJT 부품 시리얼 OCR
             </h2>
           </div>
 
