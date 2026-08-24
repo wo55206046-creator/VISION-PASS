@@ -379,21 +379,8 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
             </div>
 
             <div className="space-y-3 text-xs">
-              {/* 1. PJT CODE (좌) & 고객사 (우) */}
+              {/* 1. 고객사 (좌) & PJT CODE (우) */}
               <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="text-slate-300 font-bold block mb-1">PJT CODE *</label>
-                  <input
-                    type="text"
-                    placeholder="예: S26-15-01"
-                    value={editingPjt.pjtCode}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setEditingPjt({ ...editingPjt, pjtCode: e.target.value.toUpperCase() })
-                    }
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 font-mono font-bold text-cyan-300 uppercase focus:border-cyan-500 focus:outline-none"
-                  />
-                </div>
-
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-slate-300 font-bold block">고객사</label>
@@ -412,6 +399,19 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                       <option key={s} value={s} />
                     ))}
                   </datalist>
+                </div>
+
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">PJT CODE *</label>
+                  <input
+                    type="text"
+                    placeholder="예: S26-15-01"
+                    value={editingPjt.pjtCode}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setEditingPjt({ ...editingPjt, pjtCode: e.target.value.toUpperCase() })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 font-mono font-bold text-cyan-300 uppercase focus:border-cyan-500 focus:outline-none"
+                  />
                 </div>
               </div>
 

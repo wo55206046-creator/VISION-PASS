@@ -270,13 +270,13 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                         </div>
                       </div>
 
-                      {/* 우측 상단 액션 그룹: [OCR 스캔] + [완료/미검증 & 수정/삭제 (크고 뚜렷한 버튼)] */}
+                      {/* 우측 상단 액션 그룹: [OCR 스캔] + [완료/미검증 & 수정/삭제 (여백 최적화)] */}
                       <div className="flex items-center gap-2 shrink-0">
                         {/* 📸 [OCR 스캔] 버튼 (카메라 아이콘 & "OCR 스캔" 글자 최대 확대) */}
                         <button
                           type="button"
                           onClick={() => onOpenOcrModal(part)}
-                          className="h-15 w-[72px] rounded-xl bg-gradient-to-br from-cyan-400 via-cyan-500 to-blue-600 font-black text-slate-950 shadow-glow-cyan active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer shrink-0 py-1"
+                          className="h-16 w-[72px] rounded-xl bg-gradient-to-br from-cyan-400 via-cyan-500 to-blue-600 font-black text-slate-950 shadow-glow-cyan active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer shrink-0 py-1"
                           title="명판 OCR 스캔"
                         >
                           <Camera className="h-5 w-5 stroke-[2.8]" />
@@ -285,13 +285,13 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                           </span>
                         </button>
 
-                        {/* 우측 컬럼: 상단 완료/미검증 배지 + 하단 수정/삭제 대형 버튼 */}
-                        <div className="flex flex-col justify-between h-15 w-[76px]">
+                        {/* 우측 컬럼: 상단 완료/미검증 배지 + 하단 수정/삭제 대형 버튼 (상하 간격 gap 확보) */}
+                        <div className="flex flex-col justify-between h-16 w-[76px] py-0.5">
                           {/* 검증 상태 토글 버튼 (전폭 w-full) */}
                           <button
                             type="button"
                             onClick={() => toggleVerify(part.id)}
-                            className={`w-full h-6.5 rounded-lg text-[10.5px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer select-none shrink-0 ${
+                            className={`w-full h-6 rounded-lg text-[10.5px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer select-none shrink-0 ${
                               part.isVerified
                                 ? "bg-emerald-500 text-slate-950 font-extrabold shadow-glow-emerald"
                                 : "bg-slate-800 text-amber-400 border border-slate-700 hover:bg-slate-700"
@@ -311,7 +311,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                             )}
                           </button>
 
-                          {/* ✏️ 수정 & 🗑️ 삭제 버튼 (사용자 요청: 큼직하고 뚜렷한 사각 버튼 2개) */}
+                          {/* ✏️ 수정 & 🗑️ 삭제 버튼 (상단 버튼과 분리된 간격 유지) */}
                           <div className="flex items-center gap-1.5 w-full">
                             <button
                               type="button"

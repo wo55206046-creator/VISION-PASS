@@ -186,27 +186,8 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
 
       {/* Form Card (왼쪽 사진과 100% 동일한 2열 분할 컴팩트 레이아웃) */}
       <div className="rounded-2xl bg-slate-900/90 p-4 sm:p-7 border border-slate-800 shadow-2xl backdrop-blur-sm space-y-3.5 sm:space-y-4">
-        {/* 1. PJT CODE (좌) & 고객사 (우) */}
+        {/* 1. 고객사 (좌) & PJT CODE (우) */}
         <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
-          {/* PJT CODE */}
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-              <Barcode className="h-3.5 w-3.5 text-cyan-400" />
-              <span>PJT CODE</span> <span className="text-cyan-400">*</span>
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="예: S26-15-01"
-                value={project.pjtCode}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  onUpdate((prev) => ({ ...prev, pjtCode: e.target.value.toUpperCase() }))
-                }
-                className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm font-mono font-bold text-cyan-300 uppercase placeholder:font-sans placeholder:normal-case placeholder:font-normal placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-              />
-            </div>
-          </div>
-
           {/* 고객사 */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -233,6 +214,25 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
                   <option key={site} value={site} />
                 ))}
               </datalist>
+            </div>
+          </div>
+
+          {/* PJT CODE */}
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+              <Barcode className="h-3.5 w-3.5 text-cyan-400" />
+              <span>PJT CODE</span> <span className="text-cyan-400">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="예: S26-15-01"
+                value={project.pjtCode}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  onUpdate((prev) => ({ ...prev, pjtCode: e.target.value.toUpperCase() }))
+                }
+                className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm font-mono font-bold text-cyan-300 uppercase placeholder:font-sans placeholder:normal-case placeholder:font-normal placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              />
             </div>
           </div>
         </div>
