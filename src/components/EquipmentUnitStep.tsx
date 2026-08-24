@@ -263,6 +263,17 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
                 </span>
               )}
             </div>
+
+            {/* 📑 우측 상단 [PJT 양식] 버튼 */}
+            <button
+              type="button"
+              onClick={() => setIsPresetModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-cyan-300 border border-cyan-700/60 shadow-sm transition-all cursor-pointer shrink-0"
+              title="PJT 모델별 표준 BOM 및 엑셀 양식 적용"
+            >
+              <Layers className="h-3.5 w-3.5 text-cyan-400" />
+              <span>PJT 양식</span>
+            </button>
           </div>
           <div className="flex items-center gap-2 font-mono overflow-x-auto no-scrollbar py-0.5 scroll-smooth -mx-1 px-1">
             {project.equipmentUnits.map((u) => {

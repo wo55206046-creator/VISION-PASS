@@ -336,128 +336,34 @@ export const PartsTable: React.FC<PartsTableProps> = ({
   };
 
   return (
-    <div className="space-y-4">
-      {/* 📊 1. 상단 통계 대시보드 & 퀵 액션 바 */}
-      <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-cleanroom-850 to-slate-900 p-4 border border-slate-800 shadow-xl space-y-3.5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* 좌측: 호기 번호 & 검증 진척도 */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-extrabold text-xs border border-cyan-500/30">
-                {unitIndex}
-              </span>
-              <h3 className="text-base font-bold text-white tracking-wide">
-                {unitIndex}호기 부품 목록
-              </h3>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs">
-              <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 font-mono">
-                총 <strong className="text-white font-bold">{totalCount}</strong>개
-              </span>
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 font-mono">
-                검증 완료 <strong className="font-bold">{verifiedCount}</strong>개
-              </span>
-              {unverifiedCount > 0 ? (
-                <span className="px-2.5 py-1 rounded-lg bg-amber-950/80 border border-amber-800/80 text-amber-300 font-mono">
-                  미검증 <strong className="font-bold">{unverifiedCount}</strong>개
-                </span>
-              ) : null}
-
-              {isAllVerified && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-extrabold text-xs shadow-glow-emerald animate-pulse">
-                  <CheckCircle2 className="h-3.5 w-3.5 stroke-[3]" />
-                  <span>ALL PASS (완료)</span>
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* 우측: 상단 메인 버튼 그룹 */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {onOpenPresetModal && (
-              <button
-                type="button"
-                onClick={onOpenPresetModal}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs font-bold text-cyan-300 border border-cyan-700/60 shadow-sm transition-all cursor-pointer"
-                title="PJT 모델별 표준 BOM 및 엑셀 양식 적용"
-              >
-                <Layers className="h-3.5 w-3.5" />
-                <span>PJT 양식 선택</span>
-              </button>
-            )}
-
+    <div className="space-y-3">
+      {/* 🔍 1. 검색 & 필터 툴바 */}
+      <div className="rounded-2xl bg-slate-900/80 p-3.5 border border-slate-800 space-y-3 shadow-md">
+        {/* 1행: 검색창 (전폭) */}
+        <div className="relative w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="부품명, 규격, 세부사양, 시리얼 검색..."
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+          />
+          {searchQuery && (
             <button
               type="button"
-              onClick={() => setIsAddModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 shadow-glow-cyan transition-all cursor-pointer"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
             >
-              <Plus className="h-3.5 w-3.5 stroke-[3]" />
-              <span>부품 추가</span>
+              <X className="h-3.5 w-3.5" />
             </button>
-
-            <button
-              type="button"
-              onClick={handleVerifyAllParts}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-950/90 hover:bg-emerald-900 border border-emerald-600 px-3 py-1.5 text-xs font-bold text-emerald-300 transition-all cursor-pointer"
-              title="현재 호기의 모든 부품을 즉시 검증 완료 처리"
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              <span>전체 검증</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleResetAllVerification}
-              className="inline-flex items-center gap-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-slate-200 transition-all cursor-pointer"
-              title="검증 상태 초기화"
-            >
-              <RotateCcw className="h-3 w-3" />
-            </button>
-          </div>
+          )}
         </div>
 
-        {/* 📈 진척도 프로그레스 바 */}
-        <div className="space-y-1">
-          <div className="flex justify-between items-center text-[11px] font-mono text-slate-400">
-            <span>시리얼 OCR 검증 진척도</span>
-            <span className="font-bold text-cyan-300">{progressPercent}%</span>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-950 border border-slate-800">
-            <div
-              className="h-full bg-gradient-to-r from-cyan-500 via-teal-400 to-emerald-400 transition-all duration-500 rounded-full"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 🔍 2. 검색 & 필터 툴바 */}
-      <div className="rounded-2xl bg-slate-900/80 p-3.5 border border-slate-800 space-y-3">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-          {/* 검색창 */}
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="부품명, 규격, 세부사양, 시리얼 검색..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-8 py-1.5 text-xs text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
+        {/* 2행: [좌측 상태 필터 (전체/완료/미검증)] & [우측 + 부품 추가 버튼] */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           {/* 상태 필터 (전체 / 검증완료 / 미검증) */}
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 self-start sm:self-auto shrink-0">
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
             <button
               type="button"
               onClick={() => setStatusFilter("ALL")}
@@ -492,6 +398,16 @@ export const PartsTable: React.FC<PartsTableProps> = ({
               미검증 ({unverifiedCount})
             </button>
           </div>
+
+          {/* ➕ 우측 [+ 부품 추가] 버튼 */}
+          <button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 shadow-glow-cyan transition-all cursor-pointer shrink-0"
+          >
+            <Plus className="h-3.5 w-3.5 stroke-[3]" />
+            <span>+ 부품 추가</span>
+          </button>
         </div>
 
         {/* 카테고리 필터 탭 (있는 경우에만 표시) */}
