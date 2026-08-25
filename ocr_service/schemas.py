@@ -23,27 +23,35 @@ class CharacterDisambiguation(BaseModel):
     )
 
 
-class GeminiOcrRawResponse(BaseModel):
+class SerialExtractionResult(BaseModel):
     """
     Strict Structured Output schema returned directly by Gemini Vision AI.
-    Forces strict center guide box priority, randomized serial preference, and stroke disambiguation.
+    Forces literal pixel-level transcription of characters in the center guide box
+    without any arbitrary auto-swapping or dictionary word guessing.
     """
-    serial_number_primary: Optional[str] = Field(
+    raw_serial: str = Field(
+        description="가이드 중앙 칸에서 전사한 시리얼 번호 원문 (임의 수정 금지)"
+    )
+    source_type: str = Field(
+        default="printed",
+        description="인식된 텍스트 유형: 'printed', 'handwritten', 'engraved'"
+    )
+    model_name: Optional[str] = Field(
         default=None,
-        description="중앙 칸에서 추출된 시리얼 번호 (null 허용)"
+        description="함께 식별된 모델명 (있는 경우)"
     )
-    confidence: str = Field(
-        default="high",
-        description="인식 신뢰도 수준 (high, medium, low)"
+    notes: Optional[str] = Field(
+        default=None,
+        description="수기 메모, 날짜, 특이사항"
     )
-    ambiguous_characters: List[str] = Field(
+    low_confidence_chars: List[str] = Field(
         default_factory=list,
-        description="확실치 않은 문자 목록 (예: 0인지 O인지 불명확, 1인지 I인지 불명확)"
+        description="획이 번지거나 훼손되어 판독 확신도가 낮은 문자 목록"
     )
-    analysis_path: str = Field(
-        default="",
-        description="3단계 획 단위 추론 과정 요약 (디버깅용)"
-    )
+
+
+# Alias for backward compatibility across modules
+GeminiOcrRawResponse = SerialExtractionResult
 
 
 class ProcessedImageStreams(BaseModel):

@@ -326,17 +326,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     }
   };
 
-  // 1초 원터치 문자 오타 즉시 치환 핸들러 (O<->0, I<->1, S<->5, B<->8, Z<->2)
-  const handleQuickSwap = (charA: string, charB: string) => {
-    if (!selectedSerial) return;
-    let text = selectedSerial;
-    if (text.includes(charA)) {
-      text = text.replaceAll(charA, charB);
-    } else if (text.includes(charB)) {
-      text = text.replaceAll(charB, charA);
-    }
-    setSelectedSerial(text);
-  };
 
   // 로컬 사진 파일 업로드 핸들러 (스토리지 제로: 브라우저 메모리 Canvas로만 로드)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -584,12 +573,12 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             </div>
           )}
 
-          {/* OCR Result & 1-Second Quick-Review Section */}
+          {/* OCR Result & Quick-Review Section */}
           <div className="rounded-2xl bg-slate-950 p-3.5 border border-slate-800 space-y-3 shadow-lg">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
                 <Cpu className="h-3.5 w-3.5 text-cyan-400" />
-                <span>추출된 시리얼 번호 (최종 확인/1초 수정)</span>
+                <span>추출된 시리얼 번호 (최종 확인 및 수정)</span>
               </label>
               {ocrResult?.confidence !== undefined && ocrResult.cleanedSerial && (
                 <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-500/40 font-bold">
@@ -630,32 +619,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                 </button>
               )}
             </div>
-
-            {/* ⚡ 1초 원터치 문자 오타 교정 툴바 (0<->O, 1<->I, 5<->S, 8<->B, 2<->Z) */}
-            {selectedSerial && (
-              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                <span className="text-[10px] font-semibold text-slate-400 mr-1">
-                  1초 오타 스왑:
-                </span>
-                {[
-                  { label: "0 ↔ O", a: "0", b: "O" },
-                  { label: "1 ↔ I", a: "1", b: "I" },
-                  { label: "5 ↔ S", a: "5", b: "S" },
-                  { label: "8 ↔ B", a: "8", b: "B" },
-                  { label: "2 ↔ Z", a: "2", b: "Z" },
-                ].map((swap, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleQuickSwap(swap.a, swap.b)}
-                    className="px-2 py-0.5 rounded-md bg-slate-900 hover:bg-cyan-950 text-[10px] font-mono font-bold text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500 transition-all cursor-pointer active:scale-95"
-                    title={`클릭 시 문자열 내 ${swap.label}를 상호 치환합니다`}
-                  >
-                    {swap.label}
-                  </button>
-                ))}
-              </div>
-            )}
 
             {/* Serial Candidates Pills (최대 3개 추천) */}
             {ocrResult && ocrResult.candidates.length > 0 && (

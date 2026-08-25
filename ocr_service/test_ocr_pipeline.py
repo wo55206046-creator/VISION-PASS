@@ -15,6 +15,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from ocr_service.schemas import (
+    SerialExtractionResult,
     GeminiOcrRawResponse,
     OcrPipelineResult,
     ProcessedImageStreams,
@@ -67,38 +68,24 @@ class TestIndustrialSerialValidator(unittest.TestCase):
         self.assertEqual(self.validator.clean_prefix("시리얼 : 673644"), "673644")
         self.assertEqual(self.validator.clean_prefix("일련번호: TM1L-HK26-1007"), "TM1L-HK26-1007")
 
-    def test_digit_slot_disambiguation(self):
-        corrections = []
-        # '10O7' where 'O' is surrounded by digits -> should convert to '1007'
-        fixed = self.validator.disambiguate_segment_slots("TM1L-HK26-10O7", corrections)
-        self.assertEqual(fixed, "TM1L-HK26-1007")
-        self.assertEqual(len(corrections), 1)
-        self.assertEqual(corrections[0].original_value, "O")
-        self.assertEqual(corrections[0].corrected_value, "0")
-
-    def test_digit_slot_i_to_1_disambiguation(self):
-        corrections = []
-        # '67364I' where 'I' is at the end of digit string -> should convert to '673641'
-        fixed = self.validator.disambiguate_segment_slots("67364I", corrections)
-        self.assertEqual(fixed, "673641")
-        self.assertEqual(len(corrections), 1)
-
-    def test_digit_slot_s_to_5_disambiguation(self):
-        corrections = []
-        # '2024S8' in digit context -> '202458'
-        fixed = self.validator.disambiguate_segment_slots("2024S8", corrections)
-        self.assertEqual(fixed, "202458")
+    def test_strict_literal_preservation(self):
+        # Exact character preservation without arbitrary letter/number substitution
+        self.assertEqual(self.validator.clean_raw_serial("S/N: TM1L-HK26-10O7"), "TM1L-HK26-10O7")
+        self.assertEqual(self.validator.clean_raw_serial("  WT24AB01  "), "WT24AB01")
+        self.assertEqual(self.validator.clean_raw_serial("673641-X/02"), "673641-X/02")
 
     def test_full_validation_workflow(self):
-        raw = GeminiOcrRawResponse(
-            serial_number_primary="S/N: 25X-0049H",
-            confidence="high",
-            ambiguous_characters=[],
-            analysis_path="1단계 중앙 칸 획 식별 -> 2단계 혼동 문자 없음 -> 3단계 25X-0049H 확정"
+        raw = SerialExtractionResult(
+            raw_serial="S/N: 25X-0049H",
+            source_type="printed",
+            model_name="VISION-PASS-200",
+            notes="Checked",
+            low_confidence_chars=[]
         )
         res = self.validator.validate_and_normalize(raw)
         self.assertTrue(res.success)
         self.assertEqual(res.primary_serial, "25X-0049H")
+        self.assertEqual(res.model_name, "VISION-PASS-200")
         self.assertGreaterEqual(res.confidence_score, 95.0)
 
 

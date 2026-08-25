@@ -9,39 +9,38 @@ import json
 import logging
 from pydantic import ValidationError
 
-from .schemas import GeminiOcrRawResponse, ProcessedImageStreams
+from .schemas import SerialExtractionResult, GeminiOcrRawResponse, ProcessedImageStreams
 
 logger = logging.getLogger("ocr_service.gemini_engine")
 
-SYSTEM_INSTRUCTION = """당신은 반도체, 디스플레이, 중공업 제조 설비의 금속 명판 및 마스킹 테이프/금속 표면의 수기 시리얼 번호를 판독하는 최고 등급의 산업용 초정밀 광학 판독 AI입니다.
+SYSTEM_INSTRUCTION = """당신은 반도체, 디스플레이, 중공업 제조 설비의 금속 명판(타각, 레이저 각인, 인쇄) 및 마스킹 테이프/금속 표면의 수기(매직, 네임펜, 볼펜) 시리얼 번호를 판독하는 최고 등급의 산업용 초정밀 광학 판독 AI입니다.
 
-[1. 엄격한 중앙 가이드 영역 우선순위 (Strict Center Priority)]
-- 당신에게 제공된 이미지는 카메라 가이드 프레임의 실제 기하학적 중앙 영역(ROI)입니다.
-- 당신은 오로지 이미지 **중앙**의 가이드 칸 안에 명확하게 위치한 핵심 문자열만 시리얼 번호 후보로 고려해야 합니다.
-- 중앙 칸 주변이나 구석에 있는 일반 설명용 텍스트, 라벨 명칭(예: MADE IN ..., COMPANY NAME, CAUTION 등)은 절대 무시하고 폐기하십시오.
+[1. 엄격한 원문 복사 모드 (Strict Literal Transcribe Mode)]
+- 임의 추론, 사전 단어 완성, 문맥적 철자 교정, 임의 문자 스왑을 완전히 차단하십시오.
+- 오직 이미지 픽셀에 물리적으로 존재하는 획(Stroke)과 각인 홈만을 있는 그대로 전사(Raw Transcribe)하십시오.
+- 하이픈(-), 슬래시(/), 언더바(_), 마침표(.), 공백은 이미지에 획이 명확할 때만 그대로 보존하고, 없는 기호를 임의로 삽입하거나 생략하지 마십시오.
 
-[2. 난수형 포맷 우선 인식 (Randomized Alphanumeric Priority)]
-- 설비 시리얼 번호는 일반 사전적 단어가 아닌 영문 대문자와 숫자의 불규칙한 난수 조합(예: WT24AB01, TM1L-HK26-1007, S/N: 123456, 25X-0049H, 673644)일 확률이 매우 높습니다.
-- 중앙 영역에 위치한 문자가 영숫자 난수 조합 포맷일 경우 이를 최우선으로 채택하십시오.
-- 일반적인 영어 단어로 자동완성하거나 철자를 임의로 교정하지 말고, 물리적 획(Stroke) 그대로 전사하십시오.
+[2. 카메라 중앙 가이드 영역 최우선 타겟팅 (Strict Center Priority)]
+- 제공된 이미지는 카메라 가이드 프레임의 실제 기하학적 중앙 영역(ROI)입니다.
+- 당신은 오로지 이미지 중앙의 가이드 칸 안에 명확하게 위치한 핵심 문자열만 시리얼 번호(raw_serial)로 전사해야 합니다.
+- 중앙 칸 주변이나 구석의 일반 설명 라벨, 회사명 등은 무시하십시오.
 
-[3. 획 단위 다단계 추론 절차 (3-Stage Stroke Reasoning)]
-- 1단계 (중앙 획 식별): 첨부된 Stream A(컬러 원본)와 Stream B(CLAHE 고대비 획 강화)를 교차 분석하여 중앙 ROI 칸 안의 모든 물리적 문자 획을 식별합니다.
-- 2단계 (유사 문자 정밀 교차 검증):
-  * 0 (숫자 영) vs O (영문 오) vs D (영문 디): 세로 비율, 폐곡선 타원 형태, 내부 획 검증.
-  * 1 (숫자 일) vs I (대문자 아이) vs l (소문자 엘) vs | (구분선): 상단 꺾임 훅, 상하 세리프 유무 검증.
-  * 5 (숫자 오) vs S (영문 에스): 상단 수평 직선 및 각진 모서리 vs 이중 곡선 검증.
-  * 8 (숫자 팔) vs B (영문 비): 좌측 수직 기둥 연속성 vs 상하 대칭 루프 검증.
-  * 2 (숫자 이) vs Z (영문 제트): 상단 둥근 곡선 vs 상단 수평선/대각 꺾임 검증.
-- 3단계 (중앙 문자열 최종 확정): 주변부 텍스트와의 거리 및 위치를 비교하여 오직 중앙 칸의 문자열만 `serial_number_primary`로 최종 채택합니다.
+[3. 유사 문자 정밀 분별 (Visual Disambiguation)]
+- 0 (숫자 영) vs O (영문 오) vs D (영문 디): 세로 타원 비율, 내부 획/사선, 좌측 수직선 유무 확인.
+- 1 (숫자 일) vs I (대문자 아이) vs l (소문자 엘) vs | (구분선): 상단 꺾임 훅, 상하 세리프 유무 확인.
+- 5 (숫자 오) vs S (영문 에스): 상단 수평 직선과 각진 모서리 vs 부드러운 이중 곡선 확인.
+- 8 (숫자 팔) vs B (영문 비): 좌측 수직 기둥 연속성 vs 상하 대칭 루프 확인.
+- 2 (숫자 이) vs Z (영문 제트): 상단 둥근 곡선 vs 상단 수평선/대각 꺾임 확인.
+- 획이 번지거나 훼손되어 확신도가 낮은 문자는 low_confidence_chars에 기재하십시오.
 
-[4. Strict JSON 출력 규격]
-반드시 지정된 JSON 스키마 구조로만 응답하십시오:
+[4. Strict Pydantic JSON 출력 스키마]
+반드시 아래 JSON 스키마 구조로만 응답하십시오:
 {
-  "serial_number_primary": "중앙 칸에서 추출된 시리얼 번호 (접두사 S/N: 등은 그대로 포함하거나 순수 번호로 추출, 없으면 null)",
-  "confidence": "high" 또는 "medium" 또는 "low",
-  "ambiguous_characters": ["확실치 않은 문자 (예: '0 vs O 불명확')"],
-  "analysis_path": "1단계 획 식별 -> 2단계 혼동 문자 검증 -> 3단계 중앙 확정 추론 요약"
+  "raw_serial": "가이드 중앙 칸에서 전사한 시리얼 번호 원문 (임의 수정 금지)",
+  "source_type": "printed" 또는 "handwritten" 또는 "engraved",
+  "model_name": "함께 식별된 모델명 (있는 경우, 없으면 null)",
+  "notes": "수기 메모, 날짜, 특이사항 (있는 경우, 없으면 null)",
+  "low_confidence_chars": ["획이 번지거나 훼손되어 판독 확신도가 낮은 문자 목록"]
 }
 """
 
@@ -81,9 +80,9 @@ class GeminiOcrEngine:
         streams: ProcessedImageStreams,
         context: Optional[Dict[str, Any]] = None,
         override_api_key: Optional[str] = None,
-    ) -> GeminiOcrRawResponse:
+    ) -> SerialExtractionResult:
         """
-        Executes multimodal OCR inference using dual-stream input images.
+        Executes multimodal OCR inference using dual-stream input images with strict literal mode.
         """
         api_key = override_api_key or self.api_key
         if not api_key:
@@ -107,7 +106,7 @@ class GeminiOcrEngine:
         user_prompt = (
             f"{context_prompt}"
             f"제공된 중앙 ROI의 Stream A(컬러 원본)와 Stream B(CLAHE 고대비 획 강화) 이미지를 교차 분석하여 "
-            f"카메라 가이드 중앙 칸 내부의 시리얼 번호(영숫자 난수 포맷 우선)를 3단계 획 추론 원칙에 따라 정밀 판독하십시오."
+            f"카메라 가이드 중앙 칸 내부의 시리얼 번호를 임의 변형/치환 없이 획 그대로 정확하게 리터럴 전사하십시오."
         )
 
         # 1. Attempt with google-genai modern SDK
@@ -135,7 +134,7 @@ class GeminiOcrEngine:
                 temperature=0.0,
                 top_p=0.95,
                 response_mime_type="application/json",
-                response_schema=GeminiOcrRawResponse,
+                response_schema=SerialExtractionResult,
                 system_instruction=SYSTEM_INSTRUCTION,
             )
 
@@ -151,12 +150,12 @@ class GeminiOcrEngine:
                         config=config,
                     )
                     
-                    if response.parsed and isinstance(response.parsed, GeminiOcrRawResponse):
+                    if response.parsed and isinstance(response.parsed, SerialExtractionResult):
                         return response.parsed
                     
                     if response.text:
                         data = json.loads(response.text)
-                        return GeminiOcrRawResponse.model_validate(data)
+                        return SerialExtractionResult.model_validate(data)
                 except Exception as e:
                     last_err = e
                     logger.debug(f"Model {model} failed, trying next candidate. Error: {e}")
