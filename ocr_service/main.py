@@ -139,7 +139,7 @@ def main():
 
     args = parser.parse_args()
 
-    if args.test-synthetic or (not args.image and len(sys.argv) == 1):
+    if args.test_synthetic or (not args.image and len(sys.argv) == 1):
         run_synthetic_benchmark()
         return
 

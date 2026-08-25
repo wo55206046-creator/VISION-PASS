@@ -271,8 +271,8 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     }
 
     // 1. 금속 명판 특화 전처리 파이프라인 적용
-    setOcrProgress(25);
-    setOcrStatusText("광학 노이즈 억제 및 대비 강화 전처리 중...");
+    setOcrProgress(20);
+    setOcrStatusText("⚡ 듀얼 채널(Stream A/B) 광학 획 강화 생성 중...");
 
     // 프리뷰 캔버스에 표시
     if (previewCanvasRef.current) {
@@ -284,9 +284,9 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       }
     }
 
-    // 2. Gemini Vision AI & 고정밀 광학 OCR 심층 실행
-    setOcrProgress(40);
-    setOcrStatusText("Gemini AI 획 분석 및 명판 문자 정밀 판독 중...");
+    // 2. Gemini Vision AI & 고정밀 광학 OCR 심층 실행 (1.5~2.0초 타깃 초정밀 CoT)
+    setOcrProgress(45);
+    setOcrStatusText("🤖 Gemini Vision AI 음각/수기 CoT 교차 분석 중...");
 
     try {
       const result = await performGeminiDeepOcr(
@@ -307,6 +307,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       setOcrResult(result);
       if (result.cleanedSerial) {
         setSelectedSerial(result.cleanedSerial);
+        // 완료 즉각 햅틱 및 사운드 피드백
         triggerScanFeedback();
       } else {
         setSelectedSerial("");
@@ -323,6 +324,18 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       setOcrProgress(100);
       setIsProcessing(false);
     }
+  };
+
+  // 1초 원터치 문자 오타 즉시 치환 핸들러 (O<->0, I<->1, S<->5, B<->8, Z<->2)
+  const handleQuickSwap = (charA: string, charB: string) => {
+    if (!selectedSerial) return;
+    let text = selectedSerial;
+    if (text.includes(charA)) {
+      text = text.replaceAll(charA, charB);
+    } else if (text.includes(charB)) {
+      text = text.replaceAll(charB, charA);
+    }
+    setSelectedSerial(text);
   };
 
   // 로컬 사진 파일 업로드 핸들러 (스토리지 제로: 브라우저 메모리 Canvas로만 로드)
@@ -411,9 +424,25 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                 <div className="absolute -bottom-1 -left-1 h-3.5 w-3.5 border-b-2 border-l-2 border-cyan-300" />
                 <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 border-b-2 border-r-2 border-cyan-300" />
 
-                {/* Center Scanning Line Animation */}
+                {/* Center Laser Radar Scanning Animation (1.5~2.0초 동안 자연스러운 스캔 연출) */}
                 {isProcessing && (
-                  <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-300 to-transparent animate-pulse" />
+                  <div className="absolute inset-0 overflow-hidden rounded-xl bg-cyan-950/20 backdrop-blur-[1px]">
+                    {/* Glowing Laser Sweep Beam */}
+                    <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_15px_#22d3ee] animate-laserScan" />
+                    
+                    {/* Subtle Holographic Grid */}
+                    <div className="absolute inset-0 bg-[linear-gradient(to_right,#06b6d415_1px,transparent_1px),linear-gradient(to_bottom,#06b6d415_1px,transparent_1px)] bg-[size:16px_16px] animate-pulse" />
+                    
+                    {/* Live Processing Indicator Badge */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="bg-slate-950/90 border border-cyan-400/60 px-3.5 py-1.5 rounded-full shadow-glow-cyan flex items-center gap-2">
+                        <Sparkles className="h-3.5 w-3.5 text-cyan-400 animate-spin" />
+                        <span className="text-cyan-300 font-mono text-[11px] font-bold">
+                          초정밀 CoT 획 분석 중...
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {/* Guide Text / Freeze Status Badge */}
@@ -515,7 +544,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                 ) : (
                   <>
                     <Camera className="h-4 w-4 stroke-[2.5]" />
-                    <span>명판 촬영 & 시리얼 추출</span>
+                    <span>명판 촬영 & 초정밀 시리얼 추출 (1.5초)</span>
                   </>
                 )}
               </button>
@@ -532,32 +561,35 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             )}
           </div>
 
-          {/* Real-Time Processing Progress Bar */}
+          {/* Real-Time Processing Progress Bar & Status Ticker */}
           {isProcessing && (
-            <div className="space-y-1 rounded-xl bg-slate-950/80 p-2.5 border border-slate-800">
+            <div className="space-y-1.5 rounded-xl bg-slate-950/90 p-3 border border-cyan-500/30 shadow-glow-cyan">
               <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-cyan-400">{ocrStatusText}</span>
-                <span className="text-slate-400">{ocrProgress}%</span>
+                <span className="text-cyan-300 font-semibold flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping" />
+                  {ocrStatusText}
+                </span>
+                <span className="text-cyan-400 font-bold">{ocrProgress}%</span>
               </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800 border border-slate-700">
                 <div
-                  className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-200 shadow-glow-cyan"
+                  className="h-full bg-gradient-to-r from-cyan-400 via-teal-400 to-blue-500 transition-all duration-300 shadow-glow-cyan"
                   style={{ width: `${ocrProgress}%` }}
                 />
               </div>
             </div>
           )}
 
-          {/* OCR Result & Serial Confirmation Section */}
-          <div className="rounded-2xl bg-slate-950 p-3.5 border border-slate-800 space-y-2.5">
+          {/* OCR Result & 1-Second Quick-Review Section */}
+          <div className="rounded-2xl bg-slate-950 p-3.5 border border-slate-800 space-y-3 shadow-lg">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
                 <Cpu className="h-3.5 w-3.5 text-cyan-400" />
-                <span>추출된 시리얼 번호 (최종 확인/수정)</span>
+                <span>추출된 시리얼 번호 (최종 확인/1초 수정)</span>
               </label>
               {ocrResult?.confidence !== undefined && ocrResult.cleanedSerial && (
-                <span className="text-[10px] font-mono text-emerald-400 font-bold">
-                  신뢰도: {ocrResult.confidence}%
+                <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-500/40 font-bold">
+                  🎯 정확도 {ocrResult.confidence}%
                 </span>
               )}
             </div>
@@ -572,15 +604,54 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               </div>
             )}
 
-            <input
-              type="text"
-              placeholder="시리얼 번호 (예: KMA9011219, 230600231746059-A, TBAJB1112637, 673644)"
-              value={selectedSerial}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setSelectedSerial(e.target.value.toUpperCase())
-              }
-              className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-sm sm:text-base font-mono font-bold text-cyan-300 tracking-wider uppercase focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-            />
+            {/* Main Serial Input Box with Clear button */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="시리얼 번호 (예: TM1L-HK26-1007, 25X-0049H, 673644)"
+                value={selectedSerial}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setSelectedSerial(e.target.value.toUpperCase())
+                }
+                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 pr-10 text-sm sm:text-base font-mono font-bold text-cyan-300 tracking-wider uppercase focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+              />
+              {selectedSerial && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedSerial("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white bg-slate-800 rounded-lg text-xs"
+                  title="지우기"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* ⚡ 1초 원터치 문자 오타 교정 툴바 (0<->O, 1<->I, 5<->S, 8<->B, 2<->Z) */}
+            {selectedSerial && (
+              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                <span className="text-[10px] font-semibold text-slate-400 mr-1">
+                  1초 오타 스왑:
+                </span>
+                {[
+                  { label: "0 ↔ O", a: "0", b: "O" },
+                  { label: "1 ↔ I", a: "1", b: "I" },
+                  { label: "5 ↔ S", a: "5", b: "S" },
+                  { label: "8 ↔ B", a: "8", b: "B" },
+                  { label: "2 ↔ Z", a: "2", b: "Z" },
+                ].map((swap, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleQuickSwap(swap.a, swap.b)}
+                    className="px-2 py-0.5 rounded-md bg-slate-900 hover:bg-cyan-950 text-[10px] font-mono font-bold text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500 transition-all cursor-pointer active:scale-95"
+                    title={`클릭 시 문자열 내 ${swap.label}를 상호 치환합니다`}
+                  >
+                    {swap.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Serial Candidates Pills (최대 3개 추천) */}
             {ocrResult && ocrResult.candidates.length > 0 && (

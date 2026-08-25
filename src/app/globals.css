@@ -71,6 +71,25 @@ body {
   animation: shake 0.3s ease-in-out;
 }
 
+@keyframes laserScan {
+  0% {
+    top: 2%;
+    opacity: 0.8;
+  }
+  50% {
+    top: 96%;
+    opacity: 1;
+  }
+  100% {
+    top: 2%;
+    opacity: 0.8;
+  }
+}
+
+.animate-laserScan {
+  animation: laserScan 1.6s ease-in-out infinite;
+}
+
 /* Chrome, Safari, Edge, Opera: number spinner 숨김 */
 input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {
