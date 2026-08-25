@@ -57,10 +57,9 @@ if (-not $remoteOrigin) {
     Write-Host "[*] Remote repository 'origin' added successfully." -ForegroundColor Green
 }
 
-Write-Host ""
 Write-Host "[2/3] Adding and committing files..." -ForegroundColor Yellow
 & git add .
-& git commit -m "Refactor Industrial OCR: Dual-Stream OpenCV Preprocessing, CoT Engine, and Post-Validator"
+& git commit -m "Refactor: Precision Target Center ROI OCR Pipeline (OpenCV Dual-Stream & Strict Pydantic Schema)"
 
 Write-Host ""
 Write-Host "[3/3] Uploading (git push) to GitHub..." -ForegroundColor Yellow

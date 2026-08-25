@@ -178,38 +178,39 @@ class IndustrialSerialValidator:
 
     def calculate_confidence(
         self,
-        printed: Optional[str],
-        handwritten: Optional[str],
-        disambiguations: List[Any],
-        confidence_flags: List[str],
+        confidence_level: str,
+        ambiguous_characters: List[str],
         primary_serial: str,
     ) -> float:
         """
-        Calculates aggregate confidence score (0.0 to 100.0).
+        Calculates aggregate confidence score (0.0 to 100.0) based on
+        Gemini confidence rating, ambiguity flags, and industrial pattern conformity.
         """
-        base_score = 98.0
+        lvl = (confidence_level or "high").lower()
+        if lvl == "high":
+            base_score = 98.5
+        elif lvl == "medium":
+            base_score = 85.0
+        else:
+            base_score = 65.0
 
-        # High confidence boost if printed and handwritten both exist and match
-        if printed and handwritten:
-            p_clean = re.sub(r"[^A-Z0-9]", "", printed)
-            h_clean = re.sub(r"[^A-Z0-9]", "", handwritten)
-            if p_clean == h_clean and len(p_clean) >= 4:
-                return 99.8
-
-        # Penalty per uncertain confidence flag from Gemini
-        if confidence_flags:
-            base_score -= min(15.0, len(confidence_flags) * 4.0)
+        # Penalty per uncertain ambiguous character from Gemini
+        if ambiguous_characters:
+            base_score -= min(25.0, len(ambiguous_characters) * 5.0)
 
         # Regex conformance verification
-        matches_standard = any(rx.match(primary_serial) for rx in COMMON_SERIAL_REGEXES)
-        if not matches_standard:
-            base_score -= 3.0
+        if primary_serial:
+            matches_standard = any(rx.match(primary_serial) for rx in COMMON_SERIAL_REGEXES)
+            if not matches_standard:
+                base_score -= 3.0
 
-        # Penalty for extremely short serials (< 4 chars)
-        if len(primary_serial) < 4:
-            base_score -= 10.0
+            # Penalty for extremely short serials (< 4 chars)
+            if len(primary_serial) < 4:
+                base_score -= 10.0
+        else:
+            base_score = 0.0
 
-        return max(50.0, min(100.0, round(base_score, 1)))
+        return max(0.0, min(100.0, round(base_score, 1)))
 
     def validate_and_normalize(
         self,
@@ -218,49 +219,33 @@ class IndustrialSerialValidator:
     ) -> OcrPipelineResult:
         """
         Transforms raw Gemini OCR response into fully validated, normalized, and audit-logged result.
+        Strictly processes the primary serial extracted from the center guide box.
         """
         corrections: List[OcrCorrectionLog] = []
 
-        # 1. Clean printed and handwritten raw serials
-        raw_printed = raw_response.printed_serial or ""
-        raw_handwritten = raw_response.handwritten_serial or ""
+        # 1. Clean primary raw serial extracted from center ROI
+        raw_serial = raw_response.serial_number_primary or ""
+        cleaned_serial = self.clean_raw_serial(raw_serial)
 
-        cleaned_printed = self.clean_raw_serial(raw_printed)
-        cleaned_handwritten = self.clean_raw_serial(raw_handwritten)
+        # 2. Apply slot-based positional disambiguation (e.g. '10O7' -> '1007')
+        fixed_serial = self.disambiguate_segment_slots(cleaned_serial, corrections) if cleaned_serial else ""
 
-        # 2. Apply slot-based positional disambiguation
-        fixed_printed = self.disambiguate_segment_slots(cleaned_printed, corrections) if cleaned_printed else ""
-        fixed_handwritten = self.disambiguate_segment_slots(cleaned_handwritten, corrections) if cleaned_handwritten else ""
-
-        # 3. Determine primary serial: printed engraved takes precedence; if missing, use handwritten
-        primary_serial = fixed_printed or fixed_handwritten or ""
-
-        # 4. Model Name fuzzy validation
-        model_name, model_correction = self.fuzzy_match_model(raw_response.model_name)
-        if model_correction:
-            corrections.append(model_correction)
-
-        # 5. Clean notes
-        notes = self.clean_prefix(raw_response.notes) if raw_response.notes else None
-
-        # 6. Calculate aggregate confidence score
+        # 3. Calculate aggregate confidence score
         confidence_score = self.calculate_confidence(
-            printed=fixed_printed,
-            handwritten=fixed_handwritten,
-            disambiguations=raw_response.cot_step3_character_disambiguation,
-            confidence_flags=raw_response.confidence_flags,
-            primary_serial=primary_serial,
+            confidence_level=raw_response.confidence,
+            ambiguous_characters=raw_response.ambiguous_characters,
+            primary_serial=fixed_serial,
         )
 
         return OcrPipelineResult(
-            success=bool(primary_serial),
-            primary_serial=primary_serial,
-            printed_serial=fixed_printed or None,
-            handwritten_serial=fixed_handwritten or None,
-            model_name=model_name,
-            notes=notes,
+            success=bool(fixed_serial),
+            primary_serial=fixed_serial,
+            printed_serial=fixed_serial or None,
+            handwritten_serial=None,
+            model_name=None,
+            notes=raw_response.analysis_path or None,
             confidence_score=confidence_score,
-            confidence_flags=raw_response.confidence_flags,
+            confidence_flags=raw_response.ambiguous_characters,
             corrections=corrections,
             raw_gemini_output=raw_response,
             processing_time_ms=processing_time_ms,

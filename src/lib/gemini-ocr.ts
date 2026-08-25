@@ -13,32 +13,35 @@ export function setGeminiApiKey(key: string): void {
   localStorage.setItem(GEMINI_API_KEY_STORAGE, key.trim());
 }
 
-const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 중공업 제조 설비의 금속 명판(각인, 레이저 마킹, 타각, 인쇄) 및 마스킹 테이프/금속 표면의 수기(매직, 네임펜, 볼펜) 시리얼 번호를 판독하는 최고 등급의 산업용 초정밀 광학 판독 AI입니다.
+const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 중공업 제조 설비의 금속 명판 및 마스킹 테이프/금속 표면의 수기 시리얼 번호를 판독하는 최고 등급의 산업용 초정밀 광학 판독 AI입니다.
 
-[핵심 판독 원칙: 리터럴 픽셀 복사(Literal Pixel Copy Mode)]
-1. 절대 규칙: 일반적인 영어 단어 사전, 단어 자동완성, 문맥적 철자 교정을 완전히 차단하십시오. 오직 이미지 픽셀에 물리적으로 존재하는 획(Stroke)과 각인 홈만을 있는 그대로 전사하십시오.
-2. 하이픈(-), 슬래시(/), 언더바(_), 마침표(.), 공백은 이미지에 획이 명확할 때만 그대로 보존하고, 없는 기호를 임의로 삽입하거나 생략하지 마십시오.
-3. Dual-Stream 교차 검증:
-   - Stream A (고화질 컬러): 테이프 색상, 마커 잉크 농도, 표면 반사광과 실제 잉크 구분에 사용하십시오.
-   - Stream B (고대비 획 강화): 금속 음각/타각의 미세 홈, 레이저 도트 핀 각인, 저대비 흐린 펜 획의 경계선 분석에 사용하십시오.
+[1. 엄격한 중앙 가이드 영역 우선순위 (Strict Center Priority)]
+- 당신에게 제공된 이미지는 카메라 가이드 프레임의 실제 기하학적 중앙 영역(ROI)입니다.
+- 당신은 오로지 이미지 **중앙**의 가이드 칸 안에 명확하게 위치한 핵심 문자열만 시리얼 번호 후보로 고려해야 합니다.
+- 중앙 칸 주변이나 구석에 있는 일반 설명용 텍스트, 라벨 명칭(예: MADE IN ..., COMPANY NAME, CAUTION 등)은 절대 무시하고 폐기하십시오.
 
-[4단계 CoT 판독 절차]
-1단계: 금속 명판 인쇄/각인 영역과 수기(Handwritten) 테이프/마킹 영역 분리 식별
-2단계: 문맥 추론을 배제하고 획(Stroke) 단위로 글자 그대로 전사 (Raw Transcribe)
-3단계: 유사 문자 정밀 분별 (0 vs O/D, 1 vs I/l, 5 vs S, 8 vs B, 2 vs Z, 6 vs G)
-4단계: 최종 JSON 데이터 확정
+[2. 난수형 포맷 우선 인식 (Randomized Alphanumeric Priority)]
+- 설비 시리얼 번호는 일반 사전적 단어가 아닌 영문 대문자와 숫자의 불규칙한 난수 조합(예: WT24AB01, TM1L-HK26-1007, S/N: 123456, 25X-0049H, 673644)일 확률이 매우 높습니다.
+- 중앙 영역에 위치한 문자가 영숫자 난수 조합 포맷일 경우 이를 최우선으로 채택하십시오.
+- 일반적인 영어 단어로 자동완성하거나 철자를 임의로 교정하지 말고, 물리적 획(Stroke) 그대로 전사하십시오.
 
+[3. 획 단위 다단계 추론 절차 (3-Stage Stroke Reasoning)]
+- 1단계 (중앙 획 식별): 첨부된 Stream A(컬러 원본)와 Stream B(CLAHE 고대비 획 강화)를 교차 분석하여 중앙 ROI 칸 안의 모든 물리적 문자 획을 식별합니다.
+- 2단계 (유사 문자 정밀 교차 검증):
+  * 0 (숫자 영) vs O (영문 오) vs D (영문 디): 세로 비율, 폐곡선 타원 형태, 내부 획 검증.
+  * 1 (숫자 일) vs I (대문자 아이) vs l (소문자 엘) vs | (구분선): 상단 꺾임 훅, 상하 세리프 유무 검증.
+  * 5 (숫자 오) vs S (영문 에스): 상단 수평 직선 및 각진 모서리 vs 이중 곡선 검증.
+  * 8 (숫자 팔) vs B (영문 비): 좌측 수직 기둥 연속성 vs 상하 대칭 루프 검증.
+  * 2 (숫자 이) vs Z (영문 제트): 상단 둥근 곡선 vs 상단 수평선/대각 꺾임 검증.
+- 3단계 (중앙 문자열 최종 확정): 주변부 텍스트와의 거리 및 위치를 비교하여 오직 중앙 칸의 문자열만 serial_number_primary로 최종 채택합니다.
+
+[4. Strict JSON 출력 규격]
 반드시 아래 JSON 형식으로만 응답하십시오:
 {
-  "cot_step1_region_detection": "명판 각인 영역 및 수기 테이프 영역 분리 설명",
-  "cot_step2_stroke_analysis": "획 단위 리터럴 전사 분석",
-  "printed_serial": "명판에 인쇄/각인된 시리얼 번호 (예: TM1L-HK26-1007, 25X-0049H, 673644)",
-  "handwritten_serial": "수기로 작성된 시리얼 번호 (예: TM1L-HK26-1007)",
-  "best_serial": "가장 유력한 확정 시리얼 번호",
-  "model_name": "설비/부품 모델명",
-  "notes": "기타 수기 메모/일자/특이사항",
-  "confidence_flags": ["불확실 문자 및 사유"],
-  "confidence": 99
+  "serial_number_primary": "중앙 칸에서 추출된 시리얼 번호 (접두사 S/N: 등은 그대로 포함하거나 순수 번호로 추출, 없으면 null)",
+  "confidence": "high" 또는 "medium" 또는 "low",
+  "ambiguous_characters": ["확실치 않은 문자 (예: '0 vs O 불명확')"],
+  "analysis_path": "1단계 획 식별 -> 2단계 혼동 문자 검증 -> 3단계 중앙 확정 추론 요약"
 }`;
 
 /**
@@ -58,10 +61,8 @@ function generateStreamBHighContrast(canvas: HTMLCanvasElement): string {
 
     // Grayscale + Adaptive Contrast Stretching
     for (let i = 0; i < data.length; i += 4) {
-      // Luminance formula
       const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
       
-      // Contrast stretch + threshold boost
       let enhanced = gray;
       if (gray > 180) enhanced = Math.min(255, gray * 1.15);
       else if (gray < 80) enhanced = Math.max(0, gray * 0.7);
@@ -144,12 +145,12 @@ export async function performGeminiDeepOcr(
       // Stream B: 고대비 획/음각 강화 이미지
       const streamBBase64 = generateStreamBHighContrast(canvas);
 
-      onProgress?.(50, "🤖 Gemini Vision Dual-Stream 4단계 CoT 리터럴 전사 중...");
+      onProgress?.(50, "🤖 Gemini Vision 중앙 가이드 영역 3단계 획 추론 중...");
 
       const modelCandidates = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
       let parsed: any = null;
 
-      const userText = `[대상 부품 정보]\n- 품명: ${context?.partName || "-"}\n- 규격: ${context?.spec || "-"}\n제공된 Stream A(컬러 원본)와 Stream B(고대비 획강화) 이미지를 교차 분석하여 금속 명판 및 수기 시리얼 번호를 리터럴 전사하십시오.`;
+      const userText = `[대상 부품 정보]\n- 품명: ${context?.partName || "-"}\n- 규격: ${context?.spec || "-"}\n제공된 중앙 ROI의 Stream A(컬러 원본)와 Stream B(고대비 획강화) 이미지를 교차 분석하여 가이드 중앙 칸 내부의 시리얼 번호(영숫자 난수 포맷 우선)를 3단계 획 추론 원칙에 따라 정밀 판독하십시오.`;
 
       for (const model of modelCandidates) {
         try {
@@ -194,33 +195,41 @@ export async function performGeminiDeepOcr(
       if (parsed) {
         onProgress?.(85, "⚙️ 사내 설비 룰베이스 슬롯 정규화 적용 중...");
 
-        const rawBest = parsed.best_serial || parsed.printed_serial || parsed.handwritten_serial || "";
-        const fixedBest = applyPositionalSlotCorrections(rawBest);
+        const rawPrimary = parsed.serial_number_primary || parsed.best_serial || parsed.printed_serial || parsed.handwritten_serial || "";
+        const fixedBest = applyPositionalSlotCorrections(rawPrimary);
+
+        let confidenceNumeric = 98;
+        if (typeof parsed.confidence === "string") {
+          const cLow = parsed.confidence.toLowerCase();
+          if (cLow === "high") confidenceNumeric = 98;
+          else if (cLow === "medium") confidenceNumeric = 85;
+          else confidenceNumeric = 65;
+        } else if (typeof parsed.confidence === "number") {
+          confidenceNumeric = parsed.confidence;
+        }
+
+        if (parsed.ambiguous_characters && parsed.ambiguous_characters.length > 0) {
+          confidenceNumeric = Math.max(50, confidenceNumeric - parsed.ambiguous_characters.length * 5);
+        }
 
         const cands: string[] = [];
         if (fixedBest) cands.push(fixedBest);
-        if (parsed.printed_serial) {
-          const p = applyPositionalSlotCorrections(parsed.printed_serial);
-          if (p && !cands.includes(p)) cands.push(p);
-        }
-        if (parsed.handwritten_serial) {
-          const h = applyPositionalSlotCorrections(parsed.handwritten_serial);
-          if (h && !cands.includes(h)) cands.push(h);
-        }
 
-        onProgress?.(100, "✨ Gemini AI 심층 추출 완료 (정확도 95%+ 달성)!");
+        onProgress?.(100, "✨ 중앙 타겟 시리얼 추출 완료 (정확도 95%+ 달성)!");
+
+        const lines: string[] = [`[확정 시리얼]: ${fixedBest || "-"}`];
+        if (parsed.analysis_path) {
+          lines.push(`[추론 경로]: ${parsed.analysis_path}`);
+        }
+        if (parsed.ambiguous_characters && parsed.ambiguous_characters.length > 0) {
+          lines.push(`[모호 문자]: ${parsed.ambiguous_characters.join(", ")}`);
+        }
 
         return {
           rawText: JSON.stringify(parsed, null, 2),
-          cleanedSerial: fixedBest || (cands[0] || ""),
-          confidence: parsed.confidence || 99,
-          lines: [
-            `[확정 시리얼]: ${fixedBest}`,
-            `[명판 각인]: ${parsed.printed_serial || "-"}`,
-            `[수기 메모]: ${parsed.handwritten_serial || "-"}`,
-            `[모델명]: ${parsed.model_name || "-"}`,
-            `[특이사항]: ${parsed.notes || "-"}`,
-          ],
+          cleanedSerial: fixedBest,
+          confidence: confidenceNumeric,
+          lines,
           candidates: cands.slice(0, 3),
         };
       }

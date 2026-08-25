@@ -68,110 +68,79 @@ class DualStreamPreprocessor:
 
         raise TypeError(f"Unsupported image input type: {type(input_source)}")
 
-    def detect_text_roi(self, img_bgr: np.ndarray) -> Tuple[int, int, int, int]:
+    def get_center_guide_roi(
+        self,
+        img_bgr: np.ndarray,
+        width_ratio: float = 0.72,
+        height_ratio: float = 0.38,
+    ) -> Tuple[int, int, int, int]:
         """
-        Detects bounding box containing text regions (nameplates, stickers, handwriting)
-        without downsampling, using morphological gradients and connected components.
+        Calculates the exact bounding box (x, y, w, h) of the center guide frame
+        corresponding to the camera UI viewfinder box.
+        Forces the model to only analyze the targeted center slot.
         """
         h, w = img_bgr.shape[:2]
+        roi_w = max(10, min(w, int(w * width_ratio)))
+        roi_h = max(10, min(h, int(h * height_ratio)))
+        roi_x = max(0, (w - roi_w) // 2)
+        roi_y = max(0, (h - roi_h) // 2)
+        return (roi_x, roi_y, roi_w, roi_h)
 
-        # Use downscaled copy purely for ROI localization speed
-        scale = min(1.0, 1200.0 / max(h, w))
-        small_w = max(10, int(w * scale))
-        small_h = max(10, int(h * scale))
-        small = cv2.resize(img_bgr, (small_w, small_h), interpolation=cv2.INTER_AREA)
-
-        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-
-        # Morphological gradient to isolate text stroke edges
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        gradient = cv2.morphologyEx(gray, cv2.MORPH_GRADIENT, kernel)
-
-        # Binarize with Otsu
-        _, thresh = cv2.threshold(gradient, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-
-        # Morphological close to bridge adjacent text characters horizontally
-        close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 3))
-        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, close_kernel)
-
-        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        valid_boxes = []
-        min_area = (small_w * small_h) * 0.005  # At least 0.5% of image area
-
-        for c in contours:
-            area = cv2.contourArea(c)
-            if area > min_area:
-                bx, by, bw, bh = cv2.boundingRect(c)
-                aspect = bw / float(bh)
-                # Text bands usually have aspect ratio > 0.8 and not full screen
-                if 0.5 <= aspect <= 20.0 and bw < small_w * 0.98 and bh < small_h * 0.98:
-                    valid_boxes.append((bx, by, bw, bh))
-
-        if not valid_boxes:
-            # Fallback to center 80% if no prominent text cluster found
-            pad_x = int(w * 0.05)
-            pad_y = int(h * 0.05)
-            return (pad_x, pad_y, w - 2 * pad_x, h - 2 * pad_y)
-
-        # Merge bounding boxes
-        min_x = min(b[0] for b in valid_boxes)
-        min_y = min(b[1] for b in valid_boxes)
-        max_x = max(b[0] + b[2] for b in valid_boxes)
-        max_y = max(b[1] + b[3] for b in valid_boxes)
-
-        # Map back to full high-res coordinates
-        inv_scale = 1.0 / scale
-        orig_x = max(0, int(min_x * inv_scale) - 30)
-        orig_y = max(0, int(min_y * inv_scale) - 30)
-        orig_w = min(w - orig_x, int((max_x - min_x) * inv_scale) + 60)
-        orig_h = min(h - orig_y, int((max_y - min_y) * inv_scale) + 60)
-
-        return (orig_x, orig_y, orig_w, orig_h)
-
-    def crop_high_res_roi(self, img_bgr: np.ndarray, roi: Optional[Tuple[int, int, int, int]] = None) -> np.ndarray:
+    def crop_high_res_roi(
+        self,
+        img_bgr: np.ndarray,
+        roi: Optional[Tuple[int, int, int, int]] = None
+    ) -> np.ndarray:
         """
-        Crops target region at 100% native resolution to preserve every single micro-pixel.
+        Crops target center guide region at 100% native resolution to preserve every micro-pixel.
+        Never sends the full image or outer peripheral regions.
         """
         if roi is None:
-            roi = self.detect_text_roi(img_bgr)
+            roi = self.get_center_guide_roi(img_bgr)
 
         x, y, w, h = roi
-        cropped = img_bgr[y:y+h, x:x+w]
+        # Bound coordinates safely
+        img_h, img_w = img_bgr.shape[:2]
+        x1 = max(0, min(img_w - 1, x))
+        y1 = max(0, min(img_h - 1, y))
+        x2 = max(x1 + 1, min(img_w, x + w))
+        y2 = max(y1 + 1, min(img_h, y + h))
+
+        cropped = img_bgr[y1:y2, x1:x2]
         if cropped.size == 0:
             return img_bgr
         return cropped
 
     def generate_stream_a_color(self, crop_bgr: np.ndarray) -> np.ndarray:
         """
-        Stream A: Native High-Res RGB with unsharp masking for sharp edge definition
+        Stream A: Native High-Res RGB of the center ROI with unsharp masking for sharp stroke edges
         while retaining full color context (tape color, ink shade, metal luster).
         """
-        # Unsharp masking: sharpened = 1.5 * orig - 0.5 * blurred
         gaussian = cv2.GaussianBlur(crop_bgr, (0, 0), sigmaX=2.0)
         sharpened = cv2.addWeighted(crop_bgr, 1.4, gaussian, -0.4, 0)
         return sharpened
 
     def generate_stream_b_enhanced(self, crop_bgr: np.ndarray) -> np.ndarray:
         """
-        Stream B: CLAHE + Bilateral Filtering + Stroke/Engraving Micro-Contrast Boost.
-        Extracts faint laser markings, stamped dots, and low-contrast pen strokes on specular metal.
+        Stream B: CLAHE (Contrast Limited Adaptive Histogram Equalization) + Bilateral Denoising
+        + Morphological Stroke Micro-Contrast Boost on the same center ROI.
+        Extracts faint pen writing, low-contrast ink, laser markings, and stamped/engraved indentations.
         """
         # 1. Grayscale conversion
         gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
 
-        # 2. Bilateral Filter: Preserves sharp character edges while smoothing metal grain / specular noise
+        # 2. Bilateral Filter: Preserves character stroke edges while smoothing surface noise
         denoised = cv2.bilateralFilter(gray, d=7, sigmaColor=50, sigmaSpace=50)
 
-        # 3. CLAHE (Contrast Limited Adaptive Histogram Equalization)
+        # 3. CLAHE adaptive contrast
         clahe_applied = self.clahe.apply(denoised)
 
-        # 4. Morphological Top-Hat & Black-Hat to amplify both dark strokes and bright engravings
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
+        # 4. Morphological Top-Hat & Black-Hat to amplify stroke edges and dark indentations
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
         tophat = cv2.morphologyEx(clahe_applied, cv2.MORPH_TOPHAT, kernel)
         blackhat = cv2.morphologyEx(clahe_applied, cv2.MORPH_BLACKHAT, kernel)
 
-        # Combined enhancement: Base CLAHE + (Bright Engravings) - (Dark Marker Indentations)
+        # Combined enhancement
         enhanced = cv2.add(clahe_applied, tophat)
         enhanced = cv2.subtract(enhanced, blackhat // 2)
 
@@ -195,25 +164,27 @@ class DualStreamPreprocessor:
         custom_roi: Optional[Tuple[int, int, int, int]] = None
     ) -> ProcessedImageStreams:
         """
-        Executes complete preprocessing pipeline:
+        Executes complete precision center ROI preprocessing pipeline:
         1. Loads image without downsampling.
-        2. Detects/crops text ROI at 100% native pixel density.
-        3. Generates Stream A (Color Context) and Stream B (CLAHE High-Contrast Stroke).
-        4. Encodes both streams to bytes ready for Gemini Multimodal API.
+        2. Strictly crops only the central guide frame ROI at 100% native pixel density.
+        3. Generates Dual-Stream:
+           - Stream A: High-res native RGB cropped image.
+           - Stream B: CLAHE high-contrast stroke & engraving maximized image.
+        4. Encodes both streams to JPEG bytes for multimodal Gemini inference.
         """
         img_bgr = self.load_image(input_source)
         h, w = img_bgr.shape[:2]
 
-        # 1. Determine ROI
-        roi = custom_roi if custom_roi is not None else self.detect_text_roi(img_bgr)
+        # 1. Determine precision center ROI
+        roi = custom_roi if custom_roi is not None else self.get_center_guide_roi(img_bgr)
         crop_bgr = self.crop_high_res_roi(img_bgr, roi)
 
-        # If crop is too small or detection was full, ensure minimum working size
-        if crop_bgr.shape[0] < 50 or crop_bgr.shape[1] < 50:
+        # Ensure minimum working size
+        if crop_bgr.shape[0] < 30 or crop_bgr.shape[1] < 30:
             crop_bgr = img_bgr
             roi = (0, 0, w, h)
 
-        # 2. Generate Dual Streams
+        # 2. Generate Dual Streams from the exact cropped center ROI
         stream_a_bgr = self.generate_stream_a_color(crop_bgr)
         stream_b_bgr = self.generate_stream_b_enhanced(crop_bgr)
 

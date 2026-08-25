@@ -26,37 +26,23 @@ class CharacterDisambiguation(BaseModel):
 class GeminiOcrRawResponse(BaseModel):
     """
     Strict Structured Output schema returned directly by Gemini Vision AI.
-    Forces Chain-of-Thought (CoT) stroke analysis and literal character transcription.
+    Forces strict center guide box priority, randomized serial preference, and stroke disambiguation.
     """
-    cot_step1_region_detection: str = Field(
-        description="Step 1: Spatial separation of metal nameplate engraved/printed region vs masking tape/handwritten marker region"
+    serial_number_primary: Optional[str] = Field(
+        default=None,
+        description="중앙 칸에서 추출된 시리얼 번호 (null 허용)"
     )
-    cot_step2_stroke_analysis: str = Field(
-        description="Step 2: Literal stroke-by-stroke raw transcription without any spelling correction, dictionary lookup, or guessing"
+    confidence: str = Field(
+        default="high",
+        description="인식 신뢰도 수준 (high, medium, low)"
     )
-    cot_step3_character_disambiguation: List[CharacterDisambiguation] = Field(
+    ambiguous_characters: List[str] = Field(
         default_factory=list,
-        description="Step 3: Disambiguation records for similar-looking characters (0 vs O/D, 1 vs I/l, 5 vs S, 8 vs B, 2 vs Z)"
+        description="확실치 않은 문자 목록 (예: 0인지 O인지 불명확, 1인지 I인지 불명확)"
     )
-    printed_serial: Optional[str] = Field(
-        default=None,
-        description="Serial number stamped, engraved, or printed on the metal nameplate"
-    )
-    handwritten_serial: Optional[str] = Field(
-        default=None,
-        description="Serial number handwritten with marker, magic pen, or ballpoint pen on masking tape or equipment surface"
-    )
-    model_name: Optional[str] = Field(
-        default=None,
-        description="Equipment / unit model name or model number"
-    )
-    notes: Optional[str] = Field(
-        default=None,
-        description="Additional handwritten text, inspection dates, lot numbers, or special markings"
-    )
-    confidence_flags: List[str] = Field(
-        default_factory=list,
-        description="List of ambiguous, low-contrast, or uncertain characters with reason (e.g. '3rd char uncertain between 0 and O due to scratch')"
+    analysis_path: str = Field(
+        default="",
+        description="3단계 획 단위 추론 과정 요약 (디버깅용)"
     )
 
 

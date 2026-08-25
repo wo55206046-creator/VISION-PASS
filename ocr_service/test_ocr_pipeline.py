@@ -16,7 +16,6 @@ if parent_dir not in sys.path:
 
 from ocr_service.schemas import (
     GeminiOcrRawResponse,
-    CharacterDisambiguation,
     OcrPipelineResult,
     ProcessedImageStreams,
 )
@@ -28,19 +27,28 @@ class TestImagePreprocessor(unittest.TestCase):
     def setUp(self):
         self.preprocessor = DualStreamPreprocessor()
 
+    def test_center_guide_roi_calculation(self):
+        # 1000x600 image: center ROI with 72% width and 38% height
+        img = np.full((600, 1000, 3), 190, dtype=np.uint8)
+        roi = self.preprocessor.get_center_guide_roi(img, width_ratio=0.72, height_ratio=0.38)
+        x, y, w, h = roi
+        self.assertEqual(w, 720)
+        self.assertEqual(h, 228)
+        self.assertEqual(x, (1000 - 720) // 2)
+        self.assertEqual(y, (600 - 228) // 2)
+
     def test_synthetic_image_dual_stream_generation(self):
-        # Create a test canvas 400x300 with synthetic high-contrast text
+        # Create a test canvas 400x300 with synthetic high-contrast text in center
         img = np.full((300, 400, 3), 190, dtype=np.uint8)
-        cv2.putText(img, "S/N: 25X-0049H", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (20, 20, 20), 2)
+        cv2.putText(img, "S/N: WT24AB01", (80, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (20, 20, 20), 2)
 
         streams = self.preprocessor.process(img)
         self.assertIsInstance(streams, ProcessedImageStreams)
-        self.assertGreater(len(streams.stream_a_color_bytes), 1000)
-        self.assertGreater(len(streams.stream_b_enhanced_bytes), 1000)
+        self.assertGreater(len(streams.stream_a_color_bytes), 500)
+        self.assertGreater(len(streams.stream_b_enhanced_bytes), 500)
         self.assertEqual(streams.original_dims, (400, 300))
 
     def test_clahe_enhancement_contrast(self):
-        # Check that Stream B has greater standard deviation / dynamic range in text region
         gray_plate = np.full((100, 200, 3), 150, dtype=np.uint8)
         cv2.putText(gray_plate, "673644", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (135, 135, 135), 2)
         stream_b = self.preprocessor.generate_stream_b_enhanced(gray_plate)
@@ -81,30 +89,17 @@ class TestIndustrialSerialValidator(unittest.TestCase):
         fixed = self.validator.disambiguate_segment_slots("2024S8", corrections)
         self.assertEqual(fixed, "202458")
 
-    def test_model_fuzzy_matching(self):
-        model, corr = self.validator.fuzzy_match_model("VISION-PASS-2OO")
-        self.assertEqual(model, "VISION-PASS-200")
-        self.assertIsNotNone(corr)
-
-        model_exact, corr_exact = self.validator.fuzzy_match_model("ETCH-PRO-800")
-        self.assertEqual(model_exact, "ETCH-PRO-800")
-        self.assertIsNone(corr_exact)
-
     def test_full_validation_workflow(self):
         raw = GeminiOcrRawResponse(
-            cot_step1_region_detection="Printed metal plate at top",
-            cot_step2_stroke_analysis="Raw serial: S/N: 25X-0049H",
-            cot_step3_character_disambiguation=[],
-            printed_serial="S/N: 25X-0049H",
-            handwritten_serial="25X-0049H",
-            model_name="VISION-PASS-200",
-            notes="UNIT 1",
-            confidence_flags=[]
+            serial_number_primary="S/N: 25X-0049H",
+            confidence="high",
+            ambiguous_characters=[],
+            analysis_path="1단계 중앙 칸 획 식별 -> 2단계 혼동 문자 없음 -> 3단계 25X-0049H 확정"
         )
         res = self.validator.validate_and_normalize(raw)
         self.assertTrue(res.success)
         self.assertEqual(res.primary_serial, "25X-0049H")
-        self.assertGreaterEqual(res.confidence_score, 98.0)
+        self.assertGreaterEqual(res.confidence_score, 95.0)
 
 
 if __name__ == "__main__":

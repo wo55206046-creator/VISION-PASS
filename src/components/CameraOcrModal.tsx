@@ -246,17 +246,17 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       ctx.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
     }
 
-    // ROI 타겟팅 크롭 (사용자 업로드 사진은 전체 프레임 사용, 카메라는 넓은 85% x 70% 와이드 ROI 적용)
+    // ROI 타겟팅 정밀 크롭 (카메라 UI 가이드 중앙 칸과 1:1 기하학적 매핑, 주변부 텍스트 원천 차단)
     let processedCanvas: HTMLCanvasElement;
     let croppedCanvas: HTMLCanvasElement | null = null;
 
     if (customCanvas) {
-      // 1. 직접 사진 업로드 시: 전체 이미지 전체 해상도 사용
+      // 1. 직접 사진 업로드 시: 전체 이미지 또는 중앙 대상 고해상도 처리
       processedCanvas = preprocessCanvas(customCanvas, options);
     } else {
-      // 2. 카메라 촬영 시: 96% x 90% 와이드 전체 캡처 ROI 적용
-      const roiWidth = rawCanvas.width * 0.96;
-      const roiHeight = rawCanvas.height * 0.90;
+      // 2. 카메라 촬영 시: 중앙 가이드 칸(72% x 38%)과 100% 일치하는 정밀 중앙 ROI만 크롭하여 전송
+      const roiWidth = rawCanvas.width * 0.72;
+      const roiHeight = rawCanvas.height * 0.38;
       const roiX = (rawCanvas.width - roiWidth) / 2;
       const roiY = (rawCanvas.height - roiHeight) / 2;
 
@@ -265,7 +265,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         y: roiY,
         width: roiWidth,
         height: roiHeight,
-      }, 2.5);
+      }, 2.0);
 
       processedCanvas = preprocessCanvas(croppedCanvas, options);
     }
@@ -417,12 +417,16 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
             {/* Industrial Viewfinder Crosshair & Guide Bounding Box */}
             <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-3">
-              <div className="relative w-3/4 h-3/4 border-2 border-cyan-400/80 rounded-xl shadow-glow-cyan transition-all duration-300">
+              <div className="relative w-[72%] h-[38%] border-2 border-cyan-400/90 rounded-xl shadow-glow-cyan transition-all duration-300">
                 {/* 4 Corner Markers */}
                 <div className="absolute -top-1 -left-1 h-3.5 w-3.5 border-t-2 border-l-2 border-cyan-300" />
                 <div className="absolute -top-1 -right-1 h-3.5 w-3.5 border-t-2 border-r-2 border-cyan-300" />
                 <div className="absolute -bottom-1 -left-1 h-3.5 w-3.5 border-b-2 border-l-2 border-cyan-300" />
                 <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 border-b-2 border-r-2 border-cyan-300" />
+
+                {/* Center Horizontal & Vertical Target Alignment Marks */}
+                <div className="absolute top-1/2 -left-2 w-2 h-0.5 bg-cyan-400/80 -translate-y-1/2" />
+                <div className="absolute top-1/2 -right-2 w-2 h-0.5 bg-cyan-400/80 -translate-y-1/2" />
 
                 {/* Center Laser Radar Scanning Animation (1.5~2.0초 동안 자연스러운 스캔 연출) */}
                 {isProcessing && (
@@ -453,7 +457,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                     </span>
                   ) : (
                     <span className="bg-slate-950/80 text-cyan-300 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border border-cyan-500/40">
-                      [ 영역 맞춤 후 촬영 ]
+                      [ 중앙 칸에 시리얼 위치 후 촬영 ]
                     </span>
                   )}
                 </div>
