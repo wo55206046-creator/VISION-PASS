@@ -148,13 +148,13 @@ export const TemplateManagerStep: React.FC = () => {
         prev.map((t) =>
           t.id === editingTemplate.id
             ? {
-                ...t,
-                modelName: editorModelName.trim(),
-                description: editorDescription.trim(),
-                partsCount: editorParts.length,
-                moduleCount: moduleSet.size,
-                parts: editorParts,
-              }
+              ...t,
+              modelName: editorModelName.trim(),
+              description: editorDescription.trim(),
+              partsCount: editorParts.length,
+              moduleCount: moduleSet.size,
+              parts: editorParts,
+            }
             : t
         )
       );
@@ -399,21 +399,19 @@ export const TemplateManagerStep: React.FC = () => {
                   <div
                     key={tpl.id}
                     onClick={() => setSelectedTemplateId(tpl.id)}
-                    className={`p-4 rounded-2xl border transition-all cursor-pointer group flex flex-col gap-2.5 relative ${
-                      isSelected
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer group flex flex-col gap-2.5 relative ${isSelected
                         ? "bg-slate-900/90 border-cyan-500/70 shadow-glow-cyan ring-1 ring-cyan-500/30"
                         : "bg-slate-950/70 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900/50"
-                    }`}
+                      }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         {/* 🔢 순번 뱃지 */}
                         <div
-                          className={`flex h-8 w-8 items-center justify-center rounded-xl font-mono font-extrabold text-xs shrink-0 transition-all ${
-                            isSelected
+                          className={`flex h-8 w-8 items-center justify-center rounded-xl font-mono font-extrabold text-xs shrink-0 transition-all ${isSelected
                               ? "bg-cyan-500 text-slate-950 shadow-sm"
                               : "bg-slate-900 border border-slate-800 text-cyan-400 group-hover:border-cyan-500/40"
-                          }`}
+                            }`}
                         >
                           {String(idx + 1).padStart(2, "0")}
                         </div>
@@ -722,7 +720,7 @@ export const TemplateManagerStep: React.FC = () => {
                     className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 px-3 py-1.5 text-xs font-bold transition-all cursor-pointer"
                   >
                     <Plus className="h-4 w-4" />
-                    <span>+ 부품 추가</span>
+                    <span>부품 추가</span>
                   </button>
                 </div>
               </div>

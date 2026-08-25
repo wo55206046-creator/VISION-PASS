@@ -20,7 +20,6 @@ import {
   SlidersHorizontal,
   X,
   Save,
-  CheckSquare,
   Square,
 } from "lucide-react";
 
@@ -79,8 +78,6 @@ export const PartsTable: React.FC<PartsTableProps> = ({
   const [newSpec, setNewSpec] = useState("");
   const [newSerial, setNewSerial] = useState("");
 
-  // 📋 5. 다중 선택 (Batch Action) 상태
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // 📊 6. 카테고리 고유 목록 추출
@@ -190,12 +187,12 @@ export const PartsTable: React.FC<PartsTableProps> = ({
     if (confirm(`[${partName}] 부품을 삭제하시겠습니까?`)) {
       const updated = parts.filter((p) => p.id !== partId);
       onUpdateParts(updated);
-      setSelectedIds((prev) => prev.filter((id) => id !== partId));
     }
   };
 
   // 📑 13. 단일 부품 복제
-  const handleDuplicatePart = (part: PartItem, index: number) => {
+  const handleDuplicatePart = (part: PartItem) => {
+    const partIndexInParts = parts.findIndex((p) => p.id === part.id);
     const duplicated: PartItem = {
       ...part,
       id: generateId(),
@@ -205,22 +202,34 @@ export const PartsTable: React.FC<PartsTableProps> = ({
       confidence: undefined,
     };
     const updated = [...parts];
-    updated.splice(index + 1, 0, duplicated);
+    const insertIdx = partIndexInParts !== -1 ? partIndexInParts + 1 : parts.length;
+    updated.splice(insertIdx, 0, duplicated);
     onUpdateParts(updated);
   };
 
-  // ⬆️⬇️ 14. 부품 순서 변경 (위 / 아래)
-  const handleMovePart = (index: number, direction: -1 | 1) => {
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= parts.length) return;
+  // ⬆️⬇️ 14. 부품 순서 변경 (위 / 아래) - 모듈 필터/검색 상태에서도 보이는 순서대로 정확하게 교체(Swap)
+  const handleMovePart = (filteredIndex: number, direction: -1 | 1) => {
+    const targetFilteredIndex = filteredIndex + direction;
+    if (targetFilteredIndex < 0 || targetFilteredIndex >= filteredParts.length) return;
+
+    const currentPart = filteredParts[filteredIndex];
+    const targetPart = filteredParts[targetFilteredIndex];
+    if (!currentPart || !targetPart) return;
+
+    const currentIndexInParts = parts.findIndex((p) => p.id === currentPart.id);
+    const targetIndexInParts = parts.findIndex((p) => p.id === targetPart.id);
+
+    if (currentIndexInParts === -1 || targetIndexInParts === -1) return;
 
     const updated = [...parts];
-    const [moved] = updated.splice(index, 1);
-    updated.splice(targetIndex, 0, moved);
+    const temp = updated[currentIndexInParts];
+    updated[currentIndexInParts] = updated[targetIndexInParts];
+    updated[targetIndexInParts] = temp;
+
     onUpdateParts(updated);
   };
 
-  // ➕ 15. 신규 부품 수동 등록
+  // ➕ 15. 신규 부품 수동 등록 (선택된 모듈 그룹의 마지막 위치에 스마트 삽입)
   const handleAddNewPartSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPartName.trim()) {
@@ -232,9 +241,10 @@ export const PartsTable: React.FC<PartsTableProps> = ({
       return;
     }
 
+    const targetCategory = newCategory.trim() || "[ MAIN ]";
     const newItem: PartItem = {
       id: generateId(),
-      category: newCategory.trim() || "[ MAIN ]",
+      category: targetCategory,
       partName: newPartName.trim(),
       subSpec: newSubSpec.trim() || "-",
       spec: newSpec.trim(),
@@ -243,7 +253,25 @@ export const PartsTable: React.FC<PartsTableProps> = ({
       scannedAt: newSerial.trim() ? new Date().toISOString() : undefined,
     };
 
-    onUpdateParts([...parts, newItem]);
+    // 🎯 선택된 모듈 그룹의 마지막 위치를 찾아 그 바로 뒤에 삽입
+    let insertIndex = -1;
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const pCat = (parts[i].category || "[ MAIN ]").trim().toUpperCase();
+      if (pCat === targetCategory.toUpperCase()) {
+        insertIndex = i + 1;
+        break;
+      }
+    }
+
+    let updatedParts: PartItem[];
+    if (insertIndex !== -1) {
+      updatedParts = [...parts];
+      updatedParts.splice(insertIndex, 0, newItem);
+    } else {
+      updatedParts = [...parts, newItem];
+    }
+
+    onUpdateParts(updatedParts);
     setIsAddModalOpen(false);
     setNewPartName("");
     setNewSubSpec("-");
@@ -265,50 +293,6 @@ export const PartsTable: React.FC<PartsTableProps> = ({
     onUpdateParts(updated);
     setIsEditModalOpen(false);
     setEditingPart(null);
-  };
-
-  // 🔲 17. 다중 선택 토글
-  const handleToggleSelect = (partId: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(partId) ? prev.filter((id) => id !== partId) : [...prev, partId]
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (selectedIds.length === filteredParts.length && filteredParts.length > 0) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(filteredParts.map((p) => p.id));
-    }
-  };
-
-  // ⚡ 18. 다중 일괄 작업 (선택 검증 완료 / 선택 삭제)
-  const handleBatchVerifySelected = (verify: boolean) => {
-    if (selectedIds.length === 0) return;
-    if (verify) triggerScanFeedback();
-
-    const targetSet = new Set(selectedIds);
-    const updated = parts.map((p) => {
-      if (targetSet.has(p.id)) {
-        return {
-          ...p,
-          isVerified: verify,
-          scannedAt: verify ? p.scannedAt || new Date().toISOString() : p.scannedAt,
-        };
-      }
-      return p;
-    });
-    onUpdateParts(updated);
-  };
-
-  const handleBatchDeleteSelected = () => {
-    if (selectedIds.length === 0) return;
-    if (confirm(`선택한 ${selectedIds.length}개 부품을 모두 삭제하시겠습니까?`)) {
-      const targetSet = new Set(selectedIds);
-      const updated = parts.filter((p) => !targetSet.has(p.id));
-      onUpdateParts(updated);
-      setSelectedIds([]);
-    }
   };
 
   // 🚀 19. 전체 검증 완료 (모든 부품 일괄 PASS)
@@ -367,46 +351,52 @@ export const PartsTable: React.FC<PartsTableProps> = ({
             <button
               type="button"
               onClick={() => setStatusFilter("ALL")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                statusFilter === "ALL"
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${statusFilter === "ALL"
                   ? "bg-cyan-500 text-slate-950 font-bold"
                   : "text-slate-400 hover:text-white"
-              }`}
+                }`}
             >
               전체 ({parts.length})
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter("VERIFIED")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                statusFilter === "VERIFIED"
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${statusFilter === "VERIFIED"
                   ? "bg-emerald-500 text-slate-950 font-bold"
                   : "text-slate-400 hover:text-white"
-              }`}
+                }`}
             >
               완료 ({verifiedCount})
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter("UNVERIFIED")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                statusFilter === "UNVERIFIED"
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${statusFilter === "UNVERIFIED"
                   ? "bg-amber-500 text-slate-950 font-bold"
                   : "text-slate-400 hover:text-white"
-              }`}
+                }`}
             >
               미검증 ({unverifiedCount})
             </button>
           </div>
 
-          {/* ➕ 우측 [+ 부품 추가] 버튼 */}
+          {/* ➕ 우측 [부품 추가] 버튼 */}
           <button
             type="button"
-            onClick={() => setIsAddModalOpen(true)}
+            onClick={() => {
+              if (categoryFilter && categoryFilter !== "ALL") {
+                setNewCategory(categoryFilter);
+              } else if (availableCategories.length > 0) {
+                setNewCategory(availableCategories[0]);
+              } else {
+                setNewCategory("[ MAIN ]");
+              }
+              setIsAddModalOpen(true);
+            }}
             className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 shadow-glow-cyan transition-all cursor-pointer shrink-0"
           >
             <Plus className="h-3.5 w-3.5 stroke-[3]" />
-            <span>+ 부품 추가</span>
+            <span>부품 추가</span>
           </button>
         </div>
 
@@ -420,11 +410,10 @@ export const PartsTable: React.FC<PartsTableProps> = ({
             <button
               type="button"
               onClick={() => setCategoryFilter("ALL")}
-              className={`px-2.5 py-0.5 rounded-lg border text-xs font-medium transition-all shrink-0 cursor-pointer ${
-                categoryFilter === "ALL"
+              className={`px-2.5 py-0.5 rounded-lg border text-xs font-medium transition-all shrink-0 cursor-pointer ${categoryFilter === "ALL"
                   ? "bg-cyan-950 text-cyan-300 border-cyan-600 font-bold"
                   : "bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200"
-              }`}
+                }`}
             >
               전체 모듈
             </button>
@@ -433,51 +422,14 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                 key={cat}
                 type="button"
                 onClick={() => setCategoryFilter(cat)}
-                className={`px-2.5 py-0.5 rounded-lg border text-xs font-medium transition-all shrink-0 cursor-pointer ${
-                  categoryFilter === cat
+                className={`px-2.5 py-0.5 rounded-lg border text-xs font-medium transition-all shrink-0 cursor-pointer ${categoryFilter === cat
                     ? "bg-cyan-950 text-cyan-300 border-cyan-600 font-bold"
                     : "bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200"
-                }`}
+                  }`}
               >
                 {cat}
               </button>
             ))}
-          </div>
-        )}
-
-        {/* 다중 선택 일괄 작업 바 */}
-        {selectedIds.length > 0 && (
-          <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-cyan-950/90 border border-cyan-800 text-xs animate-fadeIn flex-wrap">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-cyan-300">
-                {selectedIds.length}개 선택됨
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleBatchVerifySelected(true)}
-                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all cursor-pointer flex items-center gap-1"
-              >
-                <CheckCircle2 className="h-3 w-3" />
-                <span>선택 검증 완료</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBatchVerifySelected(false)}
-                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-all cursor-pointer"
-              >
-                선택 미검증 처리
-              </button>
-              <button
-                type="button"
-                onClick={handleBatchDeleteSelected}
-                className="px-2.5 py-1 rounded-lg bg-rose-600/80 hover:bg-rose-500 text-white font-bold transition-all cursor-pointer flex items-center gap-1"
-              >
-                <Trash2 className="h-3 w-3" />
-                <span>선택 삭제</span>
-              </button>
-            </div>
           </div>
         )}
       </div>
@@ -487,20 +439,6 @@ export const PartsTable: React.FC<PartsTableProps> = ({
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className="border-b border-slate-800 bg-slate-950/80 text-[11px] font-bold text-slate-400">
-              <th className="py-3 px-2 text-center w-10">
-                <button
-                  type="button"
-                  onClick={handleSelectAll}
-                  className="text-slate-400 hover:text-white"
-                  title="전체 선택"
-                >
-                  {selectedIds.length > 0 && selectedIds.length === filteredParts.length ? (
-                    <CheckSquare className="h-4 w-4 text-cyan-400" />
-                  ) : (
-                    <Square className="h-4 w-4" />
-                  )}
-                </button>
-              </th>
               <th className="py-3 px-2 text-center w-12">순번</th>
               <th className="py-3 px-3 min-w-[150px]">품명 (Part Name)</th>
               <th className="py-3 px-3 min-w-[130px]">세부 사양</th>
@@ -514,7 +452,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
           <tbody className="divide-y divide-slate-800/80">
             {filteredParts.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-12 text-center text-slate-500">
+                <td colSpan={8} className="py-12 text-center text-slate-500">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <AlertCircle className="h-8 w-8 text-slate-600" />
                     <p className="text-sm font-semibold">등록된 부품이 없거나 검색 결과가 없습니다.</p>
@@ -530,7 +468,14 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                       )}
                       <button
                         type="button"
-                        onClick={() => setIsAddModalOpen(true)}
+                        onClick={() => {
+                          if (availableCategories.length > 0) {
+                            setNewCategory(availableCategories[0]);
+                          } else {
+                            setNewCategory("[ MAIN ]");
+                          }
+                          setIsAddModalOpen(true);
+                        }}
                         className="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold hover:bg-slate-700 transition-all text-xs"
                       >
                         + 부품 직접 등록
@@ -541,7 +486,6 @@ export const PartsTable: React.FC<PartsTableProps> = ({
               </tr>
             ) : (
               filteredParts.map((part, index) => {
-                const isSelected = selectedIds.includes(part.id);
                 const isEditing = editingSerialId === part.id;
                 const hasSerial = Boolean(part.detectedSerial && part.detectedSerial.trim());
 
@@ -556,7 +500,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                     {/* 🏷️ 모듈별 구분 상단 배너 행 */}
                     {showCategoryHeader && (
                       <tr className="bg-slate-950/95 border-y border-slate-800 shadow-sm">
-                        <td colSpan={9} className="py-2 px-3.5">
+                        <td colSpan={8} className="py-2 px-3.5">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span
@@ -577,28 +521,11 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                     )}
 
                     <tr
-                      className={`transition-colors hover:bg-slate-800/50 ${
-                        part.isVerified
+                      className={`transition-colors hover:bg-slate-800/50 ${part.isVerified
                           ? "bg-emerald-950/10"
-                          : isSelected
-                          ? "bg-cyan-950/20"
                           : ""
-                      }`}
+                        }`}
                     >
-                      {/* 1. 선택 체크박스 */}
-                      <td className="py-2.5 px-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleSelect(part.id)}
-                          className="text-slate-400 hover:text-white"
-                        >
-                          {isSelected ? (
-                            <CheckSquare className="h-3.5 w-3.5 text-cyan-400" />
-                          ) : (
-                            <Square className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                      </td>
 
                       {/* 2. 순번 및 순서 이동 */}
                       <td className="py-2.5 px-2 text-center font-mono text-[11px] text-slate-400">
@@ -636,168 +563,167 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                         </div>
                       </td>
 
-                    {/* 5. 세부 사양 */}
-                    <td className="py-2.5 px-3 text-slate-300">
-                      <span className="truncate block max-w-[140px]" title={part.subSpec}>
-                        {part.subSpec || "-"}
-                      </span>
-                    </td>
+                      {/* 5. 세부 사양 */}
+                      <td className="py-2.5 px-3 text-slate-300">
+                        <span className="truncate block max-w-[140px]" title={part.subSpec}>
+                          {part.subSpec || "-"}
+                        </span>
+                      </td>
 
-                    {/* 6. 규격 (Spec) */}
-                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-300">
-                      <span className="truncate block max-w-[150px]" title={part.spec}>
-                        {part.spec}
-                      </span>
-                    </td>
+                      {/* 6. 규격 (Spec) */}
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-300">
+                        <span className="truncate block max-w-[150px]" title={part.spec}>
+                          {part.spec}
+                        </span>
+                      </td>
 
-                    {/* 7. 시리얼 번호 (S/N) & 인라인 빠른 수정 */}
-                    <td className="py-2.5 px-3">
-                      {isEditing ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            value={tempSerial}
-                            onChange={(e) => setTempSerial(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleSaveInlineSerial(part.id);
-                              if (e.key === "Escape") setEditingSerialId(null);
-                            }}
-                            autoFocus
-                            placeholder="시리얼 직접 입력..."
-                            className="w-full bg-slate-950 border border-cyan-500 rounded-lg px-2 py-1 text-xs font-mono text-cyan-300 focus:outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleSaveInlineSerial(part.id)}
-                            className="p-1 rounded-md bg-cyan-500 text-slate-950 hover:brightness-110 shrink-0"
-                            title="저장 (Enter)"
-                          >
-                            <Save className="h-3 w-3 stroke-[2.5]" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingSerialId(null)}
-                            className="p-1 rounded-md bg-slate-800 text-slate-400 hover:text-white shrink-0"
-                            title="취소 (Esc)"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between gap-1 group">
-                          {hasSerial ? (
-                            <div className="flex items-center gap-1.5 font-mono font-bold text-cyan-300">
-                              <span
-                                className="cursor-pointer hover:underline truncate max-w-[140px]"
-                                onClick={() => {
-                                  setEditingSerialId(part.id);
-                                  setTempSerial(part.detectedSerial || "");
-                                }}
-                                title="클릭하여 시리얼 번호 수정"
-                              >
-                                {part.detectedSerial}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleCopySerial(part.id, part.detectedSerial)}
-                                className="text-slate-500 hover:text-cyan-300 transition-colors p-0.5"
-                                title="시리얼 번호 복사"
-                              >
-                                {copiedId === part.id ? (
-                                  <Check className="h-3 w-3 text-emerald-400" />
-                                ) : (
-                                  <Copy className="h-3 w-3" />
-                                )}
-                              </button>
-                            </div>
-                          ) : (
+                      {/* 7. 시리얼 번호 (S/N) & 인라인 빠른 수정 */}
+                      <td className="py-2.5 px-3">
+                        {isEditing ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={tempSerial}
+                              onChange={(e) => setTempSerial(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleSaveInlineSerial(part.id);
+                                if (e.key === "Escape") setEditingSerialId(null);
+                              }}
+                              autoFocus
+                              placeholder="시리얼 직접 입력..."
+                              className="w-full bg-slate-950 border border-cyan-500 rounded-lg px-2 py-1 text-xs font-mono text-cyan-300 focus:outline-none"
+                            />
                             <button
                               type="button"
-                              onClick={() => {
-                                setEditingSerialId(part.id);
-                                setTempSerial("");
-                              }}
-                              className="text-slate-500 hover:text-cyan-400 text-[11px] italic font-mono flex items-center gap-1"
+                              onClick={() => handleSaveInlineSerial(part.id)}
+                              className="p-1 rounded-md bg-cyan-500 text-slate-950 hover:brightness-110 shrink-0"
+                              title="저장 (Enter)"
                             >
-                              <span>(미입력)</span>
-                              <Edit2 className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              <Save className="h-3 w-3 stroke-[2.5]" />
                             </button>
-                          )}
-                        </div>
-                      )}
-                    </td>
-
-                    {/* 8. OCR 인식 (카메라 스캔 모달 호출) */}
-                    <td className="py-2.5 px-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => onOpenOcrModal(part)}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-cyan-950/90 hover:bg-cyan-900 border border-cyan-700/80 px-2.5 py-1.5 text-[11px] font-extrabold text-cyan-300 hover:text-white shadow-glow-cyan/50 transition-all cursor-pointer w-full"
-                        title="카메라/Gemini AI OCR로 명판 시리얼 인식"
-                      >
-                        <Camera className="h-3.5 w-3.5 text-cyan-400" />
-                        <span>OCR</span>
-                      </button>
-                    </td>
-
-                    {/* 9. 검증 PASS/대기 토글 버튼 */}
-                    <td className="py-2.5 px-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleVerify(part.id)}
-                        className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer w-full border ${
-                          part.isVerified
-                            ? "bg-emerald-950/90 border-emerald-600 text-emerald-300 hover:bg-emerald-900 shadow-sm"
-                            : "bg-slate-950 border-slate-700 text-slate-400 hover:text-white hover:border-slate-600"
-                        }`}
-                        title={part.isVerified ? "검증 완료 (클릭하여 취소)" : "미검증 (클릭하여 완료)"}
-                      >
-                        {part.isVerified ? (
-                          <>
-                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 stroke-[2.5]" />
-                            <span>PASS</span>
-                          </>
+                            <button
+                              type="button"
+                              onClick={() => setEditingSerialId(null)}
+                              className="p-1 rounded-md bg-slate-800 text-slate-400 hover:text-white shrink-0"
+                              title="취소 (Esc)"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
                         ) : (
-                          <>
-                            <Square className="h-3 w-3" />
-                            <span>대기</span>
-                          </>
+                          <div className="flex items-center justify-between gap-1 group">
+                            {hasSerial ? (
+                              <div className="flex items-center gap-1.5 font-mono font-bold text-cyan-300">
+                                <span
+                                  className="cursor-pointer hover:underline truncate max-w-[140px]"
+                                  onClick={() => {
+                                    setEditingSerialId(part.id);
+                                    setTempSerial(part.detectedSerial || "");
+                                  }}
+                                  title="클릭하여 시리얼 번호 수정"
+                                >
+                                  {part.detectedSerial}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopySerial(part.id, part.detectedSerial)}
+                                  className="text-slate-500 hover:text-cyan-300 transition-colors p-0.5"
+                                  title="시리얼 번호 복사"
+                                >
+                                  {copiedId === part.id ? (
+                                    <Check className="h-3 w-3 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="h-3 w-3" />
+                                  )}
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSerialId(part.id);
+                                  setTempSerial("");
+                                }}
+                                className="text-slate-500 hover:text-cyan-400 text-[11px] italic font-mono flex items-center gap-1"
+                              >
+                                <span>(미입력)</span>
+                                <Edit2 className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </button>
+                            )}
+                          </div>
                         )}
-                      </button>
-                    </td>
+                      </td>
 
-                    {/* 10. 관리 메뉴 (수정 / 복제 / 삭제) */}
-                    <td className="py-2.5 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
+                      {/* 8. OCR 인식 (카메라 스캔 모달 호출) */}
+                      <td className="py-2.5 px-3 text-center">
                         <button
                           type="button"
-                          onClick={() => {
-                            setEditingPart({ ...part });
-                            setIsEditModalOpen(true);
-                          }}
-                          className="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition-colors"
-                          title="상세 수정"
+                          onClick={() => onOpenOcrModal(part)}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-cyan-950/90 hover:bg-cyan-900 border border-cyan-700/80 px-2.5 py-1.5 text-[11px] font-extrabold text-cyan-300 hover:text-white shadow-glow-cyan/50 transition-all cursor-pointer w-full"
+                          title="카메라/Gemini AI OCR로 명판 시리얼 인식"
                         >
-                          <Edit2 className="h-3.5 w-3.5" />
+                          <Camera className="h-3.5 w-3.5 text-cyan-400" />
+                          <span>OCR</span>
                         </button>
+                      </td>
+
+                      {/* 9. 검증 PASS/대기 토글 버튼 */}
+                      <td className="py-2.5 px-3 text-center">
                         <button
                           type="button"
-                          onClick={() => handleDuplicatePart(part, index)}
-                          className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                          title="부품 복제"
+                          onClick={() => handleToggleVerify(part.id)}
+                          className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer w-full border ${part.isVerified
+                              ? "bg-emerald-950/90 border-emerald-600 text-emerald-300 hover:bg-emerald-900 shadow-sm"
+                              : "bg-slate-950 border-slate-700 text-slate-400 hover:text-white hover:border-slate-600"
+                            }`}
+                          title={part.isVerified ? "검증 완료 (클릭하여 취소)" : "미검증 (클릭하여 완료)"}
                         >
-                          <Copy className="h-3.5 w-3.5" />
+                          {part.isVerified ? (
+                            <>
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 stroke-[2.5]" />
+                              <span>PASS</span>
+                            </>
+                          ) : (
+                            <>
+                              <Square className="h-3 w-3" />
+                              <span>대기</span>
+                            </>
+                          )}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeletePart(part.id, part.partName)}
-                          className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-950/50 transition-colors"
-                          title="삭제"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
+                      </td>
+
+                      {/* 10. 관리 메뉴 (수정 / 복제 / 삭제) */}
+                      <td className="py-2.5 px-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingPart({ ...part });
+                              setIsEditModalOpen(true);
+                            }}
+                            className="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition-colors"
+                            title="상세 수정"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDuplicatePart(part)}
+                            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                            title="부품 복제"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePart(part.id, part.partName)}
+                            className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-950/50 transition-colors"
+                            title="삭제"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   </Fragment>
                 );
@@ -827,25 +753,49 @@ export const PartsTable: React.FC<PartsTableProps> = ({
 
             <form onSubmit={handleAddNewPartSubmit} className="space-y-3.5 text-xs">
               <div>
-                <label className="text-slate-300 font-bold block mb-1">
-                  모듈 / 섹션 카테고리
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-slate-300 font-bold block">
+                    모듈 / 섹션 카테고리
+                  </label>
+                  <span className="text-[10px] text-cyan-400 font-normal">아래 추천 모듈 클릭 시 자동 선택</span>
+                </div>
+
+                {/* 🏷️ 현재 프로젝트 추천 모듈 빠른 선택 칩 */}
+                <div className="flex items-center gap-1.5 flex-wrap mb-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <span className="text-[11px] text-slate-500 font-bold shrink-0">추천:</span>
+                  {(availableCategories.length > 0
+                    ? availableCategories
+                    : ["[ MAIN ]", "[ MG ]", "[ WOA-683 ]", "[ COSMOS-100 ]", "[ PC ]", "[ OPTION ]"]
+                  ).map((cat) => {
+                    const isSelected = (newCategory || "").trim().toUpperCase() === cat.trim().toUpperCase();
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setNewCategory(cat)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                          isSelected
+                            ? "bg-cyan-500 text-slate-950 border-cyan-400 shadow-glow-cyan"
+                            : "bg-slate-900 border-slate-700/80 text-slate-300 hover:text-white hover:border-slate-500"
+                        }`}
+                      >
+                        <Layers className="h-3 w-3" />
+                        <span>{cat}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <input
                   type="text"
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value)}
-                  placeholder="예: [ MAIN ], [ MG ], [ WOA-683 ]"
-                  list="add-modal-category-options"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+                  placeholder="예: [ MAIN ], [ MG ], [ WOA-683 ] (직접 입력도 가능)"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
                 />
-                <datalist id="add-modal-category-options">
-                  <option value="[ MAIN ]" />
-                  <option value="[ MG ]" />
-                  <option value="[ WOA-683 ]" />
-                  <option value="[ COSMOS-100 ]" />
-                  <option value="[ PC ]" />
-                  <option value="[ OPTION ]" />
-                </datalist>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  💡 선택한 모듈 그룹의 맨 마지막 위치에 부품이 자동으로 정렬 추가됩니다.
+                </p>
               </div>
 
               <div>
@@ -942,9 +892,41 @@ export const PartsTable: React.FC<PartsTableProps> = ({
 
             <div className="space-y-3.5 text-xs">
               <div>
-                <label className="text-slate-300 font-bold block mb-1">
-                  모듈 / 섹션 카테고리
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-slate-300 font-bold block">
+                    모듈 / 섹션 카테고리
+                  </label>
+                  <span className="text-[10px] text-cyan-400 font-normal">추천 모듈 클릭 시 즉시 변경</span>
+                </div>
+
+                {/* 🏷️ 추천 모듈 빠른 선택 칩 */}
+                <div className="flex items-center gap-1.5 flex-wrap mb-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <span className="text-[11px] text-slate-500 font-bold shrink-0">추천:</span>
+                  {(availableCategories.length > 0
+                    ? availableCategories
+                    : ["[ MAIN ]", "[ MG ]", "[ WOA-683 ]", "[ COSMOS-100 ]", "[ PC ]", "[ OPTION ]"]
+                  ).map((cat) => {
+                    const isSelected = (editingPart.category || "").trim().toUpperCase() === cat.trim().toUpperCase();
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() =>
+                          setEditingPart({ ...editingPart, category: cat })
+                        }
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                          isSelected
+                            ? "bg-cyan-500 text-slate-950 border-cyan-400 shadow-glow-cyan"
+                            : "bg-slate-900 border-slate-700/80 text-slate-300 hover:text-white hover:border-slate-500"
+                        }`}
+                      >
+                        <Layers className="h-3 w-3" />
+                        <span>{cat}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <input
                   type="text"
                   value={editingPart.category || ""}
@@ -952,7 +934,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                     setEditingPart({ ...editingPart, category: e.target.value })
                   }
                   placeholder="예: [ MAIN ], [ MG ]"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:border-cyan-500 focus:outline-none"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold focus:border-cyan-500 focus:outline-none"
                 />
               </div>
 

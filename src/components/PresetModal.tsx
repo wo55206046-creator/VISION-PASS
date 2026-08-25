@@ -957,7 +957,7 @@ export const PresetModal: React.FC<PresetModalProps> = ({
                     className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-2.5 py-1.5 rounded-lg font-bold hover:bg-cyan-500/30 cursor-pointer flex items-center gap-1 text-[11px]"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    <span>+ 부품 추가</span>
+                    <span>부품 추가</span>
                   </button>
                 </div>
               </div>

@@ -35,17 +35,17 @@ export async function exportEquipmentReportExcel(project: ProjectMaster): Promis
   workbook.creator = "WITHTECH Semiconductor Quality System";
   workbook.created = new Date();
 
-  // 표준 스타일 정의
+  // 표준 스타일 정의: Excel 테마 색상 [흰색, 배경 1, 15% 더 어둡게] -> RGB(217, 217, 217) = #D9D9D9
   const GRAY_HEADER_FILL: ExcelJS.Fill = {
     type: "pattern",
     pattern: "solid",
-    fgColor: { argb: "FFE2E8F0" }, // Clean Gray (헤더 배경)
+    fgColor: { argb: "FFD9D9D9" }, // 흰색, 배경 1, 15% 더 어둡게
   };
 
   const MODULE_BAR_FILL: ExcelJS.Fill = {
     type: "pattern",
     pattern: "solid",
-    fgColor: { argb: "FFD8DEE9" }, // 모듈 구분 섹션 바
+    fgColor: { argb: "FFD9D9D9" }, // 흰색, 배경 1, 15% 더 어둡게
   };
 
   const THIN_BORDER: Partial<ExcelJS.Borders> = {
@@ -83,83 +83,114 @@ export async function exportEquipmentReportExcel(project: ProjectMaster): Promis
       { width: 28 }, // Col D: Serial No.
     ];
 
-    // 2. Row 2: 대제목 「3. 시리얼 리스트」
-    sheet.mergeCells("A2:D2");
-    const titleCell = sheet.getCell("A2");
+    // 2. 1~3행 병합 대제목 「3. 시리얼 리스트」 (글자 크기: 24, 외곽 테두리)
+    sheet.mergeCells("A1:D3");
+    const titleCell = sheet.getCell("A1");
     titleCell.value = "3. 시리얼 리스트";
-    titleCell.font = { name: "맑은 고딕", size: 16, bold: true, color: { argb: "FF000000" } };
+    titleCell.font = { name: "맑은 고딕", size: 24, bold: true, color: { argb: "FF000000" } };
     titleCell.alignment = { vertical: "middle", horizontal: "center" };
-    sheet.getRow(2).height = 32;
+    sheet.getRow(1).height = 18;
+    sheet.getRow(2).height = 28;
+    sheet.getRow(3).height = 18;
 
-    // 3. Rows 4~5: 헤더 메타데이터 정보 박스
-    // 모델명 분리: "TM100L (NaVi-TM100L-0312)" -> B4: "TM100L", B5: "(NaVi-TM100L-0312)"
+    // A1:D3 전체 외곽 테두리 적용
+    for (let r = 1; r <= 3; r++) {
+      for (let c = 1; c <= 4; c++) {
+        sheet.getRow(r).getCell(c).border = {
+          ...(r === 1 ? { top: { style: "thin", color: { argb: "FF000000" } } } : {}),
+          ...(r === 3 ? { bottom: { style: "thin", color: { argb: "FF000000" } } } : {}),
+          ...(c === 1 ? { left: { style: "thin", color: { argb: "FF000000" } } } : {}),
+          ...(c === 4 ? { right: { style: "thin", color: { argb: "FF000000" } } } : {}),
+        };
+      }
+    }
+
+    // Row 4: 중간 여백 행
+    sheet.getRow(4).height = 12;
+
+    // 3. Rows 5~6: 헤더 메타데이터 정보 박스
+    // 모델명 분리: 괄호()가 포함된 경우 B5(메인 모델)와 B6(괄호 세부모델)로 행 분리
     const eqName = (project.equipmentName || "").trim();
     let modelMain = eqName;
     let modelSub = "";
-    const parenMatch = eqName.match(/^(.*?)\s*(\(.*?\))$/);
-    if (parenMatch) {
-      modelMain = parenMatch[1].trim();
-      modelSub = parenMatch[2].trim();
+    const parenIndex = eqName.indexOf("(");
+    if (parenIndex !== -1 && eqName.endsWith(")")) {
+      modelMain = eqName.substring(0, parenIndex).trim();
+      modelSub = eqName.substring(parenIndex).trim();
     }
 
-    // A4:A5 병합 -> [ 모 델 명 ]
-    sheet.mergeCells("A4:A5");
-    const modelLabel = sheet.getCell("A4");
+    // A5:A6 병합 -> [ 모 델 명 ]
+    sheet.mergeCells("A5:A6");
+    const modelLabel = sheet.getCell("A5");
     modelLabel.value = "모 델 명";
     modelLabel.font = { name: "맑은 고딕", size: 10, bold: true };
     modelLabel.fill = GRAY_HEADER_FILL;
     modelLabel.alignment = { vertical: "middle", horizontal: "center" };
-    sheet.getRow(4).getCell(1).border = THIN_BORDER;
     sheet.getRow(5).getCell(1).border = THIN_BORDER;
+    sheet.getRow(6).getCell(1).border = THIN_BORDER;
 
-    // B4: 메인 모델명 (예: TM100L)
-    const b4Cell = sheet.getCell("B4");
-    b4Cell.value = modelMain || "-";
-    b4Cell.font = { name: "맑은 고딕", size: 10, bold: true };
-    b4Cell.alignment = { vertical: "middle", horizontal: "center" };
-    b4Cell.border = THIN_BORDER;
+    // B5 & B6: 괄호 유무에 따른 모델명 배치
+    if (modelSub) {
+      // 괄호가 있는 경우: B5에 메인 모델명 (예: TM100L), B6에 괄호 세부모델명 (예: (NaVi-TM100L-0312))
+      const b5Cell = sheet.getCell("B5");
+      b5Cell.value = modelMain || "-";
+      b5Cell.font = { name: "맑은 고딕", size: 10, bold: true };
+      b5Cell.alignment = { vertical: "middle", horizontal: "center" };
+      b5Cell.border = THIN_BORDER;
 
-    // B5: 세부 모델명 (예: (NaVi-TM100L-0312))
-    const b5Cell = sheet.getCell("B5");
-    b5Cell.value = modelSub || (modelMain ? `(${modelMain})` : "-");
-    b5Cell.font = { name: "맑은 고딕", size: 9 };
-    b5Cell.alignment = { vertical: "middle", horizontal: "center" };
-    b5Cell.border = THIN_BORDER;
+      const b6Cell = sheet.getCell("B6");
+      b6Cell.value = modelSub;
+      b6Cell.font = { name: "맑은 고딕", size: 9 };
+      b6Cell.alignment = { vertical: "middle", horizontal: "center" };
+      b6Cell.border = THIN_BORDER;
+    } else {
+      // 괄호가 없는 단일 모델명인 경우: B5:B6 병합하여 중앙 표시
+      sheet.mergeCells("B5:B6");
+      const b5Cell = sheet.getCell("B5");
+      b5Cell.value = modelMain || "-";
+      b5Cell.font = { name: "맑은 고딕", size: 10, bold: true };
+      b5Cell.alignment = { vertical: "middle", horizontal: "center" };
+      sheet.getRow(5).getCell(2).border = THIN_BORDER;
+      sheet.getRow(6).getCell(2).border = THIN_BORDER;
+    }
 
-    // C4 -> [ S / N ]
-    const snLabel = sheet.getCell("C4");
-    snLabel.value = "S / N";
+    // C5 -> [ S/N ]
+    const snLabel = sheet.getCell("C5");
+    snLabel.value = "S/N";
     snLabel.font = { name: "맑은 고딕", size: 10, bold: true };
     snLabel.fill = GRAY_HEADER_FILL;
     snLabel.alignment = { vertical: "middle", horizontal: "center" };
     snLabel.border = THIN_BORDER;
 
-    // D4 -> 해당 호기 설비 Serial No.
-    const snVal = sheet.getCell("D4");
+    // D5 -> 해당 호기 설비 Serial No.
+    const snVal = sheet.getCell("D5");
     snVal.value = unit.equipmentSerial || "-";
     snVal.font = { name: "맑은 고딕", size: 10, bold: true };
     snVal.alignment = { vertical: "middle", horizontal: "center" };
     snVal.border = THIN_BORDER;
 
-    // C5 -> [ 작 성 자 ]
-    const inspLabel = sheet.getCell("C5");
+    // C6 -> [ 작 성 자 ]
+    const inspLabel = sheet.getCell("C6");
     inspLabel.value = "작 성 자";
     inspLabel.font = { name: "맑은 고딕", size: 10, bold: true };
     inspLabel.fill = GRAY_HEADER_FILL;
     inspLabel.alignment = { vertical: "middle", horizontal: "center" };
     inspLabel.border = THIN_BORDER;
 
-    // D5 -> 담당자 / 검사자명
-    const inspVal = sheet.getCell("D5");
+    // D6 -> 담당자 / 작성자명
+    const inspVal = sheet.getCell("D6");
     inspVal.value = project.inspectorName || "-";
     inspVal.font = { name: "맑은 고딕", size: 10, bold: true };
     inspVal.alignment = { vertical: "middle", horizontal: "center" };
     inspVal.border = THIN_BORDER;
 
-    sheet.getRow(4).height = 22;
     sheet.getRow(5).height = 22;
+    sheet.getRow(6).height = 22;
 
-    // 4. 부품 목록 (모듈별 그룹화)
+    // Row 7: 중간 여백 행
+    sheet.getRow(7).height = 12;
+
+    // 4. 부품 목록 (모듈별 그룹화 - Row 8부터 시작)
     const partsByCat = (unit.parts || []).reduce(
       (acc: { category: string; parts: PartItem[] }[], part: PartItem) => {
         const cat = (part.category || "[ MAIN ]").trim();
@@ -174,7 +205,7 @@ export async function exportEquipmentReportExcel(project: ProjectMaster): Promis
       []
     );
 
-    let currentRow = 7;
+    let currentRow = 8;
 
     partsByCat.forEach((group: { category: string; parts: PartItem[] }) => {
       // 4-1. 모듈 구분 섹션 바 (예: [ MAIN ], [ MG ])
@@ -235,10 +266,9 @@ export async function exportEquipmentReportExcel(project: ProjectMaster): Promis
         const cD = row.getCell(4);
         cD.value = p.detectedSerial || "";
         cD.font = {
-          name: "Consolas",
+          name: "맑은 고딕",
           size: 9.5,
-          bold: Boolean(p.detectedSerial),
-          color: { argb: p.detectedSerial ? "FF000000" : "FF94A3B8" },
+          color: { argb: "FF000000" },
         };
         cD.alignment = { vertical: "middle", horizontal: "center" };
         cD.border = THIN_BORDER;

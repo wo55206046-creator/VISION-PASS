@@ -49,3 +49,12 @@ next-env.d.ts
 /android/captures/
 /android/.idea/
 *.apk
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+ENV/

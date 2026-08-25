@@ -196,9 +196,8 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
               <span
-                className={`font-bold flex items-center gap-1 px-2.5 py-0.5 rounded-lg border shadow-sm ${
-                  getSiteBadgeStyle(project?.site || "").bg
-                }`}
+                className={`font-bold flex items-center gap-1 px-2.5 py-0.5 rounded-lg border shadow-sm ${getSiteBadgeStyle(project?.site || "").bg
+                  }`}
               >
                 <Building2 className={`h-3.5 w-3.5 ${getSiteBadgeStyle(project?.site || "").icon}`} />
                 <span>{project?.site || "고객사 미지정"}</span>
@@ -245,7 +244,7 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
                 title="1호기 부품 목록을 나머지 모든 호기에 일괄 복제"
               >
                 <Copy className="h-2.5 w-2.5" />
-                <span>1호기 부품 전체 복제</span>
+                <span>1호기 부품 전체 복사</span>
               </button>
             )}
           </div>
@@ -253,22 +252,22 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
 
         {/* 🔢 등록된 설비 Serial NO. 및 호기 선택 탭 (단일 통합) */}
         <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80 space-y-2 text-xs">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
               <Barcode className="h-4 w-4 text-cyan-400 shrink-0" />
-              <span className="text-slate-400 font-bold">호기 선택 (Serial NO.) :</span>
+              <span className="text-slate-400 font-bold shrink-0">Serial NO. :</span>
               {formatSerialRangeForFilename(project.equipmentUnits) && (
-                <span className="font-mono font-extrabold text-cyan-300 bg-cyan-950/90 border border-cyan-600/60 px-2 py-0.5 rounded-md text-xs shadow-inner ml-1 tracking-tight">
+                <span className="font-mono font-extrabold text-cyan-300 bg-cyan-950/90 border border-cyan-600/60 px-2 py-0.5 rounded-md text-xs shadow-inner tracking-tight truncate">
                   {formatSerialRangeForFilename(project.equipmentUnits)}
                 </span>
               )}
             </div>
 
-            {/* 📑 우측 상단 [PJT 양식] 버튼 */}
+            {/* 📑 우측 고정 [PJT 양식] 버튼 */}
             <button
               type="button"
               onClick={() => setIsPresetModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-cyan-300 border border-cyan-700/60 shadow-sm transition-all cursor-pointer shrink-0"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-cyan-300 border border-cyan-700/60 shadow-sm transition-all cursor-pointer shrink-0 ml-auto"
               title="PJT 모델별 표준 BOM 및 엑셀 양식 적용"
             >
               <Layers className="h-3.5 w-3.5 text-cyan-400" />
@@ -293,11 +292,10 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
                   type="button"
                   onClick={() => setActiveUnitIndex(u.unitIndex)}
                   title={u.equipmentSerial ? `${u.unitIndex}호기: ${u.equipmentSerial}` : `${u.unitIndex}호기 (시리얼 미입력)`}
-                  className={`px-3 py-2 sm:py-1.5 rounded-lg border text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-all shrink-0 ${
-                    isCurrent
+                  className={`px-3 py-2 sm:py-1.5 rounded-lg border text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-all shrink-0 ${isCurrent
                       ? "bg-cyan-500 text-slate-950 font-bold border-cyan-400 shadow-glow-cyan"
                       : "bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700"
-                  }`}
+                    }`}
                 >
                   <span className={`font-bold ${isCurrent ? "text-slate-950" : "text-slate-300"}`}>
                     {u.unitIndex}호기:
@@ -306,13 +304,12 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
                     {displaySerial}
                   </span>
                   <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold shrink-0 ${
-                      isCurrent
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold shrink-0 ${isCurrent
                         ? "bg-slate-950 text-cyan-300"
                         : isAllPass
-                        ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
-                        : "bg-slate-800 text-slate-400"
-                    }`}
+                          ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
+                          : "bg-slate-800 text-slate-400"
+                      }`}
                   >
                     {isAllPass ? "✓ 완료" : `${verified}/${total}`}
                   </span>

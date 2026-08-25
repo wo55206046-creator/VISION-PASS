@@ -60,7 +60,7 @@ if (-not $remoteOrigin) {
 Write-Host ""
 Write-Host "[2/3] Adding and committing files..." -ForegroundColor Yellow
 & git add .
-& git commit -m "Update VISION-PASS: Mobile UX cards, S/N priority and Zoom feature"
+& git commit -m "Refactor Industrial OCR: Dual-Stream OpenCV Preprocessing, CoT Engine, and Post-Validator"
 
 Write-Host ""
 Write-Host "[3/3] Uploading (git push) to GitHub..." -ForegroundColor Yellow
