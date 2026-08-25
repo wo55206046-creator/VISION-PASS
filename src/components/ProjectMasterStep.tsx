@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ProjectMaster, PartItem, PjtModelTemplate } from "@/types";
-import { DEFAULT_SITES, createEmptyProject } from "@/lib/default-presets";
+import { DEFAULT_SITES, createEmptyProject, PJT_MODEL_TEMPLATES } from "@/lib/default-presets";
 import { generateNextSerial, cascadeSerialFromUnit1 } from "@/lib/utils";
 import { PresetModal } from "./PresetModal";
 import {
@@ -23,6 +23,107 @@ import {
 // Helper function to generate IDs
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+/**
+ * 💡 고객사/엑셀 복사 붙여넣기 텍스트 스마트 자동 분리 함수
+ * 예시: "SDC 아산\tS26-01-16\tIAM-2", "SDC 아산 >> S26-01-16 >> IAM-2", "SDC 아산, S26-01-16, IAM-2", "SDC 아산 S26-01-16 IAM-2"
+ */
+export function parseCombinedPjtInput(input: string): {
+  site?: string;
+  pjtCode?: string;
+  equipmentName?: string;
+} | null {
+  if (!input || typeof input !== "string") return null;
+  const raw = input.trim();
+  if (!raw) return null;
+
+  // 1. 탭 구분 (엑셀 행 복사-붙여넣기 형태: SDC 아산\tS26-01-16\tIAM-2)
+  if (raw.includes("\t")) {
+    const tokens = raw.split("\t").map((s) => s.trim()).filter(Boolean);
+    if (tokens.length >= 2) {
+      return {
+        site: tokens[0],
+        pjtCode: tokens[1]?.toUpperCase(),
+        equipmentName: tokens.slice(2).join(" ") || "",
+      };
+    }
+  }
+
+  // 2. 콤마, 세미콜론, 슬래시, 파이프, >> 구분자
+  if (/[,/|;]|>>/.test(raw)) {
+    const tokens = raw.split(/[,/|;]|>>/).map((s) => s.trim()).filter(Boolean);
+    if (tokens.length >= 2) {
+      return {
+        site: tokens[0],
+        pjtCode: tokens[1]?.toUpperCase(),
+        equipmentName: tokens.slice(2).join(" ") || "",
+      };
+    }
+  }
+
+  // 3. 공백 구분 + PJT 코드 패턴 (S\d{2}-\d{2}-\d{2} 등)
+  const pjtMatch = raw.match(/([A-Za-z]\d{2}-\d{1,3}-\d{1,3}|[A-Za-z0-9]+-[A-Za-z0-9]+-[A-Za-z0-9]+)/i);
+  if (pjtMatch && pjtMatch.index !== undefined && pjtMatch.index > 0) {
+    const sitePart = raw.substring(0, pjtMatch.index).trim();
+    const pjtPart = pjtMatch[1].toUpperCase();
+    const modelPart = raw.substring(pjtMatch.index + pjtMatch[0].length).trim();
+    if (sitePart && (pjtPart || modelPart)) {
+      return {
+        site: sitePart,
+        pjtCode: pjtPart,
+        equipmentName: modelPart,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 💡 모델명 또는 PJT 코드로 가장 적합한 PJT 표준 양식(Template) 자동 매칭
+ */
+export function findMatchingTemplate(modelName?: string, pjtCode?: string): PjtModelTemplate | null {
+  try {
+    let allTemplates: PjtModelTemplate[] = [...PJT_MODEL_TEMPLATES];
+    if (typeof window !== "undefined") {
+      const saved =
+        localStorage.getItem("VISION_PASS_TEMPLATES_V2") ||
+        localStorage.getItem("VISION_PASS_TEMPLATES_V1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          allTemplates = parsed;
+        }
+      }
+    }
+
+    const cleanModel = (modelName || "").trim().toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+    const cleanPjt = (pjtCode || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+    if (!cleanModel && !cleanPjt) return null;
+
+    // 1. 모델명 유사도 검색
+    if (cleanModel) {
+      const match = allTemplates.find((t) => {
+        const tModel = t.modelName.toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+        return tModel.includes(cleanModel) || cleanModel.includes(tModel);
+      });
+      if (match) return match;
+    }
+
+    // 2. PJT 코드 힌트 검색
+    if (cleanPjt) {
+      const match = allTemplates.find((t) => {
+        const tPjt = (t.pjtCodeHint || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        return tPjt && (tPjt === cleanPjt || tPjt.includes(cleanPjt) || cleanPjt.includes(tPjt));
+      });
+      if (match) return match;
+    }
+  } catch (e) {
+    console.warn("Error finding matching template:", e);
+  }
+  return null;
+}
+
 interface ProjectMasterStepProps {
   project: ProjectMaster;
   onUpdate: (updater: (prev: ProjectMaster) => ProjectMaster) => void;
@@ -39,7 +140,46 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
   const [customSite, setCustomSite] = useState("");
   const [isCustomSiteMode, setIsCustomSiteMode] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [smartAutoFilled, setSmartAutoFilled] = useState(false);
   const [isPresetModalOpen, setIsPresetModalOpen] = useState(false);
+
+  // 스마트 자동 분리 데이터 일괄 적용
+  const applySmartParsedData = (parsed: { site?: string; pjtCode?: string; equipmentName?: string }) => {
+    const matchedTpl = findMatchingTemplate(parsed.equipmentName, parsed.pjtCode);
+
+    onUpdate((prev) => {
+      let updatedUnits = prev?.equipmentUnits || [];
+      let templateName = prev?.templateName;
+
+      if (matchedTpl && matchedTpl.parts?.length > 0) {
+        templateName = matchedTpl.modelName;
+        const templateParts = matchedTpl.parts.map((p) => ({
+          ...p,
+          id: generateId(),
+          detectedSerial: "",
+          isVerified: false,
+          scannedAt: undefined,
+          confidence: undefined,
+        }));
+        updatedUnits = updatedUnits.map((u) => ({
+          ...u,
+          parts: templateParts.map((p) => ({ ...p, id: generateId() })),
+        }));
+      }
+
+      return {
+        ...prev,
+        site: parsed.site !== undefined ? parsed.site : prev.site,
+        pjtCode: parsed.pjtCode !== undefined ? parsed.pjtCode : prev.pjtCode,
+        equipmentName: parsed.equipmentName !== undefined ? parsed.equipmentName : prev.equipmentName,
+        templateName: templateName || prev.templateName,
+        equipmentUnits: updatedUnits,
+      };
+    });
+
+    setSmartAutoFilled(true);
+    setTimeout(() => setSmartAutoFilled(false), 4500);
+  };
 
   // 최근 설비 담당자 목록 및 최신 1순위 담당자 추출
   const { recentInspectors, lastInspector } = React.useMemo(() => {
@@ -118,11 +258,50 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
   };
 
   const handleNextClick = () => {
-    if (!project?.pjtCode?.trim()) {
+    let currentSite = project?.site || "";
+    let currentPjtCode = project?.pjtCode || "";
+    let currentEquipmentName = project?.equipmentName || "";
+
+    // 만약 고객사 입력란에 합쳐진 문자열이 남아있다면 마지막으로 스마트 분리 실행
+    const parsed = parseCombinedPjtInput(currentSite) || parseCombinedPjtInput(currentPjtCode);
+    if (parsed) {
+      currentSite = parsed.site || currentSite;
+      currentPjtCode = parsed.pjtCode || currentPjtCode;
+      currentEquipmentName = parsed.equipmentName || currentEquipmentName;
+
+      const matchedTpl = findMatchingTemplate(currentEquipmentName, currentPjtCode);
+      let updatedUnits = project.equipmentUnits || [];
+      let templateName = project.templateName;
+
+      if (matchedTpl && matchedTpl.parts?.length > 0) {
+        templateName = matchedTpl.modelName;
+        const templateParts = matchedTpl.parts.map((p) => ({
+          ...p,
+          id: generateId(),
+          detectedSerial: "",
+          isVerified: false,
+        }));
+        updatedUnits = updatedUnits.map((u) => ({
+          ...u,
+          parts: templateParts.map((p) => ({ ...p, id: generateId() })),
+        }));
+      }
+
+      onUpdate((prev) => ({
+        ...prev,
+        site: currentSite,
+        pjtCode: currentPjtCode,
+        equipmentName: currentEquipmentName,
+        templateName: templateName || prev.templateName,
+        equipmentUnits: updatedUnits,
+      }));
+    }
+
+    if (!currentPjtCode?.trim()) {
       setErrorMsg("PJT CODE를 입력해주세요.");
       return;
     }
-    if (!project?.equipmentName?.trim()) {
+    if (!currentEquipmentName?.trim()) {
       setErrorMsg("설비명을 입력해주세요.");
       return;
     }
@@ -163,6 +342,23 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
     setIsPresetModalOpen(false);
   };
 
+  // 고객사 첫 단어/접두사(SEC, SKH 등) 입력 시에만 추천 활성화 (공백 입력 및 세부 위치 입력 시 비활성화)
+  const isInitialPrefixSearch = Boolean(
+    project.site &&
+    !project.site.includes(" ") &&
+    project.site.trim().length >= 1 &&
+    project.site.trim().length <= 6
+  );
+
+  const filteredSiteSuggestions = React.useMemo(() => {
+    if (!isInitialPrefixSearch) return [];
+    const query = (project.site || "").trim().toUpperCase();
+    return DEFAULT_SITES.filter((site) => {
+      const siteUpper = site.toUpperCase();
+      return siteUpper.startsWith(query) || siteUpper.includes(query);
+    });
+  }, [project.site, isInitialPrefixSearch]);
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Top Banner (01처럼 깔끔하게 제목만 표시) */}
@@ -176,6 +372,13 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
           </h2>
         </div>
       </div>
+
+      {smartAutoFilled && (
+        <div className="flex items-center gap-2.5 rounded-xl bg-cyan-950/90 p-3.5 text-xs sm:text-sm text-cyan-300 border border-cyan-500/60 shadow-glow-cyan animate-fadeIn">
+          <Sparkles className="h-5 w-5 text-cyan-400 shrink-0" />
+          <span>✨ <strong>스마트 자동 분리 완료:</strong> 고객사 / PJT CODE / 모델명이 자동으로 분리 인식되어 입력되었습니다!</span>
+        </div>
+      )}
 
       {errorMsg && (
         <div className="flex items-center gap-2.5 rounded-xl bg-red-950/60 p-4 text-sm text-red-300 border border-red-800/60 animate-shake">
@@ -201,19 +404,35 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             <div className="relative">
               <input
                 type="text"
-                list="site-datalist-options"
-                placeholder="예: SKH 이천, SEC 평택"
+                list={isInitialPrefixSearch && filteredSiteSuggestions.length > 0 ? "site-datalist-options" : undefined}
+                placeholder="예: SKH 이천, SEC 평택 (또는 전체 복사 붙여넣기)"
                 value={project.site}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  onUpdate((prev) => ({ ...prev, site: e.target.value }))
-                }
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const val = e.target.value;
+                  const parsed = parseCombinedPjtInput(val);
+                  if (parsed) {
+                    applySmartParsedData(parsed);
+                  } else {
+                    onUpdate((prev) => ({ ...prev, site: val }));
+                  }
+                }}
+                onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
+                  const pasteText = e.clipboardData.getData("text");
+                  const parsed = parseCombinedPjtInput(pasteText);
+                  if (parsed) {
+                    e.preventDefault();
+                    applySmartParsedData(parsed);
+                  }
+                }}
                 className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
               />
-              <datalist id="site-datalist-options">
-                {DEFAULT_SITES.map((site) => (
-                  <option key={site} value={site} />
-                ))}
-              </datalist>
+              {isInitialPrefixSearch && filteredSiteSuggestions.length > 0 && (
+                <datalist id="site-datalist-options">
+                  {filteredSiteSuggestions.map((site) => (
+                    <option key={site} value={site} />
+                  ))}
+                </datalist>
+              )}
             </div>
           </div>
 
@@ -228,9 +447,23 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
                 type="text"
                 placeholder="예: S26-15-01"
                 value={project.pjtCode}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  onUpdate((prev) => ({ ...prev, pjtCode: e.target.value.toUpperCase() }))
-                }
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const val = e.target.value;
+                  const parsed = parseCombinedPjtInput(val);
+                  if (parsed) {
+                    applySmartParsedData(parsed);
+                  } else {
+                    onUpdate((prev) => ({ ...prev, pjtCode: val.toUpperCase() }));
+                  }
+                }}
+                onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
+                  const pasteText = e.clipboardData.getData("text");
+                  const parsed = parseCombinedPjtInput(pasteText);
+                  if (parsed) {
+                    e.preventDefault();
+                    applySmartParsedData(parsed);
+                  }
+                }}
                 className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm font-mono font-bold text-cyan-300 uppercase placeholder:font-sans placeholder:normal-case placeholder:font-normal placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
               />
             </div>
@@ -250,9 +483,23 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             type="text"
             placeholder="예: NaVi-MG200 (NaVi-MG200H-0224), WOA-683 (WOA-683-0124)"
             value={project.equipmentName}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              onUpdate((prev) => ({ ...prev, equipmentName: e.target.value }))
-            }
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              const val = e.target.value;
+              const parsed = parseCombinedPjtInput(val);
+              if (parsed) {
+                applySmartParsedData(parsed);
+              } else {
+                onUpdate((prev) => ({ ...prev, equipmentName: val }));
+              }
+            }}
+            onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
+              const pasteText = e.clipboardData.getData("text");
+              const parsed = parseCombinedPjtInput(pasteText);
+              if (parsed) {
+                e.preventDefault();
+                applySmartParsedData(parsed);
+              }
+            }}
             className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
           />
         </div>

@@ -341,8 +341,8 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
         </div>
       )}
 
-      {/* Navigation Step Bottom Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-800">
+      {/* Navigation Step Bottom Bar (모바일에서는 하단 고정 탭이 있으므로 PC/태블릿에서만 표시) */}
+      <div className="hidden md:flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-800">
         {onBackToPjtList && (
           <button
             type="button"

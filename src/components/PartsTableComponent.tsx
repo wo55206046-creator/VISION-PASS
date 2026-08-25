@@ -20,6 +20,7 @@ import {
   X,
   Save,
   Square,
+  GripVertical,
 } from "lucide-react";
 
 export interface PartsTableProps {
@@ -77,6 +78,10 @@ export const PartsTable: React.FC<PartsTableProps> = ({
   const [newSerial, setNewSerial] = useState("");
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // 🖱️ 5. 드래그 앤 드롭 순서 변경 상태
+  const [draggedPartId, setDraggedPartId] = useState<string | null>(null);
+  const [dragOverPartId, setDragOverPartId] = useState<string | null>(null);
 
   // 📊 6. 카테고리 고유 목록 추출
   const availableCategories = useMemo(() => {
@@ -212,6 +217,49 @@ export const PartsTable: React.FC<PartsTableProps> = ({
     updated[targetIndexInParts] = temp;
 
     onUpdateParts(updated);
+  };
+
+  // 🖱️ 14-1. 드래그 앤 드롭 순서 변경 핸들러
+  const handleDragStart = (e: React.DragEvent, partId: string) => {
+    setDraggedPartId(partId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", partId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, partId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverPartId !== partId) {
+      setDragOverPartId(partId);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, targetPartId: string) => {
+    e.preventDefault();
+    if (!draggedPartId || draggedPartId === targetPartId) {
+      setDraggedPartId(null);
+      setDragOverPartId(null);
+      return;
+    }
+
+    const fromIndex = parts.findIndex((p) => p.id === draggedPartId);
+    const toIndex = parts.findIndex((p) => p.id === targetPartId);
+
+    if (fromIndex !== -1 && toIndex !== -1) {
+      const updated = [...parts];
+      const [movedItem] = updated.splice(fromIndex, 1);
+      updated.splice(toIndex, 0, movedItem);
+      onUpdateParts(updated);
+      triggerScanFeedback();
+    }
+
+    setDraggedPartId(null);
+    setDragOverPartId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedPartId(null);
+    setDragOverPartId(null);
   };
 
   // ➕ 15. 신규 부품 수동 등록 (선택된 모듈 그룹의 마지막 위치에 스마트 삽입)
@@ -435,32 +483,47 @@ export const PartsTable: React.FC<PartsTableProps> = ({
             const isEditing = editingSerialId === part.id;
             const hasSerial = Boolean(part.detectedSerial && part.detectedSerial.trim());
 
-            // 모듈 카테고리 구분 헤더
+            // 모듈 카테고리 구분 헤더 및 진행률 계산
             const prevPart = index > 0 ? filteredParts[index - 1] : null;
             const currentCat = part.category || "[ MAIN ]";
             const prevCat = prevPart ? prevPart.category || "[ MAIN ]" : null;
             const showCategoryHeader = !prevPart || currentCat !== prevCat;
 
+            const catParts = parts.filter((p) => (p.category || "[ MAIN ]") === currentCat);
+            const totalCatCount = catParts.length;
+            const verifiedCatCount = catParts.filter((p) => p.isVerified).length;
+            const isCatAllVerified = totalCatCount > 0 && verifiedCatCount === totalCatCount;
+
             return (
               <Fragment key={`m-${part.id}`}>
-                {/* 🏷️ 모듈 구분 배너 */}
+                {/* 🏷️ 모듈 구분 배너 및 완료/총 부품 수 진행도 */}
                 {showCategoryHeader && (
-                  <div className="pt-2 pb-1 flex items-center justify-between">
+                  <div className="pt-3 pb-1.5 flex items-center justify-between gap-2">
                     <span
-                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-extrabold border ${getCategoryBadgeStyle(
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black tracking-wide border shadow-md ${getCategoryBadgeStyle(
                         part.category
                       )}`}
                     >
-                      <Layers className="h-3 w-3" />
+                      <Layers className="h-3.5 w-3.5" />
                       <span>{part.category || "[ MAIN ]"}</span>
                     </span>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      (모듈 부품 {parts.filter((p) => (p.category || "[ MAIN ]") === currentCat).length}개)
+                    <span
+                      className={`inline-flex items-center gap-1 font-mono text-xs font-bold px-2.5 py-0.5 rounded-lg border transition-all ${
+                        isCatAllVerified
+                          ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/70 shadow-glow-emerald/30"
+                          : "bg-slate-950 text-slate-200 border-slate-700/80"
+                      }`}
+                    >
+                      <span>(모듈 부품</span>
+                      <span className={verifiedCatCount > 0 ? "text-cyan-300 font-extrabold" : "text-slate-400"}>
+                        {verifiedCatCount}
+                      </span>
+                      <span className="text-slate-400">/{totalCatCount}개)</span>
                     </span>
                   </div>
                 )}
 
-                {/* 📋 모바일 부품 카드: 품명 + 규격 + 시리얼 + OCR 버튼을 1화면에 완벽 집약 */}
+                {/* 📋 모바일 부품 카드: 품명 + 규격 + 시리얼 + OCR 버튼 + 원터치 순서 변경 버튼 */}
                 <div
                   className={`rounded-2xl border p-3 space-y-2 transition-all ${
                     part.isVerified
@@ -468,13 +531,44 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                       : "bg-slate-900/80 border-slate-800"
                   }`}
                 >
-                  {/* 1행: 순번 + 품명 (전폭) + 검증 PASS/대기 토글 */}
-                  <div className="flex items-center justify-between gap-2">
+                  {/* 1행: [순번 + ▲▼ 이동 버튼 + 품명] & [우측 PASS + 상세 수정] */}
+                  <div className="flex items-center justify-between gap-1.5">
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <span className="font-mono text-[11px] font-extrabold text-cyan-400 bg-slate-950 px-1.5 py-0.5 rounded-md border border-slate-800 shrink-0">
+                      {/* 순번 뱃지 (시인성 강화) */}
+                      <span className="font-mono text-xs font-black text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded-lg border border-cyan-700/80 shadow-sm shrink-0">
                         #{index + 1}
                       </span>
-                      <span className="font-bold text-white text-xs sm:text-sm truncate" title={part.partName}>
+
+                      {/* ⬆️⬇️ 원터치 순서 이동 버튼 (위/아래) */}
+                      <div className="flex flex-col gap-0.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMovePart(index, -1);
+                          }}
+                          disabled={index === 0}
+                          className="p-0.5 text-slate-400 hover:text-cyan-300 disabled:opacity-20 transition-colors"
+                          title="위로 이동"
+                        >
+                          <ArrowUp className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMovePart(index, 1);
+                          }}
+                          disabled={index === filteredParts.length - 1}
+                          className="p-0.5 text-slate-400 hover:text-cyan-300 disabled:opacity-20 transition-colors"
+                          title="아래로 이동"
+                        >
+                          <ArrowDown className="h-3 w-3" />
+                        </button>
+                      </div>
+
+                      {/* 품명 (글자 크기 확대 및 굵기 강화) */}
+                      <span className="font-black text-white text-base sm:text-lg tracking-tight truncate ml-1" title={part.partName}>
                         {part.partName}
                       </span>
                     </div>
@@ -518,13 +612,17 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                     </div>
                   </div>
 
-                  {/* 2행: 규격 (Spec) 및 세부 사양 */}
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400 px-0.5 truncate">
-                    <span className="font-mono text-cyan-300/90 font-medium truncate">{part.spec}</span>
+                  {/* 2행: 규격 (Spec) 및 세부 사양 (깔끔한 1줄 고선명 표출) */}
+                  <div className="flex items-center gap-2 text-xs px-0.5 min-w-0">
+                    <span className="font-mono font-extrabold text-cyan-300 truncate" title={part.spec}>
+                      {part.spec || "-"}
+                    </span>
                     {part.subSpec && part.subSpec !== "-" && (
                       <>
-                        <span className="text-slate-600">•</span>
-                        <span className="text-slate-400 truncate">{part.subSpec}</span>
+                        <span className="text-slate-600 font-bold shrink-0">•</span>
+                        <span className="text-slate-200 font-medium truncate" title={part.subSpec}>
+                          {part.subSpec}
+                        </span>
                       </>
                     )}
                   </div>
@@ -545,7 +643,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                             }}
                             autoFocus
                             placeholder="시리얼 직접 입력..."
-                            className="w-full bg-transparent text-xs font-mono font-bold text-cyan-300 focus:outline-none"
+                            className="w-full bg-transparent text-sm sm:text-base font-mono font-extrabold text-cyan-300 tracking-wide focus:outline-none"
                           />
                           <button
                             type="button"
@@ -565,29 +663,17 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                           </button>
                         </div>
                       ) : hasSerial ? (
-                        <div className="flex items-center justify-between w-full min-w-0">
+                        <div className="flex items-center w-full min-w-0">
                           <span
                             onClick={() => {
                               setEditingSerialId(part.id);
                               setTempSerial(part.detectedSerial || "");
                             }}
-                            className="font-mono text-xs font-bold text-cyan-300 truncate cursor-pointer hover:underline"
+                            className="font-mono text-sm sm:text-base font-extrabold text-cyan-300 tracking-wide truncate cursor-pointer hover:underline"
                             title="클릭하여 시리얼 수정"
                           >
                             {part.detectedSerial}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopySerial(part.id, part.detectedSerial)}
-                            className="text-slate-500 hover:text-cyan-300 p-0.5 shrink-0"
-                            title="복사"
-                          >
-                            {copiedId === part.id ? (
-                              <Check className="h-3 w-3 text-emerald-400" />
-                            ) : (
-                              <Copy className="h-3 w-3" />
-                            )}
-                          </button>
                         </div>
                       ) : (
                         <button
@@ -626,7 +712,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className="border-b border-slate-800 bg-slate-950/80 text-[11px] font-bold text-slate-400">
-              <th className="py-3 px-2 text-center w-12">순번</th>
+              <th className="py-3 px-2 text-center w-14">순번</th>
               <th className="py-3 px-3 min-w-[150px]">품명 (Part Name)</th>
               <th className="py-3 px-3 min-w-[130px]">세부 사양</th>
               <th className="py-3 px-3 min-w-[130px]">규격 (Spec)</th>
@@ -676,30 +762,45 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                 const isEditing = editingSerialId === part.id;
                 const hasSerial = Boolean(part.detectedSerial && part.detectedSerial.trim());
 
-                // 모듈 카테고리 구분 헤더 표시 여부 계산
+                // 모듈 카테고리 구분 헤더 표시 여부 계산 및 모듈별 진행률
                 const prevPart = index > 0 ? filteredParts[index - 1] : null;
                 const currentCat = part.category || "[ MAIN ]";
                 const prevCat = prevPart ? prevPart.category || "[ MAIN ]" : null;
                 const showCategoryHeader = !prevPart || currentCat !== prevCat;
+
+                const catParts = parts.filter((p) => (p.category || "[ MAIN ]") === currentCat);
+                const totalCatCount = catParts.length;
+                const verifiedCatCount = catParts.filter((p) => p.isVerified).length;
+                const isCatAllVerified = totalCatCount > 0 && verifiedCatCount === totalCatCount;
 
                 return (
                   <Fragment key={part.id}>
                     {/* 🏷️ 모듈별 구분 상단 배너 행 */}
                     {showCategoryHeader && (
                       <tr className="bg-slate-950/95 border-y border-slate-800 shadow-sm">
-                        <td colSpan={8} className="py-2 px-3.5">
+                        <td colSpan={8} className="py-2.5 px-4">
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2.5">
                               <span
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-extrabold border shadow-sm ${getCategoryBadgeStyle(
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black tracking-wide border shadow-md ${getCategoryBadgeStyle(
                                   part.category
                                 )}`}
                               >
-                                <Layers className="h-3 w-3" />
+                                <Layers className="h-3.5 w-3.5" />
                                 <span>{part.category || "[ MAIN ]"}</span>
                               </span>
-                              <span className="text-[10px] text-slate-500 font-mono">
-                                (해당 모듈 부품 {parts.filter(p => (p.category || "[ MAIN ]") === currentCat).length}개)
+                              <span
+                                className={`inline-flex items-center gap-1 font-mono text-xs font-bold px-2.5 py-0.5 rounded-lg border transition-all ${
+                                  isCatAllVerified
+                                    ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/70 shadow-glow-emerald/30"
+                                    : "bg-slate-900 text-slate-200 border-slate-700/80"
+                                }`}
+                              >
+                                <span>(모듈 부품</span>
+                                <span className={verifiedCatCount > 0 ? "text-cyan-300 font-extrabold" : "text-slate-400"}>
+                                  {verifiedCatCount}
+                                </span>
+                                <span className="text-slate-400">/{totalCatCount}개)</span>
                               </span>
                             </div>
                           </div>
@@ -708,16 +809,32 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                     )}
 
                     <tr
-                      className={`transition-colors hover:bg-slate-800/50 ${part.isVerified
-                          ? "bg-emerald-950/10"
-                          : ""
-                        }`}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, part.id)}
+                      onDragOver={(e) => handleDragOver(e, part.id)}
+                      onDrop={(e) => handleDrop(e, part.id)}
+                      onDragEnd={handleDragEnd}
+                      className={`transition-colors select-none ${
+                        draggedPartId === part.id
+                          ? "opacity-40 bg-slate-800"
+                          : dragOverPartId === part.id
+                          ? "bg-cyan-950/60 border-y-2 border-cyan-400"
+                          : part.isVerified
+                          ? "bg-emerald-950/10 hover:bg-slate-800/50"
+                          : "hover:bg-slate-800/50"
+                      }`}
                     >
 
-                      {/* 2. 순번 및 순서 이동 */}
+                      {/* 2. 드래그 핸들 + 순번 및 순서 이동 버튼 */}
                       <td className="py-2.5 px-2 text-center font-mono text-[11px] text-slate-400">
-                        <div className="flex items-center justify-center gap-0.5">
-                          <span>{index + 1}</span>
+                        <div className="flex items-center justify-center gap-1">
+                          <div
+                            className="text-slate-600 hover:text-cyan-400 cursor-grab active:cursor-grabbing p-0.5 shrink-0"
+                            title="드래그하여 순서 변경"
+                          >
+                            <GripVertical className="h-3.5 w-3.5" />
+                          </div>
+                          <span className="font-bold">{index + 1}</span>
                           <div className="flex flex-col">
                             <button
                               type="button"
@@ -742,7 +859,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                       </td>
 
                       {/* 3. 품명 (Part Name) */}
-                      <td className="py-2.5 px-3 font-semibold text-white">
+                      <td className="py-2.5 px-3 font-extrabold text-base text-white">
                         <div className="flex items-center gap-1.5">
                           <span className="truncate" title={part.partName}>
                             {part.partName}
@@ -778,7 +895,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                               }}
                               autoFocus
                               placeholder="시리얼 직접 입력..."
-                              className="w-full bg-slate-950 border border-cyan-500 rounded-lg px-2 py-1 text-xs font-mono text-cyan-300 focus:outline-none"
+                              className="w-full bg-slate-950 border border-cyan-500 rounded-lg px-2.5 py-1 text-sm font-mono font-bold text-cyan-300 tracking-wide focus:outline-none"
                             />
                             <button
                               type="button"
@@ -798,32 +915,18 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                             </button>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between gap-1 group">
+                          <div className="flex items-center gap-1.5 group">
                             {hasSerial ? (
-                              <div className="flex items-center gap-1.5 font-mono font-bold text-cyan-300">
-                                <span
-                                  className="cursor-pointer hover:underline truncate max-w-[140px]"
-                                  onClick={() => {
-                                    setEditingSerialId(part.id);
-                                    setTempSerial(part.detectedSerial || "");
-                                  }}
-                                  title="클릭하여 시리얼 번호 수정"
-                                >
-                                  {part.detectedSerial}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopySerial(part.id, part.detectedSerial)}
-                                  className="text-slate-500 hover:text-cyan-300 transition-colors p-0.5"
-                                  title="시리얼 번호 복사"
-                                >
-                                  {copiedId === part.id ? (
-                                    <Check className="h-3 w-3 text-emerald-400" />
-                                  ) : (
-                                    <Copy className="h-3 w-3" />
-                                  )}
-                                </button>
-                              </div>
+                              <span
+                                className="font-mono font-extrabold text-sm text-cyan-300 tracking-wide cursor-pointer hover:underline truncate max-w-[200px]"
+                                onClick={() => {
+                                  setEditingSerialId(part.id);
+                                  setTempSerial(part.detectedSerial || "");
+                                }}
+                                title="클릭하여 시리얼 번호 수정"
+                              >
+                                {part.detectedSerial}
+                              </span>
                             ) : (
                               <button
                                 type="button"
