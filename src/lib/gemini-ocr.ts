@@ -4,8 +4,11 @@ import { performInMemoryOcr, scanNativeBarcode } from "./ocr-worker";
 const GEMINI_API_KEY_STORAGE = "VISION_PASS_GEMINI_API_KEY";
 
 export function getGeminiApiKey(): string {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem(GEMINI_API_KEY_STORAGE) || "";
+  if (typeof window !== "undefined") {
+    const userKey = localStorage.getItem(GEMINI_API_KEY_STORAGE);
+    if (userKey && userKey.trim()) return userKey.trim();
+  }
+  return process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "";
 }
 
 export function setGeminiApiKey(key: string): void {

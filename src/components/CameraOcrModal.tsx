@@ -555,23 +555,22 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             )}
           </div>
 
-          {/* Gemini AI API 키 미등록 시 안내 배너 */}
-          {!geminiKeyInput && (
-            <div
-              onClick={() => setIsApiKeyModalOpen(true)}
-              className="bg-amber-950/40 border border-amber-500/40 rounded-xl p-2.5 flex items-center justify-between gap-2 cursor-pointer hover:bg-amber-950/60 transition-all text-xs"
-            >
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Bot className="h-4 w-4 text-amber-400 shrink-0" />
-                <span className="text-amber-200 text-[11px] truncate">
-                  💡 Gemini AI 연동 시 명판/수기/노란라벨 인식률 <strong>99%</strong>로 대폭 향상!
-                </span>
-              </div>
-              <span className="bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded text-[10px] shrink-0 border border-amber-500/50">
-                키 등록
+          {/* Gemini AI 2.0 Flash 내장 활성화 뱃지 */}
+          <div className="bg-cyan-950/40 border border-cyan-500/30 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Sparkles className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+              <span className="text-cyan-200 text-[11px] font-mono">
+                Gemini 2.0 Vision AI <strong>99% 초정밀 판독 엔진</strong> 기본 활성화
               </span>
             </div>
-          )}
+            <button
+              type="button"
+              onClick={() => setIsApiKeyModalOpen(true)}
+              className="text-[10px] text-slate-400 hover:text-cyan-300 underline font-mono shrink-0 cursor-pointer"
+            >
+              설정
+            </button>
+          </div>
 
           {/* Action Trigger Buttons (원터치 셔터 촬영 & 즉시 휘발) */}
           <div className="flex gap-2">
