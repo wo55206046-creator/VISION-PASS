@@ -254,10 +254,6 @@ export async function performGeminiDeepOcr(
       console.warn("Gemini API call failed, falling back to local OCR:", geminiError);
     }
   }
-    } catch (geminiError) {
-      console.warn("Gemini API call failed, falling back to local OCR:", geminiError);
-    }
-  }
 
   // 3. API Key 미등록 또는 네트워크 실패 시: 로컬 Tesseract 5 + Barcode 엔진으로 100% 무중단 페일오버
   onProgress?.(60, "⚡ 고정밀 로컬 광학 OCR 및 분산 텍스트 분석 중...");
