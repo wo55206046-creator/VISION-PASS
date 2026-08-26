@@ -409,9 +409,29 @@ export function extractSerialCandidates(
     if (!cleaned) return;
     if (!isValidSerialFormat(cleaned)) return;
 
-    // 부품 품명/규격(모델번호)과 일치하면 점수 대폭 삭감
+    const upper = cleaned.toUpperCase();
+
+    // 1. 모델명 / 하드웨어 접미사 페널티 (예: U6-PRO, U6, PRO, PLUS, MAX, MINI, LITE, REV1, VER)
+    if (
+      /(?:-PRO|-PLUS|-MAX|-MINI|-LITE|-REV|-VER|-V\d+|PRO|PLUS|MAX|MINI|LITE|REV|VER)$/i.test(upper) ||
+      /^(?:REV|VER|MOD|TYPE|SERIES)\b/i.test(upper)
+    ) {
+      baseScore -= 1200;
+    }
+
+    // 2. 부품 품명/규격(모델번호)과 일치하면 점수 대폭 삭감
     if (forbiddenSpecTokens.has(cleaned)) {
-      baseScore -= 600;
+      baseScore -= 800;
+    }
+
+    // 3. 6~14자리 순수 숫자 시리얼 (예: 360025389, 360025446, 26022540) - 제조사 고유 일련번호: 최우선 가산점!
+    if (/^[0-9]{6,14}$/.test(cleaned)) {
+      baseScore += 1200;
+    }
+
+    // 4. 산업용 하이픈 복합 시리얼 (예: 25X-0049H, TM1L-HK26-1007, 260225-40)
+    if (cleaned.includes("-") && /[0-9]/.test(cleaned) && cleaned.length >= 7 && !/(?:PRO|PLUS|MAX|MINI)$/i.test(upper)) {
+      baseScore += 600;
     }
 
     // 화면 정가운데 보너스 적용
@@ -430,50 +450,50 @@ export function extractSerialCandidates(
   // [전략 1] S/N :, Serial Number, SERIAL, Serial, S/N 및 수기/한글 라벨 우측 값 직접 추출
   // ============================================================================
   const labelRightRegexes = [
-    // 1-0-0. SN: / S/N: 직후 6~25자리 고유 일련번호 (예: "SN:360025446" -> 360025446, "PC S/N : KSA7706685") (2000점 최우선)
+    // 1-0-0. SN: / S/N: / 5N: / SN; 직후 5~25자리 고유 일련번호 (예: "SN:360025389" -> 360025389, "PC S/N : KSA7706685") (2500점 최우선)
     {
-      regex: /(?:S\s*[\/\\|\-.]\s*N|S\s*N|S\/NO\.?|S\.NO\.?|S\.N\.)\s*[:.\-|=#\s]*([A-Za-z0-9\-_]{6,25})/gi,
+      regex: /(?:S\s*[\/\\|\-.;:]?\s*N|5\s*[\/\\|\-.;:]?\s*N|S\s*N|SN|5N|S#|S\.N\.|S\/NO)\s*[:.\-|=;#\s]*([0-9A-Za-z\-_]{5,25})/gi,
+      score: 2500,
+    },
+    // 1-0. 한글 수기 라벨: "시리얼 :", "일련번호 :", "제조번호 :", "시리얼넘버 :", "관리번호 :" (2000점)
+    {
+      regex: /(?:시리얼\s*넘버|시리얼\s*번호|시리얼|일련\s*번호|제조\s*번호|식별\s*번호|관리\s*번호)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 2000,
     },
-    // 1-0. 한글 수기 라벨: "시리얼 :", "일련번호 :", "제조번호 :", "시리얼넘버 :", "관리번호 :" (1500점)
+    // 1-0-1. 수기 파트 표기: "호기 :", "단품 :", "부품 :", "샘플 :", "LOT :" (1800점)
     {
-      regex: /(?:시리얼\s*넘버|시리얼\s*번호|시리얼|일련\s*번호|제조\s*번호|식별\s*번호|관리\s*번호)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
-      score: 1500,
+      regex: /(?:호기|단품|설비|부품|샘플|LOT|TAG)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1800,
     },
-    // 1-0-1. 수기 파트 표기: "호기 :", "단품 :", "부품 :", "샘플 :", "LOT :" (1350점)
+    // 1-1. Production S/N : (1800점)
     {
-      regex: /(?:호기|단품|설비|부품|샘플|LOT|TAG)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
-      score: 1350,
+      regex: /(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|Prod\.?\s*S[\/\\|\-.]?N|Mfg\s*S[\/\\|\-.]?N)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1800,
     },
-    // 1-1. Production S/N : (1500점)
+    // 1-2. Serial Number : / Serial No : / SERIAL NO. : (1800점)
     {
-      regex: /(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|Prod\.?\s*S[\/\\|\-.]?N|Mfg\s*S[\/\\|\-.]?N)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
-      score: 1500,
+      regex: /(?:SERIAL\s*(?:NUMBER|NO\.?|#|CODE)|Serial\s*(?:Number|No\.?|#)|SER\.?\s*NO\.?|SER\.?\s*#)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1800,
     },
-    // 1-2. Serial Number : / Serial No : / SERIAL NO. : (1450점)
+    // 1-3. SERIAL : / Serial : (1700점)
     {
-      regex: /(?:SERIAL\s*(?:NUMBER|NO\.?|#|CODE)|Serial\s*(?:Number|No\.?|#)|SER\.?\s*NO\.?|SER\.?\s*#)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
-      score: 1450,
+      regex: /(?:SERIAL|Serial)\s*[:.\-|=;#\s]+([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1700,
     },
-    // 1-3. SERIAL : / Serial : (1400점)
+    // 1-4. S/N : / SN : / S.N. : / S/N / SN (1700점)
     {
-      regex: /(?:SERIAL|Serial)\s*[:.\-|=#\s]+([A-Za-z0-9\-_./]{3,35})/gi,
+      regex: /(?:S\s*[\/\\|\-.]\s*N|S\s*N|S\/NO\.?|S\.NO\.?|S\.N\.)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1700,
+    },
+    // 1-5. No. : / Number : (1400점)
+    {
+      regex: /(?:^|\s)(?:NO\.?|N°|NUMBER|CODE)\s*[:.\-|=;#\s]+([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1400,
     },
-    // 1-4. S/N : / SN : / S.N. : / S/N / SN (1350점)
+    // 1-6. OCR 오인식 보정 접두사: SIN:, 5/N:, S|N:, SER1AL (1500점)
     {
-      regex: /(?:S\s*[\/\\|\-.]\s*N|S\s*N|S\/NO\.?|S\.NO\.?|S\.N\.)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
-      score: 1350,
-    },
-    // 1-5. No. : / Number : (1200점)
-    {
-      regex: /(?:^|\s)(?:NO\.?|N°|NUMBER|CODE)\s*[:.\-|=#\s]+([A-Za-z0-9\-_./]{3,35})/gi,
-      score: 1200,
-    },
-    // 1-6. OCR 오인식 보정 접두사: SIN:, 5/N:, S|N:, SER1AL (1300점)
-    {
-      regex: /(?:S[I1|l5]N|5\s*[\/\\|\-.]\s*N|S\s*\|\s*N|SER[I1|l]AL\s*(?:NO\.?|#)?|S\/M|S\s*M)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
-      score: 1300,
+      regex: /(?:S[I1|l5]N|5\s*[\/\\|\-.]\s*N|S\s*\|\s*N|SER[I1|l]AL\s*(?:NO\.?|#)?|S\/M|S\s*M)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 1500,
     },
   ];
 
@@ -529,19 +549,19 @@ export function extractSerialCandidates(
     if (isBarcodeLine(line)) {
       const starMatch = line.match(/\*([A-Za-z0-9\-_./]{3,35})\*/);
       if (starMatch && starMatch[1]) {
-        addCandidate(starMatch[1], 1400, i);
+        addCandidate(starMatch[1], 1600, i);
       }
 
       if (i + 1 < rawLines.length) {
         const nextTokens = rawLines[i + 1].split(/[\s,;:()[\]|=]+/);
         for (const t of nextTokens) {
-          addCandidate(t, 1300, i + 1);
+          addCandidate(t, 1400, i + 1);
         }
       }
       if (i + 2 < rawLines.length) {
         const next2Tokens = rawLines[i + 2].split(/[\s,;:()[\]|=]+/);
         for (const t of next2Tokens) {
-          addCandidate(t, 1150, i + 2);
+          addCandidate(t, 1200, i + 2);
         }
       }
     }
@@ -553,13 +573,13 @@ export function extractSerialCandidates(
       if (i + 1 < rawLines.length) {
         const nextTokens = rawLines[i + 1].split(/[\s,;:()[\]|=]+/);
         for (const t of nextTokens) {
-          addCandidate(t, 1250, i + 1);
+          addCandidate(t, 1400, i + 1);
         }
       }
       if (i + 2 < rawLines.length) {
         const next2Tokens = rawLines[i + 2].split(/[\s,;:()[\]|=]+/);
         for (const t of next2Tokens) {
-          addCandidate(t, 1100, i + 2);
+          addCandidate(t, 1200, i + 2);
         }
       }
     }
@@ -569,15 +589,16 @@ export function extractSerialCandidates(
       const tok = sanitizeSerialToken(rawTok);
       if (!tok || !isValidSerialFormat(tok)) continue;
 
-      const hasAlpha = /[A-Z]/.test(tok);
+      const hasAlpha = /[A-Za-z]/.test(tok);
       const hasDigit = /[0-9]/.test(tok);
 
-      if (hasAlpha && hasDigit && tok.length >= 4 && tok.length <= 30) {
-        addCandidate(tok, 450, i);
-      } else if (!hasAlpha && hasDigit && tok.length >= 5 && tok.length <= 18) {
-        addCandidate(tok, 420, i);
-      } else if (hasDigit && (tok.includes("-") || tok.includes(".")) && tok.length >= 5) {
-        addCandidate(tok, 430, i);
+      // 6~14자리 순수 숫자 시리얼 (예: 360025389, 360025446)
+      if (!hasAlpha && hasDigit && tok.length >= 6 && tok.length <= 14) {
+        addCandidate(tok, 1500, i);
+      } else if (hasAlpha && hasDigit && tok.length >= 6 && tok.length <= 30) {
+        addCandidate(tok, 600, i);
+      } else if (hasDigit && tok.includes("-") && tok.length >= 7) {
+        addCandidate(tok, 700, i);
       }
     }
   }
