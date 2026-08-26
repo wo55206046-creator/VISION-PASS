@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OCR AI 활용 : 부품 시리얼 관리 개선 (AX 전환) - 1장 보고서</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800;900&family=Nanum+Myeongjo:wght@700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: #f1f5f9;
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+      color: #1e293b;
+    }
+
+    /* 16:9 비율의 슬라이드 컨테이너 */
+    .slide-wrapper {
+      width: 1200px;
+      height: 675px;
+      background: #ffffff;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0,0,0,0.08);
+      border-radius: 4px;
+      padding: 30px 45px 25px 45px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* 1. 상단 헤더 영역 */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e2e8f0;
+      position: relative;
+    }
+
+    .header-bar::after {
+      content: '';
+      position: absolute;
+      bottom: -2px;
+      right: 0;
+      width: 220px;
+      height: 4px;
+      background: #e11d48;
+    }
+
+    .dept-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.3px;
+    }
+
+    .author-name {
+      font-size: 24px;
+      font-weight: 900;
+      color: #1d4ed8;
+      letter-spacing: 2px;
+      margin-left: 20px;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .logo-icon {
+      width: 22px;
+      height: 22px;
+      background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+      clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+    }
+
+    .logo-text {
+      font-size: 15px;
+      font-weight: 900;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+    }
+
+    .logo-sub {
+      font-size: 10px;
+      font-weight: 800;
+      color: #f97316;
+      margin-left: 2px;
+    }
+
+    /* 2. 대제목 영역 */
+    .main-title-section {
+      text-align: center;
+      margin: 12px 0 16px 0;
+    }
+
+    .main-title {
+      font-size: 25px;
+      font-weight: 900;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+      display: inline-block;
+      position: relative;
+    }
+
+    /* 3. 2단 분할 본문 영역 (목표 vs 진행 상황) */
+    .content-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 36px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .column-section {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .column-header {
+      font-size: 19px;
+      font-weight: 800;
+      color: #0f172a;
+      text-align: center;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #64748b;
+      margin-bottom: 12px;
+      letter-spacing: 2px;
+    }
+
+    .sub-heading {
+      font-size: 14px;
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .sub-heading span.badge {
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+    }
+
+    /* 좌측: 현행 방식 목록 */
+    .process-list {
+      list-style: none;
+      padding-left: 6px;
+      margin-bottom: 8px;
+    }
+
+    .process-list li {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #334155;
+      line-height: 1.5;
+      position: relative;
+      padding-left: 16px;
+    }
+
+    .process-list li::before {
+      content: attr(data-num) ".";
+      position: absolute;
+      left: 0;
+      font-weight: 700;
+      color: #475569;
+    }
+
+    /* 문제점 경고 박스 */
+    .problem-box {
+      background: #fff7ed;
+      border: 1.5px dashed #f97316;
+      border-radius: 6px;
+      padding: 6px 10px;
+      margin-bottom: 12px;
+      text-align: center;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #c2410c;
+    }
+
+    /* 좌측: 비교 테이블 */
+    .effect-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      text-align: center;
+      margin-top: 4px;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .effect-table th {
+      background: #0284c7;
+      color: #ffffff;
+      font-weight: 800;
+      padding: 6px 8px;
+      border: 1px solid #0369a1;
+      font-size: 12px;
+    }
+
+    .effect-table td {
+      padding: 5.5px 8px;
+      border: 1px solid #bae6fd;
+      color: #334155;
+      font-weight: 600;
+    }
+
+    .effect-table tr:nth-child(even) td {
+      background: #f0f9ff;
+    }
+
+    .effect-table td.highlight {
+      font-weight: 800;
+      color: #0369a1;
+      background: #e0f2fe;
+    }
+
+    .effect-table td.strong {
+      color: #0f172a;
+      font-weight: 800;
+    }
+
+    /* 우측: 단계적 추진 목록 */
+    .roadmap-list {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      padding-left: 4px;
+    }
+
+    .roadmap-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .roadmap-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .step-tag {
+      background: #e2e8f0;
+      color: #1e293b;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    .step-tag.done {
+      background: #dbeafe;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+    }
+
+    .step-tag.current {
+      background: #0284c7;
+      color: #ffffff;
+    }
+
+    .roadmap-desc {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: #475569;
+      padding-left: 14px;
+      line-height: 1.45;
+    }
+
+    .feature-bullet {
+      display: flex;
+      align-items: flex-start;
+      gap: 4px;
+      font-size: 11px;
+      color: #334155;
+      line-height: 1.4;
+      margin-top: 2px;
+    }
+
+    .feature-bullet strong {
+      color: #0369a1;
+    }
+
+    /* 4. 하단 푸터 영역 */
+    .footer-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #64748b;
+    }
+
+    .confidential {
+      color: #e11d48;
+      font-family: 'Nanum Myeongjo', serif, cursive;
+      font-style: italic;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .slogan {
+      font-size: 12.5px;
+      letter-spacing: 0.3px;
+    }
+
+    .slogan .red { color: #e11d48; font-weight: 800; }
+    .slogan .blue { color: #2563eb; font-weight: 800; }
+    .slogan .bold { color: #0f172a; font-weight: 800; }
+
+    .page-number {
+      font-family: monospace;
+      font-size: 11px;
+      color: #64748b;
+    }
+
+    /* 인쇄 및 PDF 저장 지원 */
+    @media print {
+      body {
+        background: #ffffff;
+        padding: 0;
+      }
+      .slide-wrapper {
+        width: 100vw;
+        height: 100vh;
+        box-shadow: none;
+        border-radius: 0;
+        padding: 25px 35px;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+
+    /* 상단 인쇄 버튼 툴바 */
+    .toolbar {
+      position: fixed;
+      top: 15px;
+      right: 20px;
+      display: flex;
+      gap: 10px;
+      z-index: 999;
+    }
+
+    .toolbar button {
+      background: #0f172a;
+      color: #ffffff;
+      border: 1px solid #334155;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      transition: all 0.2s;
+    }
+
+    .toolbar button:hover {
+      background: #0284c7;
+      border-color: #38bdf8;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 인쇄 / PDF 다운로드 버튼 (화면 표시용) -->
+  <div class="toolbar no-print">
+    <button type="button" onclick="window.print()">🖨️ PDF 저장 / 인쇄하기</button>
+  </div>
+
+  <div class="slide-wrapper">
+    <!-- 1. 상단 헤더 영역 -->
+    <header class="header-bar">
+      <div style="display: flex; align-items: baseline;">
+        <span class="dept-title">개발사업부 인프라TF/제조기술팀 ― 8월 달성/9월 계획</span>
+        <span class="author-name">정재헌 대리</span>
+      </div>
+      <div class="logo-area">
+        <div class="logo-icon"></div>
+        <span class="logo-text">WITHTECH</span>
+        <span class="logo-sub">SMART</span>
+      </div>
+    </header>
+
+    <!-- 2. 슬라이드 대제목 -->
+    <div class="main-title-section">
+      <h1 class="main-title">OCR AI 활용 : 부품 시리얼 관리 개선 (AX 전환)</h1>
+    </div>
+
+    <!-- 3. 2단 본문 영역 -->
+    <main class="content-grid">
+      <!-- 좌측 열: 목 표 -->
+      <section class="column-section">
+        <h2 class="column-header">목 표</h2>
+
+        <!-- 현행 관리 방식 -->
+        <div class="sub-heading">
+          <span>○ 현행 관리 방식</span>
+          <span class="badge">(TM200L : 65개 항목 / 다품종 설비 기준)</span>
+        </div>
+        <ul class="process-list">
+          <li data-num="1">현장 수기 작성</li>
+          <li data-num="2">육안 확인 불가 구역 스마트폰 촬영</li>
+          <li data-num="3">사무실 복귀 후 사진 대조 및 재기입</li>
+          <li data-num="4">엑셀 시트 수동 타이핑</li>
+        </ul>
+
+        <!-- 문제점 박스 -->
+        <div class="problem-box">
+          [Problem] 4단계 중복 작업으로 인한 시간 낭비 및 오기입 리스크
+        </div>
+
+        <!-- OCR 도입 효과 테이블 -->
+        <div class="sub-heading" style="margin-top: 4px;">
+          <span>○ OCR 도입 효과 (VISION-PASS)</span>
+        </div>
+        <table class="effect-table">
+          <thead>
+            <tr>
+              <th style="width: 25%;">비교 항목</th>
+              <th style="width: 35%;">수기 관리</th>
+              <th style="width: 40%;">AI OCR (VISION-PASS)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="strong">소요 시간</td>
+              <td>약 50분</td>
+              <td class="highlight">10분 (80% 절감)</td>
+            </tr>
+            <tr>
+              <td class="strong">정확도</td>
+              <td>오타 위험</td>
+              <td class="highlight">고정밀 자동 인식 (100%)</td>
+            </tr>
+            <tr>
+              <td class="strong">사각지대/검수</td>
+              <td>촬영 후 대조</td>
+              <td class="highlight">실시간 현장 스캔 & 검증</td>
+            </tr>
+            <tr>
+              <td class="strong">보고서 작성</td>
+              <td>수동 타이핑</td>
+              <td class="highlight">원클릭 엑셀 (.xlsx) 자동 생성</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 우측 열: 진행 상황 -->
+      <section class="column-section">
+        <h2 class="column-header">진행 상황</h2>
+
+        <div class="sub-heading">
+          <span>○ 단계적 DX / AX 추진 현황</span>
+        </div>
+
+        <div class="roadmap-list">
+          <!-- 1단계 -->
+          <div class="roadmap-item">
+            <div class="roadmap-title">
+              <span class="step-tag done">1단계 (7월)</span>
+              <span>OCR 기술 가능성 검증 (PoC)</span>
+            </div>
+            <div class="roadmap-desc">
+              예산 투입 없이 오픈소스/무료 API 모델을 활용하여 명판/수기 시리얼 인식률 및 기술 타당성 검증
+            </div>
+          </div>
+
+          <!-- 2단계 -->
+          <div class="roadmap-item">
+            <div class="roadmap-title">
+              <span class="step-tag current">2단계 (8월)</span>
+              <span>현장 최적화 모바일 웹앱 구축 (VISION-PASS 완료)</span>
+            </div>
+            <div class="roadmap-desc">
+              <div class="feature-bullet">
+                <span>•</span>
+                <span><strong>정밀 타겟 OCR:</strong> 가이드 중앙(ROI) 크롭으로 주변 텍스트 왜곡 배제</span>
+              </div>
+              <div class="feature-bullet">
+                <span>•</span>
+                <span><strong>스마트 데이터 연동:</strong> 엑셀 한 줄 복사 시 [고객사·PJT·모델명] 자동 분리</span>
+              </div>
+              <div class="feature-bullet">
+                <span>•</span>
+                <span><strong>모바일 현장 UI:</strong> 가로 스크롤 없는 0-스크롤 카드뷰 & 원터치 순서 이동</span>
+              </div>
+              <div class="feature-bullet">
+                <span>•</span>
+                <span><strong>표준 BOM 관리:</strong> 모델별 양식 자동 매칭 및 멀티 호기 자동 채번 연동</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3단계 -->
+          <div class="roadmap-item">
+            <div class="roadmap-title">
+              <span class="step-tag">3단계 (9월)</span>
+              <span>현장 실무 배포 및 최종 데이터 연동 자동화</span>
+            </div>
+            <div class="roadmap-desc">
+              제조기술팀 현장 검수자 실전 배포 및 수동 엑셀 입력을 완전히 배제한 자동화 파이프라인 정착
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 4. 하단 푸터 영역 -->
+    <footer class="footer-bar">
+      <div class="confidential">Confidential</div>
+      <div class="slogan">
+        <span class="red">Think</span> <span class="bold">Hard</span>, <span class="blue">Fine</span> <span class="bold">Action</span>
+      </div>
+      <div class="page-number">Page 1 of 1</div>
+    </footer>
+  </div>
+
+</body>
+</html>

@@ -56,6 +56,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
   // Preview & Processing State
   const [previewMode, setPreviewMode] = useState<"live" | "enhanced" | "binary">("live");
+  const [guideMode, setGuideMode] = useState<"horizontal" | "vertical" | "full">("horizontal");
   const [options, setOptions] = useState<PreprocessingOptions>(DEFAULT_PREPROCESSING_OPTIONS);
   const [showOptions, setShowOptions] = useState(false);
 
@@ -75,6 +76,10 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   // Canvas Refs (In-Memory Only, Zero-Storage)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const cycleGuideMode = () => {
+    setGuideMode((prev) => (prev === "horizontal" ? "vertical" : prev === "vertical" ? "full" : "horizontal"));
+  };
 
   // 카메라 시작 (다단계 장애 극복 & 안드로이드 호환)
   const startCamera = useCallback(async () => {
@@ -121,7 +126,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       }
 
       if (!mediaStream) {
-        throw new Error("카메라 스트림을 획득하지 못했습니다.");
+        throw new Error("비디오 스트림을 획득할 수 없습니다.");
       }
 
       setStream(mediaStream);
@@ -216,7 +221,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   const captureAndRecognize = async (customCanvas?: HTMLCanvasElement) => {
     setIsProcessing(true);
     setOcrProgress(5);
-    setOcrStatusText("금속 명판 프레임 순간 캡처 중...");
+    setOcrStatusText("명판 프레임 순간 캡처 중...");
 
     let rawCanvas: HTMLCanvasElement;
 
@@ -246,7 +251,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       ctx.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
     }
 
-    // ROI 타겟팅 정밀 크롭 (카메라 UI 가이드 중앙 칸과 1:1 기하학적 매핑, 주변부 텍스트 원천 차단)
+    // ROI 타겟팅 정밀 크롭 (선택된 가이드 모드에 맞춤)
     let processedCanvas: HTMLCanvasElement;
     let croppedCanvas: HTMLCanvasElement | null = null;
 
@@ -254,9 +259,22 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       // 1. 직접 사진 업로드 시: 전체 이미지 또는 중앙 대상 고해상도 처리
       processedCanvas = preprocessCanvas(customCanvas, options);
     } else {
-      // 2. 카메라 촬영 시: 중앙 가이드 칸(72% x 38%)과 100% 일치하는 정밀 중앙 ROI만 크롭하여 전송
-      const roiWidth = rawCanvas.width * 0.72;
-      const roiHeight = rawCanvas.height * 0.38;
+      // 2. 카메라 촬영 시: 중앙 가이드 칸과 1:1 기하학적 매핑
+      let roiWidth: number;
+      let roiHeight: number;
+
+      if (guideMode === "vertical") {
+        roiWidth = rawCanvas.width * 0.52;
+        roiHeight = rawCanvas.height * 0.86;
+      } else if (guideMode === "full") {
+        roiWidth = rawCanvas.width * 0.96;
+        roiHeight = rawCanvas.height * 0.92;
+      } else {
+        // horizontal 기본 모드 (넓고 넉넉한 비율로 텍스트 잘림 원천 차단)
+        roiWidth = rawCanvas.width * 0.88;
+        roiHeight = rawCanvas.height * 0.48;
+      }
+
       const roiX = (rawCanvas.width - roiWidth) / 2;
       const roiY = (rawCanvas.height - roiHeight) / 2;
 
@@ -286,7 +304,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
     // 2. Gemini Vision AI & 고정밀 광학 OCR 심층 실행 (1.5~2.0초 타깃 초정밀 CoT)
     setOcrProgress(45);
-    setOcrStatusText("🤖 Gemini Vision AI 음각/수기 CoT 교차 분석 중...");
+    setOcrStatusText("🤖 Gemini Vision AI 라벨 방향 감지 & 다중 시리얼 분석 중...");
 
     try {
       const result = await performGeminiDeepOcr(
@@ -406,7 +424,15 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
             {/* Industrial Viewfinder Crosshair & Guide Bounding Box */}
             <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-3">
-              <div className="relative w-[72%] h-[38%] border-2 border-cyan-400/90 rounded-xl shadow-glow-cyan transition-all duration-300">
+              <div
+                className={`relative border-2 border-cyan-400/90 rounded-xl shadow-glow-cyan transition-all duration-300 ${
+                  guideMode === "vertical"
+                    ? "w-[50%] h-[82%]"
+                    : guideMode === "full"
+                    ? "w-[94%] h-[90%]"
+                    : "w-[86%] h-[44%]"
+                }`}
+              >
                 {/* 4 Corner Markers */}
                 <div className="absolute -top-1 -left-1 h-3.5 w-3.5 border-t-2 border-l-2 border-cyan-300" />
                 <div className="absolute -top-1 -right-1 h-3.5 w-3.5 border-t-2 border-r-2 border-cyan-300" />
@@ -431,7 +457,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                       <div className="bg-slate-950/90 border border-cyan-400/60 px-3.5 py-1.5 rounded-full shadow-glow-cyan flex items-center gap-2">
                         <Sparkles className="h-3.5 w-3.5 text-cyan-400 animate-spin" />
                         <span className="text-cyan-300 font-mono text-[11px] font-bold">
-                          초정밀 CoT 획 분석 중...
+                          초정밀 라벨/시리얼 분석 중...
                         </span>
                       </div>
                     </div>
@@ -446,7 +472,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                     </span>
                   ) : (
                     <span className="bg-slate-950/80 text-cyan-300 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border border-cyan-500/40">
-                      [ 중앙 칸에 시리얼 위치 후 촬영 ]
+                      [ {guideMode === "vertical" ? "세로 라벨" : guideMode === "full" ? "전체 영역" : "가로 라벨"} 중앙 위치 후 촬영 ]
                     </span>
                   )}
                 </div>
@@ -455,6 +481,17 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
             {/* Camera Floating Controls (Gemini AI, Torch, Flip, Upload) */}
             <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
+              {/* 가이드 모드 전환 버튼 */}
+              <button
+                type="button"
+                onClick={cycleGuideMode}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-900/90 text-cyan-300 border border-cyan-500/50 backdrop-blur-md hover:bg-slate-800 text-[11px] font-bold transition-all cursor-pointer shadow-glow-cyan flex items-center gap-1"
+                title="가이드 모드 전환 (가로 / 세로 / 전체)"
+              >
+                <Sliders className="h-3.5 w-3.5 text-cyan-400" />
+                <span>{guideMode === "horizontal" ? "가로" : guideMode === "vertical" ? "세로" : "전체"}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setIsApiKeyModalOpen(true)}
@@ -532,12 +569,12 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                 {isProcessing ? (
                   <>
                     <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span>Gemini AI 심층 분석 & 시리얼 추출 중...</span>
+                    <span>Gemini AI 라벨/시리얼 정밀 추출 중...</span>
                   </>
                 ) : (
                   <>
                     <Camera className="h-4 w-4 stroke-[2.5]" />
-                    <span>명판 촬영 & 초정밀 시리얼 추출 (1.5초)</span>
+                    <span>명판/라벨 촬영 & 시리얼 자동 추출 (1.5초)</span>
                   </>
                 )}
               </button>
@@ -592,7 +629,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               <div className="rounded-lg bg-amber-950/70 border border-amber-800/80 p-2.5 flex items-start gap-2 text-amber-200 animate-fadeIn text-xs">
                 <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
                 <p className="text-[11px] text-amber-200/90 leading-tight">
-                  <strong>인식 불가:</strong> 사각 가이드 영역에 명판의 S/N 번호를 맞추고 조명을 켠 후 다시 촬영해주세요.
+                  <strong>인식 불가:</strong> 가이드 영역에 명판의 S/N 라벨을 맞추고 조명을 켠 후 다시 촬영해주세요. (세로 라벨은 [세로] 가이드 추천)
                 </p>
               </div>
             )}
@@ -601,7 +638,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             <div className="relative">
               <input
                 type="text"
-                placeholder="시리얼 번호 (예: TM1L-HK26-1007, 25X-0049H, 673644)"
+                placeholder="시리얼 번호 (예: KSA7706685, 260225-40, TM1L-HK26-1007)"
                 value={selectedSerial}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setSelectedSerial(e.target.value.toUpperCase())
@@ -620,14 +657,14 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               )}
             </div>
 
-            {/* Serial Candidates Pills (최대 3개 추천) */}
-            {ocrResult && ocrResult.candidates.length > 0 && (
-              <div className="space-y-1 pt-0.5">
+            {/* Serial Candidates Pills (다중 후보 원터치 선택) */}
+            {ocrResult && ocrResult.candidates && ocrResult.candidates.length > 0 && (
+              <div className="space-y-1.5 pt-0.5">
                 <span className="text-[10px] font-semibold text-slate-400">
-                  추천 시리얼 후보 (터치하여 선택):
+                  인식된 시리얼 번호 후보 (터치하여 즉시 선택):
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {ocrResult.candidates.slice(0, 3).map((cand, idx) => (
+                  {ocrResult.candidates.map((cand, idx) => (
                     <button
                       key={idx}
                       type="button"
