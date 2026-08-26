@@ -125,129 +125,119 @@ export async function performGeminiDeepOcr(
     };
   }
 
-  // 2. Gemini API 호출 (Dual-Stream 입력: Stream A 컬러 + Stream B 고대비 획 강화)
+  // 2. Gemini API 호출 (순수 클라이언트 웹앱 직통 호출)
+  const streamABase64 = canvas.toDataURL("image/jpeg", 0.95).split(",")[1];
+  const streamBBase64 = generateStreamBHighContrast(canvas);
+
+  let parsed: any = null;
+
   if (apiKey) {
-    try {
-      onProgress?.(30, "🔍 Stream A/B Dual-Channel 획 전처리 생성 중...");
+    onProgress?.(35, "🤖 Gemini 2.0 Flash AI 정밀 시리얼 판독 중...");
+    const modelCandidates = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+    const userText = `[대상 부품 정보]\n- 품명: ${context?.partName || "-"}\n- 규격: ${context?.spec || "-"}\n- 세부사양: ${context?.subSpec || "-"}\n\n제공된 이미지에서 제품 브랜드/모델명(예: LabJack U6-PRO 등)이나 단자대/웹주소가 아닌, 'SN:', 'S/N:', 노란색 라벨에 기재된 [순수 시리얼 번호](예: 360025446, KSA7706685, 260225-40 등)를 정확하게 찾아내어 raw_serial로 전사하고 접두사를 제외한 번호를 반환하십시오.`;
 
-      // Stream A: 원본 고화질 컬러
-      const streamABase64 = canvas.toDataURL("image/jpeg", 0.95).split(",")[1];
-      // Stream B: 고대비 획/음각 강화 이미지
-      const streamBBase64 = generateStreamBHighContrast(canvas);
+    for (const model of modelCandidates) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-      onProgress?.(50, "🤖 Gemini Vision 시리얼 번호(SN/명판) 정밀 판독 중...");
-
-      const modelCandidates = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
-      let parsed: any = null;
-
-      const userText = `[대상 부품 정보]\n- 품명: ${context?.partName || "-"}\n- 규격: ${context?.spec || "-"}\n- 세부사양: ${context?.subSpec || "-"}\n\n제공된 이미지에서 제품 브랜드/모델명(예: LabJack U6-PRO 등)이나 단자대/웹주소가 아닌, 'SN:', 'S/N:', 노란색 라벨에 기재된 [순수 시리얼 번호](예: 360025446, KSA7706685, 260225-40 등)를 정확하게 찾아내어 raw_serial로 전사하고 접두사를 제외한 번호를 반환하십시오.`;
-
-      for (const model of modelCandidates) {
-        try {
-          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-          const requestBody = {
-            contents: [
-              {
-                parts: [
-                  { text: GEMINI_SYSTEM_PROMPT },
-                  { text: userText },
-                  { inline_data: { mime_type: "image/jpeg", data: streamABase64 } },
-                  { inline_data: { mime_type: "image/jpeg", data: streamBBase64 } },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.0,
-              response_mime_type: "application/json",
+        const requestBody = {
+          contents: [
+            {
+              parts: [
+                { text: GEMINI_SYSTEM_PROMPT },
+                { text: userText },
+                { inline_data: { mime_type: "image/jpeg", data: streamABase64 } },
+                { inline_data: { mime_type: "image/jpeg", data: streamBBase64 } },
+              ],
             },
-          };
-
-          const res = await fetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(requestBody),
-          });
-
-          if (res.ok) {
-            const jsonRes = await res.json();
-            const rawContent = jsonRes?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (rawContent) {
-              parsed = JSON.parse(rawContent);
-              break;
-            }
-          }
-        } catch (e) {
-          // 다음 모델 순차 시도
-        }
-      }
-
-      if (parsed) {
-        onProgress?.(85, "⚙️ 다중 시리얼 후보 정리 및 무왜곡 검증 완료...");
-
-        const rawPrimary = parsed.raw_serial || parsed.serial_number_primary || parsed.best_serial || "";
-        let literalSerial = cleanPrefixOnly(rawPrimary);
-
-        const candidatesList: string[] = [];
-
-        // 다중 후보(serial_candidates) 파싱
-        if (parsed.serial_candidates && Array.isArray(parsed.serial_candidates)) {
-          for (const cand of parsed.serial_candidates) {
-            const val = typeof cand === "string" ? cand : cand?.value;
-            const label = typeof cand === "object" && cand?.label ? `[${cand.label}] ` : "";
-            if (val) {
-              const cleanedVal = cleanPrefixOnly(val);
-              if (cleanedVal && !candidatesList.includes(cleanedVal)) {
-                candidatesList.push(cleanedVal);
-              }
-            }
-          }
-        }
-
-        if (literalSerial && !candidatesList.includes(literalSerial)) {
-          candidatesList.unshift(literalSerial);
-        } else if (!literalSerial && candidatesList.length > 0) {
-          literalSerial = candidatesList[0];
-        }
-
-        let confidenceNumeric = 99;
-        if (parsed.low_confidence_chars && Array.isArray(parsed.low_confidence_chars) && parsed.low_confidence_chars.length > 0) {
-          confidenceNumeric = Math.max(50, confidenceNumeric - parsed.low_confidence_chars.length * 6);
-        }
-
-        onProgress?.(100, "✨ 명판 시리얼 전사 완료!");
-
-        const lines: string[] = [`[전사 시리얼]: ${literalSerial || "-"}`];
-        if (parsed.source_type) {
-          lines.push(`[텍스트 유형]: ${parsed.source_type}`);
-        }
-        if (parsed.model_name) {
-          lines.push(`[식별 모델명]: ${parsed.model_name}`);
-        }
-        if (parsed.serial_candidates && parsed.serial_candidates.length > 1) {
-          const candSummary = parsed.serial_candidates
-            .map((c: any) => `${c.label || "S/N"}: ${cleanPrefixOnly(c.value || c)}`)
-            .join(" | ");
-          lines.push(`[검출 후보]: ${candSummary}`);
-        }
-        if (parsed.notes) {
-          lines.push(`[특이사항]: ${parsed.notes}`);
-        }
-        if (parsed.low_confidence_chars && parsed.low_confidence_chars.length > 0) {
-          lines.push(`[저확신 문자]: ${parsed.low_confidence_chars.join(", ")}`);
-        }
-
-        return {
-          rawText: JSON.stringify(parsed, null, 2),
-          cleanedSerial: literalSerial,
-          confidence: confidenceNumeric,
-          lines,
-          candidates: candidatesList.slice(0, 5),
+          ],
+          generationConfig: {
+            temperature: 0.0,
+            response_mime_type: "application/json",
+          },
         };
+
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (res.ok) {
+          const jsonRes = await res.json();
+          const rawContent = jsonRes?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawContent) {
+            parsed = JSON.parse(rawContent);
+            break;
+          }
+        }
+      } catch (e) {
+        // 다음 모델 시도
       }
-    } catch (geminiError) {
-      console.warn("Gemini API call failed, falling back to local OCR:", geminiError);
     }
+  }
+
+  if (parsed) {
+    onProgress?.(85, "⚙️ 다중 시리얼 후보 정리 및 무왜곡 검증 완료...");
+
+    const rawPrimary = parsed.raw_serial || parsed.serial_number_primary || parsed.best_serial || "";
+    let literalSerial = cleanPrefixOnly(rawPrimary);
+
+    const candidatesList: string[] = [];
+
+    // 다중 후보(serial_candidates) 파싱
+    if (parsed.serial_candidates && Array.isArray(parsed.serial_candidates)) {
+      for (const cand of parsed.serial_candidates) {
+        const val = typeof cand === "string" ? cand : cand?.value;
+        if (val) {
+          const cleanedVal = cleanPrefixOnly(val);
+          if (cleanedVal && !candidatesList.includes(cleanedVal)) {
+            candidatesList.push(cleanedVal);
+          }
+        }
+      }
+    }
+
+    if (literalSerial && !candidatesList.includes(literalSerial)) {
+      candidatesList.unshift(literalSerial);
+    } else if (!literalSerial && candidatesList.length > 0) {
+      literalSerial = candidatesList[0];
+    }
+
+    let confidenceNumeric = 99;
+    if (parsed.low_confidence_chars && Array.isArray(parsed.low_confidence_chars) && parsed.low_confidence_chars.length > 0) {
+      confidenceNumeric = Math.max(50, confidenceNumeric - parsed.low_confidence_chars.length * 6);
+    }
+
+    onProgress?.(100, "✨ 명판 시리얼 전사 완료!");
+
+    const lines: string[] = [`[전사 시리얼]: ${literalSerial || "-"}`];
+    if (parsed.source_type) {
+      lines.push(`[텍스트 유형]: ${parsed.source_type}`);
+    }
+    if (parsed.model_name) {
+      lines.push(`[식별 모델명]: ${parsed.model_name}`);
+    }
+    if (parsed.serial_candidates && parsed.serial_candidates.length > 1) {
+      const candSummary = parsed.serial_candidates
+        .map((c: any) => `${c.label || "S/N"}: ${cleanPrefixOnly(c.value || c)}`)
+        .join(" | ");
+      lines.push(`[검출 후보]: ${candSummary}`);
+    }
+    if (parsed.notes) {
+      lines.push(`[특이사항]: ${parsed.notes}`);
+    }
+    if (parsed.low_confidence_chars && parsed.low_confidence_chars.length > 0) {
+      lines.push(`[저확신 문자]: ${parsed.low_confidence_chars.join(", ")}`);
+    }
+
+    return {
+      rawText: JSON.stringify(parsed, null, 2),
+      cleanedSerial: literalSerial,
+      confidence: confidenceNumeric,
+      lines,
+      candidates: candidatesList.slice(0, 5),
+    };
   }
 
   // 3. API Key 미등록 또는 네트워크 실패 시: 로컬 Tesseract 5 + Barcode 엔진으로 100% 무중단 페일오버

@@ -59,7 +59,7 @@ if (-not $remoteOrigin) {
 
 Write-Host "[2/3] Adding and committing files..." -ForegroundColor Yellow
 & git add .
-& git commit -m "OCR: Optimize extraction for SN label serials (e.g. SN:360025446) and filter device brand/pin tokens"
+& git commit -m "Refactor: Optimize codebase for pure high-performance Web App (PWA) architecture"
 
 Write-Host ""
 Write-Host "[3/3] Uploading (git push) to GitHub..." -ForegroundColor Yellow

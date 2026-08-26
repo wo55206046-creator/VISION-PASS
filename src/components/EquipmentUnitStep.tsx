@@ -124,7 +124,7 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
     handleUpdateCurrentParts(updated);
   };
 
-  // 1호기 부품 목록을 2호기, 3호기... 모든 호기에 안전하게 일괄 복제 (1호기 데이터 100% 보존)
+  // 1호기 부품 목록과 시리얼 번호를 2호기, 3호기... 모든 호기에 일괄 복제 (1호기 데이터 100% 보존 & 시리얼 연속 복사)
   const handleReplicateToAllUnits = () => {
     const unit1 = project?.equipmentUnits.find((u) => u.unitIndex === 1) || project?.equipmentUnits[0];
     if (!unit1 || unit1.parts.length === 0) return;
@@ -136,35 +136,35 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
       return {
         ...prev,
         equipmentUnits: prev.equipmentUnits.map((unit) => {
-          // 🛡️ 1호기 자신은 절대 변경하지 않고 100% 원본 그대로 보존!
+          // 🛡️ 1호기 자신은 절대 수정하지 않고 100% 원본 그대로 보존!
           if (unit.unitIndex === 1) return unit;
 
-          // 기존 호기에 이미 입력된 시리얼이 있다면 부품명/규격 매칭하여 보존
-          const existingSerialMap = new Map<string, { serial: string; isVerified: boolean; scannedAt?: string; confidence?: number }>();
-          (unit.parts || []).forEach((p) => {
-            if (p.detectedSerial) {
-              const key = `${p.category || ""}_${p.partName}_${p.spec || ""}`;
-              existingSerialMap.set(key, {
-                serial: p.detectedSerial,
-                isVerified: p.isVerified,
-                scannedAt: p.scannedAt,
-                confidence: p.confidence,
-              });
-            }
-          });
-
-          // 1호기 부품 목록을 복제 (기존 작성된 시리얼이 있으면 보존, 없으면 빈 입력란)
+          // 1호기 부품 및 시리얼 번호를 복제 (시리얼 끝자리가 숫자이면 호기에 맞게 +1, +2 자동 연속 채번, 그렇지 않으면 원본 시리얼 복사)
           const replicatedParts: PartItem[] = sourceUnit1.parts.map((p) => {
-            const key = `${p.category || ""}_${p.partName}_${p.spec || ""}`;
-            const existing = existingSerialMap.get(key);
+            let nextSerial = "";
+            if (p.detectedSerial && p.detectedSerial.trim()) {
+              const base = p.detectedSerial.trim();
+              const match = base.match(/^(.*?)(\d+)$/);
+              if (match) {
+                const prefix = match[1];
+                const numStr = match[2];
+                const baseNum = parseInt(numStr, 10);
+                const offset = unit.unitIndex - 1;
+                const nextNum = baseNum + offset;
+                const padded = String(nextNum).padStart(numStr.length, "0");
+                nextSerial = `${prefix}${padded}`;
+              } else {
+                nextSerial = base;
+              }
+            }
 
             return {
               ...p,
-              id: "id-" + Math.random().toString(36).substring(2, 9),
-              detectedSerial: existing ? existing.serial : "",
-              isVerified: existing ? existing.isVerified : false,
-              scannedAt: existing ? existing.scannedAt : undefined,
-              confidence: existing ? existing.confidence : undefined,
+              id: "id-" + Math.random().toString(36).substring(2, 9) + "-u" + unit.unitIndex,
+              detectedSerial: nextSerial,
+              isVerified: Boolean(nextSerial),
+              scannedAt: nextSerial ? new Date().toISOString() : undefined,
+              confidence: p.confidence,
             };
           });
 
@@ -176,7 +176,7 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
       };
     });
 
-    setCopyFeedback(`1호기 부품 목록(${unit1.parts.length}개)이 모든 호기에 안전하게 복사되었습니다. (1호기 데이터 100% 보존)`);
+    setCopyFeedback(`1호기 부품 목록 및 시리얼(${unit1.parts.length}개)이 모든 호기에 연속 복사되었습니다. (1호기 데이터 100% 보존)`);
     setTimeout(() => setCopyFeedback(null), 4000);
   };
 

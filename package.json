@@ -6,15 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "android:init": "npx cap add android",
-    "android:sync": "next build && npx cap sync android",
-    "android:open": "npx cap open android",
-    "android:build": "next build && npx cap sync android"
+    "lint": "next lint"
   },
   "dependencies": {
-    "@capacitor/android": "^6.1.2",
-    "@capacitor/core": "^6.1.2",
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
     "lucide-react": "^0.453.0",
@@ -25,7 +19,6 @@
     "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
-    "@capacitor/cli": "^6.1.2",
     "@types/node": "^20.17.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
