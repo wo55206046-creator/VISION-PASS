@@ -190,6 +190,28 @@ const IGNORE_WORDS = new Set([
   "UPORT",
   "MELSEC",
   "INSPECTION",
+  "LABJACK",
+  "LABJACK.COM",
+  "WWW.LABJACK.COM",
+  "WWW",
+  "COM",
+  "NET",
+  "ORG",
+  "10UA",
+  "SGND",
+  "SPC",
+  "FIO0",
+  "FIO1",
+  "FIO2",
+  "FIO3",
+  "DAC0",
+  "DAC1",
+  "AIN0",
+  "AIN1",
+  "AIN2",
+  "AIN3",
+  "GND",
+  "VS",
 ]);
 
 /**
@@ -200,6 +222,9 @@ function isValidSerialFormat(candidate: string): boolean {
 
   const upper = candidate.toUpperCase();
   if (IGNORE_WORDS.has(upper)) return false;
+
+  // 웹사이트 URL 또는 도메인 주소 필터링
+  if (/\.COM|\.NET|\.CO\.KR|\.ORG|WWW\.|HTTP/i.test(candidate)) return false;
 
   // 순수 기호 또는 바코드 잔재 필터링
   if (/^[|\-_.#/:;*!+=]+$/.test(candidate)) return false;
@@ -405,6 +430,11 @@ export function extractSerialCandidates(
   // [전략 1] S/N :, Serial Number, SERIAL, Serial, S/N 및 수기/한글 라벨 우측 값 직접 추출
   // ============================================================================
   const labelRightRegexes = [
+    // 1-0-0. SN: / S/N: 직후 6~25자리 고유 일련번호 (예: "SN:360025446" -> 360025446, "PC S/N : KSA7706685") (2000점 최우선)
+    {
+      regex: /(?:S\s*[\/\\|\-.]\s*N|S\s*N|S\/NO\.?|S\.NO\.?|S\.N\.)\s*[:.\-|=#\s]*([A-Za-z0-9\-_]{6,25})/gi,
+      score: 2000,
+    },
     // 1-0. 한글 수기 라벨: "시리얼 :", "일련번호 :", "제조번호 :", "시리얼넘버 :", "관리번호 :" (1500점)
     {
       regex: /(?:시리얼\s*넘버|시리얼\s*번호|시리얼|일련\s*번호|제조\s*번호|식별\s*번호|관리\s*번호)\s*[:.\-|=#\s]*([A-Za-z0-9\-_./]{3,35})/gi,

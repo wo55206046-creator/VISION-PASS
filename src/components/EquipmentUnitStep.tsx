@@ -124,25 +124,49 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
     handleUpdateCurrentParts(updated);
   };
 
-  // 현재 호기 부품 템플릿을 다른 모든 호기에 일괄 복제
+  // 1호기 부품 목록을 2호기, 3호기... 모든 호기에 안전하게 일괄 복제 (1호기 데이터 100% 보존)
   const handleReplicateToAllUnits = () => {
-    if (!currentUnit || currentUnit.parts.length === 0) return;
+    const unit1 = project?.equipmentUnits.find((u) => u.unitIndex === 1) || project?.equipmentUnits[0];
+    if (!unit1 || unit1.parts.length === 0) return;
 
     onUpdate((prev) => {
+      const sourceUnit1 = prev.equipmentUnits.find((u) => u.unitIndex === 1) || prev.equipmentUnits[0];
+      if (!sourceUnit1 || sourceUnit1.parts.length === 0) return prev;
+
       return {
         ...prev,
         equipmentUnits: prev.equipmentUnits.map((unit) => {
-          if (unit.unitIndex === activeUnitIndex) return unit;
+          // 🛡️ 1호기 자신은 절대 변경하지 않고 100% 원본 그대로 보존!
+          if (unit.unitIndex === 1) return unit;
 
-          // 부품명과 규격을 복사하고 고유 ID 발급, 시리얼은 리셋
-          const replicatedParts: PartItem[] = currentUnit.parts.map((p) => ({
-            ...p,
-            id: "id-" + Math.random().toString(36).substring(2, 9),
-            detectedSerial: "",
-            isVerified: false,
-            scannedAt: undefined,
-            confidence: undefined,
-          }));
+          // 기존 호기에 이미 입력된 시리얼이 있다면 부품명/규격 매칭하여 보존
+          const existingSerialMap = new Map<string, { serial: string; isVerified: boolean; scannedAt?: string; confidence?: number }>();
+          (unit.parts || []).forEach((p) => {
+            if (p.detectedSerial) {
+              const key = `${p.category || ""}_${p.partName}_${p.spec || ""}`;
+              existingSerialMap.set(key, {
+                serial: p.detectedSerial,
+                isVerified: p.isVerified,
+                scannedAt: p.scannedAt,
+                confidence: p.confidence,
+              });
+            }
+          });
+
+          // 1호기 부품 목록을 복제 (기존 작성된 시리얼이 있으면 보존, 없으면 빈 입력란)
+          const replicatedParts: PartItem[] = sourceUnit1.parts.map((p) => {
+            const key = `${p.category || ""}_${p.partName}_${p.spec || ""}`;
+            const existing = existingSerialMap.get(key);
+
+            return {
+              ...p,
+              id: "id-" + Math.random().toString(36).substring(2, 9),
+              detectedSerial: existing ? existing.serial : "",
+              isVerified: existing ? existing.isVerified : false,
+              scannedAt: existing ? existing.scannedAt : undefined,
+              confidence: existing ? existing.confidence : undefined,
+            };
+          });
 
           return {
             ...unit,
@@ -152,7 +176,7 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
       };
     });
 
-    setCopyFeedback(`1호기 부품 목록(${currentUnit.parts.length}개)이 모든 호기에 일괄 적용되었습니다.`);
+    setCopyFeedback(`1호기 부품 목록(${unit1.parts.length}개)이 모든 호기에 안전하게 복사되었습니다. (1호기 데이터 100% 보존)`);
     setTimeout(() => setCopyFeedback(null), 4000);
   };
 

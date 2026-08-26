@@ -13,45 +13,37 @@ export function setGeminiApiKey(key: string): void {
   localStorage.setItem(GEMINI_API_KEY_STORAGE, key.trim());
 }
 
-const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 중공업 제조 설비의 금속 명판(타각, 레이저 각인, 인쇄) 및 노란색 라벨 테이프/마스킹 테이프의 시리얼 번호를 판독하는 최고 등급의 산업용 초정밀 광학 판독 AI입니다.
+const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 정밀 계측기(LabJack, DAQ, PLC, 컨트롤러 등) 및 중공업 제조 설비의 금속 명판(타각, 레이저 각인, 인쇄)과 노란색 라벨 테이프의 시리얼 번호를 판독하는 최고 등급의 산업용 초정밀 광학 판독 AI입니다.
 
-[1. 엄격한 원문 복사 모드 (Strict Literal Transcribe Mode)]
+[1. 시리얼 번호 vs 제품 모델명 엄격 분별 원칙 (Strict Serial Priority)]
+- 장비/부품 본체에 크게 인쇄된 제품 브랜드/모델명(예: "LabJack U6-PRO", "SOLA-1000", "NaVi-MG200", "TM200L" 등)이나 웹사이트 주소("www.labjack.com"), 단자대 핀 배열 기호("GND", "VS", "AIN0", "FIO1", "DAC0", "10UA" 등)는 절대로 시리얼 번호가 아닙니다!
+- 노란색 라벨 스티커나 명판의 'SN:', 'S/N:', 'S/N', 'SN', 'Serial No', 'PC S/N', 'WIN11 S/N' 표기 옆에 기재된 고유 일련번호(예: "SN:360025446" -> "360025446", "PC S/N : KSA7706685" -> "KSA7706685", "CON-B1 SN:260225-40" -> "260225-40")를 최우선으로 찾아내어 접두사 제외 순수 번호를 raw_serial로 전사하십시오.
+- 6~12자리 숫자 시리얼(예: 360025446)이나 영문+숫자 복합 시리얼은 한 글자도 누락 없이 획 그대로 100% 전사해야 합니다.
+
+[2. 엄격한 원문 복사 모드 (Strict Literal Transcribe Mode)]
 - 임의 추론, 사전 단어 완성, 문맥적 철자 교정, 임의 문자 스왑을 완전히 차단하십시오.
 - 오직 이미지 픽셀에 물리적으로 존재하는 획(Stroke)과 텍스트만을 있는 그대로 전사(Raw Transcribe)하십시오.
 - 하이픈(-), 슬래시(/), 언더바(_), 마침표(.), 콜론(:)은 이미지에 인쇄된 형태 그대로 정확히 분별하십시오.
 
-[2. 라벨 회전 및 세로 방향 자동 보정 (Orientation & Rotation Invariance)]
+[3. 라벨 회전 및 세로 방향 자동 보정 (Orientation & Rotation Invariance)]
 - 이미지가 세로 방향(90°/270°), 거꾸로(180°), 또는 비스듬히 기울어져 있더라도 문자의 올바른 정방향을 스스로 감지하여 정상 순서대로 판독하십시오.
-- 특히 산업용 PC나 제어 보드에 부착된 노란색 라벨(Yellow Label Tape)의 세로/가로 인쇄 텍스트를 정확하게 판독하십시오.
 
-[3. 다중 시리얼 및 복수 라벨 분별 (Multi-Serial & Dual S/N Support)]
-- 하나의 라벨에 여러 시리얼이 함께 인쇄된 경우 (예: "WIN11 S/N : 4FNDF-3RRKD-...", "PC S/N : KSA7706685", 또는 "CON-B1 SN:260225-40", "CON-B2 SN:210708-28"):
+[4. 다중 시리얼 및 복수 라벨 분별 (Multi-Serial & Dual S/N Support)]
+- 하나의 장비에 여러 시리얼이 함께 존재하는 경우 (예: "SN:360025446", "WIN11 S/N : ...", "PC S/N : ...", "CON-B1 SN:260225-40"):
   1) 대상 부품 정보([품명], [규격])에 가장 적합한 시리얼을 raw_serial로 선택하십시오.
-     * 대상이 PC/Industrial PC이면 하드웨어 시리얼 "PC S/N : KSA7706685" (또는 규격에 Win11이 명시된 경우 "WIN11 S/N")
-     * 대상이 Control Board(UCON-161 Main)이면 "CON-B1 SN:260225-40"의 260225-40
-     * 대상이 Control Board(UCON-107 I/O)이면 "CON-B2 SN:210708-28"의 210708-28
   2) 이미지 내에 존재하는 모든 유효 시리얼 번호들을 serial_candidates 목록에 라벨명과 함께 전부 추출하십시오.
-
-[4. 유사 문자 정밀 분별 (Visual Disambiguation)]
-- 0 (숫자 영) vs O (영문 오) vs D (영문 디): 세로 타원 비율, 내부 획/사선, 좌측 수직선 유무 확인.
-- 1 (숫자 일) vs I (대문자 아이) vs l (소문자 엘) vs | (구분선): 상단 꺾임 훅, 상하 세리프 유무 확인.
-- 5 (숫자 오) vs S (영문 에스): 상단 수평 직선과 각진 모서리 vs 부드러운 이중 곡선 확인.
-- 8 (숫자 팔) vs B (영문 비): 좌측 수직 기둥 연속성 vs 상하 대칭 루프 확인.
-- 2 (숫자 이) vs Z (영문 제트): 상단 둥근 곡선 vs 상단 수평선/대각 꺾임 확인.
-- 획이 번지거나 훼손되어 확신도가 낮은 문자는 low_confidence_chars에 기재하십시오.
 
 [5. Strict JSON 출력 스키마]
 반드시 아래 JSON 형식으로만 응답하십시오:
 {
-  "raw_serial": "타깃 부품에 가장 적합한 메인 시리얼 번호 원문 (접두사 제외된 순수 번호)",
+  "raw_serial": "접두사가 제외된 순수 시리얼 번호 (예: 360025446, KSA7706685, 260225-40)",
   "serial_candidates": [
-    { "label": "PC S/N", "value": "KSA7706685" },
-    { "label": "WIN11 S/N", "value": "4FNDF-3RRKD-YQKPB-GDFG9-V249D" },
-    { "label": "CON-B1", "value": "260225-40" }
+    { "label": "SN", "value": "360025446" },
+    { "label": "PC S/N", "value": "KSA7706685" }
   ],
   "source_type": "printed" 또는 "handwritten" 또는 "engraved",
-  "model_name": "함께 식별된 모델명 (예: UCON161-MAIN, CON-B1, PC)",
-  "notes": "수기 메모, 날짜, 특이사항 (있는 경우, 없으면 null)",
+  "model_name": "식별된 모델명 (예: LabJack U6-PRO, UCON161-MAIN, PC)",
+  "notes": "특이사항 (있는 경우, 없으면 null)",
   "low_confidence_chars": []
 }`;
 
@@ -101,9 +93,12 @@ export function cleanPrefixOnly(rawSerial: string): string {
   if (!rawSerial) return "";
   let cleaned = rawSerial.trim();
   // 접두사 제거
-  cleaned = cleaned.replace(/^(?:WIN11\s*S\/N|PC\s*S\/N|S\/N|SN|SERIAL\s*NO\.?|SERIAL|NO|CON-[A-Z0-9]+\s*SN|시리얼|일련번호)[:\s-]*/i, "");
-  // 공백 및 전후 불필요 기호만 정리하고 원본 글자 형태(대소문자/숫자) 완벽 보존
-  cleaned = cleaned.replace(/^\s*-\s*/, "").replace(/\s*-\s*$/, "").trim();
+  cleaned = cleaned.replace(
+    /^(?:WIN11\s*S[\/\\|\-.]?N|PC\s*S[\/\\|\-.]?N|Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*NO\.?|S[\/\\|\-.]N|SN|S\.N\.|S\/NO\.?|NO\.?|N°|CON-[A-Z0-9]+\s*SN|시리얼\s*넘버|시리얼\s*번호|시리얼|일련\s*번호|제조\s*번호|식별\s*번호|관리\s*번호)\s*[:.\-|=#\s]*/i,
+    ""
+  );
+  // 앞뒤 기호 제거
+  cleaned = cleaned.replace(/^[ :;=|\-#/\\_.,<>()[\]{}]+|[ :;=|\-#/\\_.,<>()[\]{}]+$/g, "").trim();
   return cleaned;
 }
 
@@ -140,12 +135,12 @@ export async function performGeminiDeepOcr(
       // Stream B: 고대비 획/음각 강화 이미지
       const streamBBase64 = generateStreamBHighContrast(canvas);
 
-      onProgress?.(50, "🤖 Gemini Vision 방향 감지 및 다중 시리얼 정밀 전사 중...");
+      onProgress?.(50, "🤖 Gemini Vision 시리얼 번호(SN/명판) 정밀 판독 중...");
 
       const modelCandidates = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
       let parsed: any = null;
 
-      const userText = `[대상 부품 정보]\n- 품명: ${context?.partName || "-"}\n- 규격: ${context?.spec || "-"}\n- 세부사양: ${context?.subSpec || "-"}\n제공된 이미지(Stream A 원본, Stream B 고대비)를 분석하십시오. 이미지가 세로로 서 있거나 거꾸로 회전되어 있더라도 올바른 방향으로 감지하여 노란색 라벨/명판의 시리얼 번호('PC S/N', 'WIN11 S/N', 'CON-B1 SN', 'SN:...' 등)를 리터럴 전사하고 후보 목록(serial_candidates)을 함께 반환하십시오.`;
+      const userText = `[대상 부품 정보]\n- 품명: ${context?.partName || "-"}\n- 규격: ${context?.spec || "-"}\n- 세부사양: ${context?.subSpec || "-"}\n\n제공된 이미지에서 제품 브랜드/모델명(예: LabJack U6-PRO 등)이나 단자대/웹주소가 아닌, 'SN:', 'S/N:', 노란색 라벨에 기재된 [순수 시리얼 번호](예: 360025446, KSA7706685, 260225-40 등)를 정확하게 찾아내어 raw_serial로 전사하고 접두사를 제외한 번호를 반환하십시오.`;
 
       for (const model of modelCandidates) {
         try {

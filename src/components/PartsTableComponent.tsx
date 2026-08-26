@@ -604,10 +604,19 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                           setEditingPart({ ...part });
                           setIsEditModalOpen(true);
                         }}
-                        className="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-slate-800"
+                        className="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition-colors"
                         title="상세 수정"
                       >
                         <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePart(part.id, part.partName)}
+                        className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-950/50 transition-colors"
+                        title="부품 삭제"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </div>
