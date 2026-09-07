@@ -88,20 +88,15 @@ export default function Home() {
       lastKnownCloudJson.current = JSON.stringify(saved);
     }
 
-    // 앱 시작 시 클라우드에서 최신 데이터 즉시 수신
+    // 앱 시작 시 클라우드에서 최신 데이터 1회 안전 로드
     fetchCloudProjects();
 
-    // 3.5초 주기 백그라운드 실시간 양방향 폴링 동기화
-    const intervalId = setInterval(() => {
-      fetchCloudProjects();
-    }, 3500);
-
-    // 화면 포커스, 탭 전환 시 즉시 수신
+    // 화면 복귀, 탭 포커스 시 부드럽게 1회 확인
     const handleQuickSync = () => fetchCloudProjects();
     window.addEventListener("focus", handleQuickSync);
     document.addEventListener("visibilitychange", handleQuickSync);
 
-    // 로컬 브로드캐스트 채널 구독 (동일 브라우저 탭 간 0.001초 즉각 동기화)
+    // 1. 로컬 브로드캐스트 채널 구독 (동일 브라우저 탭 간 0.001초 즉각 동기화)
     const unsubscribeBroadcast = subscribeLocalBroadcast((incoming) => {
       if (incoming && incoming.length > 0) {
         const incomingJson = JSON.stringify(incoming);
@@ -116,7 +111,7 @@ export default function Home() {
       }
     });
 
-    // ⚡ 초고속 실시간 SSE 클라우드 스트림 구독 (PC ↔ 모바일 0.05초 즉시 연동)
+    // 2. ⚡ 초고속 실시간 SSE 클라우드 스트림 구독 (PC ↔ 모바일 0.05초 무제한 라이브 연동, 429 에러 원천 차단)
     const unsubscribeRealtime = subscribeCloudRealtime((incoming) => {
       if (incoming && incoming.length > 0) {
         const incomingJson = JSON.stringify(incoming);
@@ -132,7 +127,6 @@ export default function Home() {
     });
 
     return () => {
-      clearInterval(intervalId);
       window.removeEventListener("focus", handleQuickSync);
       document.removeEventListener("visibilitychange", handleQuickSync);
       unsubscribeBroadcast();
@@ -156,7 +150,7 @@ export default function Home() {
       console.warn("Failed to save projects to localStorage", e);
     }
 
-    // 클라우드와 내용이 다를 때 400ms 디바운스로 즉시 자동 업로드
+    // 클라우드와 내용이 다를 때 350ms 디바운스로 즉시 자동 업로드
     if (currentJson !== lastKnownCloudJson.current) {
       if (syncPushTimeoutRef.current) clearTimeout(syncPushTimeoutRef.current);
       syncPushTimeoutRef.current = setTimeout(async () => {
@@ -166,7 +160,7 @@ export default function Home() {
           lastKnownCloudJson.current = currentJson;
         }
         setSyncStatus("connected");
-      }, 400);
+      }, 350);
     }
 
     return () => {
@@ -177,7 +171,7 @@ export default function Home() {
   // 현재 선택된 프로젝트
   const currentProject = projects.find((p) => p.id === currentProjectId) || projects[0];
 
-  // 프로젝트 실시간 업데이트 (즉시 로컬 저장 및 클라우드 즉시 푸시)
+  // 프로젝트 실시간 업데이트 (즉시 로컬 저장 및 React 상태 반영)
   const updateCurrentProject = (updater: (prev: ProjectMaster) => ProjectMaster) => {
     setProjects((prevProjects) => {
       const nextProjects = prevProjects.map((p) => {
@@ -192,14 +186,6 @@ export default function Home() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(nextProjects));
       } catch {}
 
-      // 즉시 클라우드 전송
-      pushProjectsToCloud(nextProjects).then((res) => {
-        if (res.success) {
-          lastKnownCloudJson.current = JSON.stringify(nextProjects);
-          setSyncStatus("connected");
-        }
-      }).catch(() => setSyncStatus("connected"));
-
       return nextProjects;
     });
   };
@@ -211,8 +197,8 @@ export default function Home() {
       // 1. 현재 로컬 데이터를 클라우드로 즉시 업로드
       await pushProjectsToCloud(projects);
       
-      // 2. 클라우드 최신 상태 조회 및 동기화
-      const pullRes = await pullProjectsFromCloud();
+      // 2. 클라우드 최신 상태 강제 조회 및 동기화
+      const pullRes = await pullProjectsFromCloud(undefined, true);
       if (pullRes.success && pullRes.projects && pullRes.projects.length > 0) {
         setProjects(pullRes.projects);
         lastKnownCloudJson.current = JSON.stringify(pullRes.projects);

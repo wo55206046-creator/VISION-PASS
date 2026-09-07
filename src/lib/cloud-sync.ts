@@ -94,6 +94,10 @@ export function subscribeLocalBroadcast(onUpdate: (projects: ProjectMaster[]) =>
   };
 }
 
+// ⚡ 마지막 풀 요청 시각 (스로틀링용)
+let lastPullTime = 0;
+let cachedCloudProjects: ProjectMaster[] | null = null;
+
 /**
  * ⚡ 0.05초 초고속 실시간 Server-Sent Events (SSE) 클라우드 리스너 (PC ↔ 모바일 라이브 스트림)
  */
@@ -105,33 +109,43 @@ export function subscribeCloudRealtime(
 
   const topic = getSanitizedTopic(roomKey);
   let eventSource: EventSource | null = null;
+  let isClosed = false;
 
-  try {
-    eventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
+  const connectSSE = () => {
+    if (isClosed) return;
+    try {
+      // ?since=24h 파라미터로 연결 즉시 최근 24시간 내 클라우드에 저장된 최신 프로젝트 상태를 스트림으로 자동 수신
+      eventSource = new EventSource(`https://ntfy.sh/${topic}/sse?since=24h`);
 
-    eventSource.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.event === "message" && data.message) {
-          const payload: CloudSyncPayload = JSON.parse(data.message);
-          // 내가 보낸 것이 아닌 다른 기기(PC 또는 모바일)에서 보낸 최신 데이터일 때만 즉시 갱신
-          if (
-            payload.senderDeviceId !== getDeviceId() &&
-            Array.isArray(payload.projects) &&
-            payload.projects.length > 0
-          ) {
-            onUpdate(payload.projects);
+      eventSource.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.event === "message" && data.message) {
+            const payload: CloudSyncPayload = JSON.parse(data.message);
+            // 다른 기기에서 보낸 최신 프로젝트 데이터 수신 시 즉각 반영
+            if (
+              payload &&
+              Array.isArray(payload.projects) &&
+              payload.projects.length > 0 &&
+              payload.senderDeviceId !== getDeviceId()
+            ) {
+              cachedCloudProjects = payload.projects;
+              onUpdate(payload.projects);
+            }
           }
-        }
-      } catch {}
-    };
+        } catch {}
+      };
 
-    eventSource.onerror = () => {
-      // 자동 재연결 대기
-    };
-  } catch {}
+      eventSource.onerror = () => {
+        // 네트워크 단절 시 브라우저가 자동 재연결 시도
+      };
+    } catch {}
+  };
+
+  connectSSE();
 
   return () => {
+    isClosed = true;
     try {
       eventSource?.close();
     } catch {}
@@ -156,6 +170,8 @@ export async function pushProjectsToCloud(
     } catch {}
   }
 
+  cachedCloudProjects = projects;
+
   // 2. 실시간 클라우드 전송 (PC와 모바일 실시간 50ms 라이브 전파)
   try {
     const topic = getSanitizedTopic(roomKey);
@@ -168,7 +184,7 @@ export async function pushProjectsToCloud(
     };
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
 
     const res = await fetch(`https://ntfy.sh/${topic}`, {
       method: "POST",
@@ -182,26 +198,39 @@ export async function pushProjectsToCloud(
     clearTimeout(timeoutId);
 
     if (res.ok) {
-      return { success: true, message: "클라우드 동기화 완료" };
+      return { success: true, message: "클라우드 실시간 동기화 완료" };
     }
   } catch (err) {
-    // 네트워크 일시 불안정 시 로컬 저장으로 안전하게 유지
+    // 네트워크 일시 불안정 시 로컬 저장으로 안전 유지
   }
 
   return { success: true, message: "로컬 저장 완료" };
 }
 
 /**
- * ☁️ 모바일/PC ➔ 클라우드 최신 프로젝트 데이터 실시간 다운로드
+ * ☁️ 모바일/PC ➔ 클라우드 최신 프로젝트 데이터 조회 (안전한 스로틀링 적용)
  */
 export async function pullProjectsFromCloud(
-  roomKey: string = getSyncRoomKey()
+  roomKey: string = getSyncRoomKey(),
+  force: boolean = false
 ): Promise<{
   success: boolean;
   projects?: ProjectMaster[];
   updatedAt?: string;
   message?: string;
 }> {
+  const now = Date.now();
+  // 429 에러 방지: 강제 조회가 아니면 8초 이내 재호출 시 캐시된 최신 데이터 즉시 반환
+  if (!force && now - lastPullTime < 8000 && cachedCloudProjects && cachedCloudProjects.length > 0) {
+    return {
+      success: true,
+      projects: cachedCloudProjects,
+      updatedAt: new Date().toISOString(),
+      message: "캐시된 최신 데이터 사용",
+    };
+  }
+  lastPullTime = now;
+
   const topic = getSanitizedTopic(roomKey);
 
   // 1. 클라우드 서버에서 최신 캐시 데이터 조회
@@ -218,13 +247,13 @@ export async function pullProjectsFromCloud(
     if (res.ok) {
       const text = await res.text();
       const lines = text.trim().split("\n").filter(Boolean);
-      // 가장 최근 메시지부터 역순 탐색
       for (let i = lines.length - 1; i >= 0; i--) {
         try {
           const item = JSON.parse(lines[i]);
           if (item.event === "message" && item.message) {
             const payload: CloudSyncPayload = JSON.parse(item.message);
             if (payload && Array.isArray(payload.projects) && payload.projects.length > 0) {
+              cachedCloudProjects = payload.projects;
               return {
                 success: true,
                 projects: payload.projects,
@@ -237,7 +266,7 @@ export async function pullProjectsFromCloud(
       }
     }
   } catch (err) {
-    // 클라우드 연결 실패 시 로컬 캐시로 안전하게 폴백
+    // 클라우드 연결 오류 시 무소음 로컬 폴백
   }
 
   // 2. 오프라인 로컬 스토리지 폴백
@@ -247,6 +276,7 @@ export async function pullProjectsFromCloud(
       if (raw) {
         const projects = JSON.parse(raw);
         if (Array.isArray(projects) && projects.length > 0) {
+          cachedCloudProjects = projects;
           return {
             success: true,
             projects,
