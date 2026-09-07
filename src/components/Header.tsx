@@ -75,27 +75,26 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* System Badges & Zero-Storage Indicator */}
           <div className="flex items-center gap-2">
-            {/* 실시간 클라우드 동기화 & QR 연동 버튼 */}
+            {/* 100% 전자동 실시간 클라우드 동기화 상태 표시등 */}
             {onForceSync && (
               <button
                 type="button"
                 onClick={onForceSync}
-                title="PC ↔ 모바일 실시간 데이터 연동 및 QR 연결"
-                className="flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 px-2.5 sm:px-3 py-1.5 text-xs border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 transition-all cursor-pointer shadow-sm active:scale-95"
+                title="PC ↔ 모바일 100% 실시간 자동 연동 중 (클릭 시 상세 설정/QR 확인 가능)"
+                className="flex items-center gap-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 px-2.5 sm:px-3 py-1.5 text-xs border border-emerald-500/30 hover:border-cyan-400 text-slate-200 transition-all cursor-pointer shadow-sm active:scale-95"
               >
-                <span className="font-bold">📲</span>
-                <span className="font-bold">
-                  {syncStatus === "syncing" ? "동기화 중..." : "기기 연동 (QR)"}
-                </span>
                 <span
                   className={`h-2 w-2 rounded-full ${
                     syncStatus === "connected"
                       ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
                       : syncStatus === "syncing"
                       ? "bg-amber-400 animate-pulse"
-                      : "bg-emerald-400"
+                      : "bg-emerald-400 shadow-[0_0_8px_#34d399]"
                   }`}
                 />
+                <span className="font-bold text-emerald-400">
+                  {syncStatus === "syncing" ? "자동 동기화 중..." : "실시간 자동 연동"}
+                </span>
               </button>
             )}
 
