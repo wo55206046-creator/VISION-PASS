@@ -10,6 +10,7 @@ export const metadata: Metadata = {
     shortcut: "/favicon.svg",
     apple: "/favicon.svg",
   },
+};
 
 export const viewport: Viewport = {
   width: "device-width",
