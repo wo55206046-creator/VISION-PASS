@@ -237,20 +237,21 @@ export async function saveCentralProjects(
 
   // 4. Zero-Setup 초고속 실시간 중앙 클라우드 채널 전송
   try {
-    const cleanKey = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "_");
-    const topic = `withtech_vp_central_${cleanKey}`;
+    const cleanKey = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "");
+    const topic = `withtech_vp_${cleanKey}`;
     const compressedBody = await compressJson(JSON.stringify(payload));
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4500);
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
 
+    // 단순 요청(Simple Request) 표준 헤더를 사용하여 브라우저 CORS OPTIONS Preflight 차단 문제 원천 해결
     const res = await fetch(`https://ntfy.sh/${topic}`, {
       method: "POST",
-      headers: {
-        "Title": "CENTRAL_DB_SYNC",
-        "Priority": "urgent",
-      },
       body: compressedBody,
+      headers: {
+        "Content-Type": "text/plain;charset=UTF-8",
+      },
+      mode: "cors",
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
@@ -325,7 +326,47 @@ export async function fetchCentralProjects(
     } catch {}
   }
 
-  // 4. 로컬 스토리지 캐시 폴백
+  // 4. Zero-Setup 중앙 클라우드 최신 캐시 조회 (poll 1회)
+  try {
+    const cleanKey = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "");
+    const topic = `withtech_vp_${cleanKey}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+    const res = await fetch(`https://ntfy.sh/${topic}/json?poll=1`, {
+      mode: "cors",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const text = await res.text();
+      const lines = text.trim().split("\n");
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+          const parsed = JSON.parse(lines[i]);
+          if (parsed.event === "message" && parsed.message) {
+            const decompressed = await decompressJson(parsed.message);
+            const payload: CentralSyncPayload = JSON.parse(decompressed);
+            if (payload && Array.isArray(payload.projects) && payload.projects.length > 0) {
+              memoryCacheProjects = payload.projects;
+              if (typeof window !== "undefined") {
+                try {
+                  localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(payload.projects));
+                  if (payload.updatedAt) {
+                    localStorage.setItem(STORAGE_LAST_SYNC_KEY, payload.updatedAt);
+                  }
+                } catch {}
+              }
+              return { success: true, projects: payload.projects, updatedAt: payload.updatedAt };
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // 5. 로컬 스토리지 캐시 폴백
   if (typeof window !== "undefined") {
     try {
       const raw = localStorage.getItem(STORAGE_PROJECTS_KEY);
@@ -356,14 +397,21 @@ export function subscribeCentralRealtime(
 ): () => void {
   if (typeof window === "undefined" || typeof EventSource === "undefined") return () => {};
 
-  const cleanKey = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "_");
-  const topic = `withtech_vp_central_${cleanKey}`;
+  const cleanKey = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const topic = `withtech_vp_${cleanKey}`;
   let eventSource: EventSource | null = null;
   let isClosed = false;
+  let retryTimeout: NodeJS.Timeout | null = null;
 
   const connectSSE = () => {
     if (isClosed) return;
     try {
+      if (eventSource) {
+        try {
+          eventSource.close();
+        } catch {}
+      }
+
       eventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
 
       eventSource.onmessage = async (e) => {
@@ -396,7 +444,16 @@ export function subscribeCentralRealtime(
       };
 
       eventSource.onerror = () => {
-        // 일시적 단절 시 브라우저가 자동 재연결 시도
+        // 일시적 단절 시 과도한 재연결 루프(429)를 방지하기 위해 4초 대기 후 안전 재연결
+        if (!isClosed) {
+          try {
+            eventSource?.close();
+          } catch {}
+          if (retryTimeout) clearTimeout(retryTimeout);
+          retryTimeout = setTimeout(() => {
+            if (!isClosed) connectSSE();
+          }, 4000);
+        }
       };
     } catch {}
   };
@@ -405,8 +462,10 @@ export function subscribeCentralRealtime(
 
   return () => {
     isClosed = true;
+    if (retryTimeout) clearTimeout(retryTimeout);
     try {
       eventSource?.close();
     } catch {}
   };
 }
+

@@ -103,14 +103,12 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
           audio: false,
         });
       } catch (e1) {
-        console.warn("1단계 고해상도 카메라 실패, 기본 설정으로 재시도:", e1);
         try {
           mediaStream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: facingMode },
             audio: false,
           });
         } catch (e2) {
-          console.warn("2단계 facingMode 실패, 가용 비디오 스트림으로 재시도:", e2);
           mediaStream = await navigator.mediaDevices.getUserMedia({
             video: true,
             audio: false,
@@ -138,9 +136,18 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
       setTorchSupported(Boolean(capabilities.torch));
     } catch (err: unknown) {
-      console.warn("Camera access failed:", err);
+      const isNotFound =
+        err instanceof Error &&
+        (err.name === "NotFoundError" || err.name === "DevicesNotFoundError");
+      
+      if (!isNotFound) {
+        console.warn("Camera access failed:", err);
+      }
+      
       setHasCameraError(
-        "카메라 연결에 실패하였습니다. 브라우저/앱 설정에서 [카메라 권한]이 허용되어 있는지 확인 후 [카메라 다시 연결]을 눌러주세요."
+        isNotFound
+          ? "연결된 카메라 장치가 감지되지 않았습니다. PC에 웹캠이 연결되어 있는지 확인하시거나, 스마트폰 모바일 기기 또는 [이미지 파일 업로드]를 이용해주세요."
+          : "카메라 연결에 실패하였습니다. 브라우저/앱 설정에서 [카메라 권한]이 허용되어 있는지 확인 후 [카메라 다시 연결]을 눌러주세요."
       );
     }
   }, [facingMode]);
