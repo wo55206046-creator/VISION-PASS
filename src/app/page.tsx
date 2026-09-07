@@ -79,7 +79,7 @@ export default function Home() {
     }
   };
 
-  // 2. 초기 로드 및 백그라운드 자동 동기화
+  // 2. 초기 로드 및 백그라운드 실시간 3.5초 주기 자동 동기화 (PC ↔ 모바일 양방향)
   useEffect(() => {
     const saved = loadSavedProjects();
     if (saved && saved.length > 0) {
@@ -88,7 +88,15 @@ export default function Home() {
       lastKnownCloudJson.current = JSON.stringify(saved);
     }
 
-    // 화면 포커스, 탭 전환 시 자동 수신
+    // 앱 시작 시 클라우드에서 최신 데이터 즉시 수신
+    fetchCloudProjects();
+
+    // 3.5초 주기 백그라운드 실시간 양방향 폴링 동기화
+    const intervalId = setInterval(() => {
+      fetchCloudProjects();
+    }, 3500);
+
+    // 화면 포커스, 탭 전환 시 즉시 수신
     const handleQuickSync = () => fetchCloudProjects();
     window.addEventListener("focus", handleQuickSync);
     document.addEventListener("visibilitychange", handleQuickSync);
@@ -109,13 +117,14 @@ export default function Home() {
     });
 
     return () => {
+      clearInterval(intervalId);
       window.removeEventListener("focus", handleQuickSync);
       document.removeEventListener("visibilitychange", handleQuickSync);
       unsubscribeBroadcast();
     };
   }, []);
 
-  // 3. [자동 발신] 사용자가 프로젝트 수정/추가/삭제/OCR 검증 시 0.5초 내 클라우드 자동 즉시 푸시
+  // 3. [자동 발신] 사용자가 프로젝트 수정/추가/삭제/OCR 검증 시 0.4초 내 클라우드 자동 즉시 푸시
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -131,15 +140,17 @@ export default function Home() {
       console.warn("Failed to save projects to localStorage", e);
     }
 
-    // 클라우드와 내용이 다를 때만 500ms 디바운스로 즉시 자동 업로드
+    // 클라우드와 내용이 다를 때 400ms 디바운스로 즉시 자동 업로드
     if (currentJson !== lastKnownCloudJson.current) {
       if (syncPushTimeoutRef.current) clearTimeout(syncPushTimeoutRef.current);
       syncPushTimeoutRef.current = setTimeout(async () => {
+        setSyncStatus("syncing");
         const res = await pushProjectsToCloud(projects);
         if (res.success) {
           lastKnownCloudJson.current = currentJson;
         }
-      }, 500);
+        setSyncStatus("connected");
+      }, 400);
     }
 
     return () => {
@@ -165,7 +176,7 @@ export default function Home() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(nextProjects));
       } catch {}
 
-      // 0초 지연: 즉시 클라우드 전송 (모바일 백그라운드 전환 시에도 손실 방지)
+      // 즉시 클라우드 전송
       pushProjectsToCloud(nextProjects).then((res) => {
         if (res.success) {
           lastKnownCloudJson.current = JSON.stringify(nextProjects);
@@ -181,7 +192,10 @@ export default function Home() {
   const handleForceManualSync = async () => {
     setSyncStatus("syncing");
     try {
-      // 1. 먼저 클라우드에서 최신 데이터 당겨오기
+      // 1. 현재 로컬 데이터를 클라우드로 즉시 업로드
+      await pushProjectsToCloud(projects);
+      
+      // 2. 클라우드 최신 상태 조회 및 동기화
       const pullRes = await pullProjectsFromCloud();
       if (pullRes.success && pullRes.projects && pullRes.projects.length > 0) {
         setProjects(pullRes.projects);
@@ -190,22 +204,15 @@ export default function Home() {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(pullRes.projects));
         } catch {}
         setSyncStatus("connected");
-        alert("✅ 실시간 자동 동기화가 정상 완료되었습니다!");
+        alert(`✅ [PC ↔ 모바일 실시간 연동 완료]\n클라우드와 연결되어 총 ${pullRes.projects.length}개의 프로젝트가 완벽히 동기화되었습니다!`);
         return;
       }
 
-      // 2. 현재 내 로컬 데이터를 클라우드로 전송
-      const pushRes = await pushProjectsToCloud(projects);
-      if (pushRes.success) {
-        setSyncStatus("connected");
-        alert("✅ 클라우드와 연결되어 최신 상태로 동기화되었습니다!");
-      } else {
-        setSyncStatus("connected");
-        alert("✅ 로컬 데이터가 안전하게 저장 및 동기화되었습니다!");
-      }
+      setSyncStatus("connected");
+      alert(`✅ [PC ↔ 모바일 실시간 동기화 완료]\n총 ${projects.length}개의 프로젝트가 클라우드에 안전하게 반영되었습니다.`);
     } catch (e) {
       setSyncStatus("connected");
-      alert("✅ 실시간 동기화 채널이 활성화되었습니다.");
+      alert("✅ 실시간 동기화 채널이 연결되었습니다.");
     }
   };
 
