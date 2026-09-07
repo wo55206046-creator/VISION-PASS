@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" fill="none">
+  <defs>
+    <linearGradient id="wt-fav-grad" x1="0" y1="18" x2="36" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stopColor="#FF3000"/>
+      <stop offset="50%" stopColor="#FF6A00"/>
+      <stop offset="100%" stopColor="#FFA200"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(18, 18) rotate(45) translate(-13, -13)">
+    <rect x="0" y="0" width="26" height="26" rx="5.5" fill="url(#wt-fav-grad)"/>
+    <polygon points="13,11 9.5,5.5 16.5,5.5" fill="#FFFFFF"/>
+    <path d="M4.5 10 L13 24.5 L21.5 10 L18 10 L13 18.5 L8 10 Z" fill="#FFFFFF"/>
+  </g>
+</svg>

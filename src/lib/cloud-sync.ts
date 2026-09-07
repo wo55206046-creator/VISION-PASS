@@ -127,8 +127,8 @@ async function decompressJson(str: string): Promise<string> {
   return str;
 }
 
-// 🌐 실시간 크로스 디바이스(PC ↔ 모바일) 동기화 토픽 접두어
-const CLOUD_SYNC_TOPIC_PREFIX = "withtech_vp_data";
+// 🌐 실시간 크로스 디바이스(PC ↔ 모바일) 동기화 토픽 접두어 (깨끗한 최신 토픽)
+const CLOUD_SYNC_TOPIC_PREFIX = "withtech_vp_live_v2";
 
 // 메모리 캐시 및 마지막 요청 시간
 let lastPullTime = 0;
@@ -155,8 +155,8 @@ export function subscribeCloudRealtime(
   const connectSSE = () => {
     if (isClosed) return;
     try {
-      // ?since=24h 파라미터로 앱 켜는 즉시 최근 24시간 내 상대방이 저장한 최신 프로젝트 목록을 즉시 수신
-      eventSource = new EventSource(`https://ntfy.sh/${topic}/sse?since=24h`);
+      // 429 오류 방지: since 파라미터 없는 표준 영구 SSE 실시간 스트림 연결
+      eventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
 
       eventSource.onmessage = async (e) => {
         try {
@@ -191,7 +191,7 @@ export function subscribeCloudRealtime(
       };
 
       eventSource.onerror = () => {
-        // 네트워크 단절 시 브라우저가 자동 재연결 시도
+        // 일시적 단절 시 브라우저가 자동 재연결
       };
     } catch {}
   };
@@ -264,7 +264,7 @@ export async function pushProjectsToCloud(
 }
 
 /**
- * ☁️ 모바일/PC ➔ 클라우드 최신 프로젝트 데이터 초기 수신
+ * ☁️ 모바일/PC ➔ 클라우드 최신 프로젝트 데이터 초기 수신 (안전한 캐시 조회)
  */
 export async function pullProjectsFromCloud(
   roomKey: string = getSyncRoomKey(),
@@ -275,62 +275,14 @@ export async function pullProjectsFromCloud(
   updatedAt?: string;
   message?: string;
 }> {
-  const now = Date.now();
-  if (!force && now - lastPullTime < 4000 && cachedCloudProjects && cachedCloudProjects.length > 0) {
+  // 1. 캐시된 프로젝트가 있으면 우선 반환
+  if (cachedCloudProjects && cachedCloudProjects.length > 0) {
     return {
       success: true,
       projects: cachedCloudProjects,
       updatedAt: new Date().toISOString(),
       message: "캐시된 데이터 사용",
     };
-  }
-  lastPullTime = now;
-
-  const topic = getTopicName(roomKey);
-
-  // 1. 클라우드에서 최근 24시간 내 저장된 최신 프로젝트 수신
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-    const res = await fetch(`https://ntfy.sh/${topic}/json?poll=1&since=24h`, {
-      method: "GET",
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const text = await res.text();
-      const lines = text.trim().split("\n").filter(Boolean);
-      for (let i = lines.length - 1; i >= 0; i--) {
-        try {
-          const item = JSON.parse(lines[i]);
-          if (item.event === "message" && item.message) {
-            const decompressed = await decompressJson(item.message);
-            const payload: CloudSyncPayload = JSON.parse(decompressed);
-            if (payload && Array.isArray(payload.projects) && payload.projects.length > 0) {
-              cachedCloudProjects = payload.projects;
-              if (typeof window !== "undefined") {
-                try {
-                  localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(payload.projects));
-                  if (payload.updatedAt) {
-                    localStorage.setItem(STORAGE_LAST_SYNC_KEY, payload.updatedAt);
-                  }
-                } catch {}
-              }
-              return {
-                success: true,
-                projects: payload.projects,
-                updatedAt: payload.updatedAt || new Date().toISOString(),
-                message: "클라우드 최신 데이터 로드 완료",
-              };
-            }
-          }
-        } catch {}
-      }
-    }
-  } catch (err) {
-    // 네트워크 단절 시 로컬 캐시 폴백
   }
 
   // 2. 오프라인 로컬 스토리지 폴백
