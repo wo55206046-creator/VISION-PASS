@@ -3,6 +3,7 @@ import { OcrResult } from "@/types";
 import {
   createYellowLabelBoostCanvas,
   preprocessCanvas,
+  rotateCanvas,
   disposeCanvas,
   DEFAULT_PREPROCESSING_OPTIONS,
 } from "./image-processing";
@@ -224,7 +225,7 @@ const IGNORE_WORDS = new Set([
  * 유효한 시리얼 번호 패턴 검증
  */
 function isValidSerialFormat(candidate: string): boolean {
-  if (!candidate || candidate.length < 3 || candidate.length > 35) return false;
+  if (!candidate || candidate.length < 3 || candidate.length > 40) return false;
 
   const upper = candidate.toUpperCase();
   if (IGNORE_WORDS.has(upper)) return false;
@@ -249,6 +250,11 @@ function isValidSerialFormat(candidate: string): boolean {
  */
 function disambiguateSerialToken(token: string): string {
   if (!token || token.length < 3) return token;
+
+  // 0. 윈도우 25자리 정품 키 (5x5 형태: XXXXX-XXXXX-XXXXX-XXXXX-XXXXX)는 임의 치환 없이 원문 보존
+  if (/^[A-Za-z0-9]{5}(-[A-Za-z0-9]{5}){4}$/i.test(token)) {
+    return token.toUpperCase();
+  }
 
   // 1. 대부분 숫자로 구성된 시리얼 (예: "O924O22O4O27", "673644", "25OO2481", "1312793O7")
   const digitsCount = (token.match(/[0-9]/g) || []).length;
@@ -301,9 +307,9 @@ function sanitizeSerialToken(raw: string): string {
   // 앞뒤 콜론, 세미콜론, 슬래시, 바, 해시, 따옴표 제거
   clean = clean.replace(/^[ :;=|\-#/\\_.,<>()[\]{}]+|[ :;=|\-#/\\_.,<>()[\]{}]+$/g, "");
 
-  // 영문/한글 접두사 자동 제거 (예: "SN:25002481", "시리얼:673644", "일련번호:092402204027")
+  // 영문/한글 접두사 자동 제거 (예: "WIN11 S/N : ...", "PC S/N : ...", "SN:25002481", "시리얼:673644")
   clean = clean.replace(
-    /^(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|Prod\s*S[\/\\|\-.]?N|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*NO\.?|S[\/\\|\-.]N|SN|S\.N\.|S\/NO\.?|NO\.?|N°|시리얼\s*넘버|시리얼\s*번호|시리얼|일련\s*번호|제조\s*번호|식별\s*번호|관리\s*번호|호기|단품|부품)\s*[:.\-|=#\s]*/i,
+    /^(?:WIN(?:11|10|7|8|DOWS)?\s*S[\/\\|\-.]?N|WIN(?:11|10|7|8|DOWS)?\s*KEY|WIN(?:11|10|7|8)?|PC\s*S[\/\\|\-.]?N|IPC\s*S[\/\\|\-.]?N|Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|Prod\s*S[\/\\|\-.]?N|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*NO\.?|S[\/\\|\-.]N|SN|S\.N\.|S\/NO\.?|NO\.?|N°|CON-[A-Z0-9]+\s*S[\/\\|\-.]?N|시리얼\s*넘버|시리얼\s*번호|시리얼|일련\s*번호|제조\s*번호|식별\s*번호|관리\s*번호|호기|단품|부품)\s*[:.\-|=#\s]*/i,
     ""
   );
 
@@ -430,14 +436,36 @@ export function extractSerialCandidates(
       baseScore -= 800;
     }
 
-    // 3. 6~14자리 순수 숫자 시리얼 (예: 360025389, 360025446, 26022540) - 제조사 고유 일련번호: 최우선 가산점!
+    // 3. 25자리 5x5 윈도우 정품 라이센스 키 (예: JHTBB-N94YW-9HGGV-78RD3-3PH23) (최우선 가산점 +2000)
+    if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cleaned)) {
+      baseScore += 2000;
+    }
+
+    // 4. KSA 하드웨어/PC 시리얼 (예: KSA7965797, KSA7706685) (+1600)
+    if (/^KSA[0-9]{6,10}$/i.test(cleaned)) {
+      baseScore += 1600;
+    }
+
+    // 5. 6~14자리 순수 숫자 시리얼 (예: 360025389, 360025446, 26022540) - 제조사 고유 일련번호: 최우선 가산점!
     if (/^[0-9]{6,14}$/.test(cleaned)) {
       baseScore += 1200;
     }
 
-    // 4. 산업용 하이픈 복합 시리얼 (예: 25X-0049H, TM1L-HK26-1007, 260225-40)
+    // 6. 산업용 하이픈 복합 시리얼 (예: 25X-0049H, TM1L-HK26-1007, 260225-40)
     if (cleaned.includes("-") && /[0-9]/.test(cleaned) && cleaned.length >= 7 && !/(?:PRO|PLUS|MAX|MINI)$/i.test(upper)) {
       baseScore += 600;
+    }
+
+    // 대상 부품 컨텍스트에 따른 추가 가산점
+    const targetText = `${context?.partName || ""} ${context?.spec || ""} ${context?.subSpec || ""}`.toUpperCase();
+    if (/WIN|WINDOWS|OS|라이선스|라이센스|SW|소프트웨어|KEY/i.test(targetText)) {
+      if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cleaned)) {
+        baseScore += 1200;
+      }
+    } else if (/PC|IPC|본체|컴퓨터|산업용|HW|메인/i.test(targetText)) {
+      if (/^KSA[0-9]{6,10}$/i.test(cleaned) || (!cleaned.includes("-") && /^[A-Z0-9]{6,14}$/i.test(cleaned))) {
+        baseScore += 1200;
+      }
     }
 
     // 화면 정가운데 보너스 적용
@@ -456,6 +484,26 @@ export function extractSerialCandidates(
   // [전략 1] S/N :, Serial Number, SERIAL, Serial, S/N 및 수기/한글 라벨 우측 값 직접 추출
   // ============================================================================
   const labelRightRegexes = [
+    // 1-0-0-0. WIN11 S/N / WIN S/N / Windows Key 25자리 정품 키 (예: "WIN11 S/N : JHTBB-N94YW-9HGGV-78RD3-3PH23") (2900점 최우선)
+    {
+      regex: /(?:WIN(?:11|10|7|8|DOWS)?\s*S[\/\\|\-.]?N|WIN(?:11|10|7|8|DOWS)?\s*KEY|WIN(?:11|10|7|8)?)\s*[:.\-|=;#\s]*([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}|[A-Za-z0-9\-_]{4,35})/gi,
+      score: 2900,
+    },
+    // 1-0-0-0-1. 25자리 5x5 윈도우 정품키 단독 패턴 (예: "JHTBB-N94YW-9HGGV-78RD3-3PH23") (2850점)
+    {
+      regex: /\b([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5})\b/gi,
+      score: 2850,
+    },
+    // 1-0-0-0-2. PC S/N / IPC S/N (예: "PC S/N : KSA7965797", "IPC S/N : KSA7706685") (2800점)
+    {
+      regex: /(?:PC\s*S[\/\\|\-.]?N|IPC\s*S[\/\\|\-.]?N|PC\s*SN|IPC\s*SN)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_]{4,25})/gi,
+      score: 2800,
+    },
+    // 1-0-0-0-3. KSA 하드웨어 시리얼 (예: "KSA7965797", "KSA7706685") (2700점)
+    {
+      regex: /\b(KSA[0-9]{6,10})\b/gi,
+      score: 2700,
+    },
     // 1-0-0. SN: / S/N: / 5N: / SN; 직후 4~25자리 고유 일련번호 (예: "SN:260225-40" -> 260225-40, "SN:210708-28" -> 210708-28, "SN:360025389" -> 360025389) (2600점 최우선)
     {
       regex: /(?:S\s*[\/\\|\-.;:]?\s*N|5\s*[\/\\|\-.;:]?\s*N|S\s*N|SN|5N|S#|S\.N\.|S\/NO)\s*[:.\-|=;#\s]*([0-9A-Za-z\-_]{4,25})/gi,
@@ -624,7 +672,7 @@ export function extractSerialCandidates(
     .filter((c) => c.score >= 40)
     .sort((a, b) => b.score - a.score);
 
-  const candidates = sortedCandidates.map((c) => c.serial).slice(0, 3);
+  const candidates = sortedCandidates.map((c) => c.serial).slice(0, 5);
   const bestSerial = candidates.length > 0 ? candidates[0] : "";
 
   return {
@@ -651,12 +699,28 @@ export async function performInMemoryOcr(
 
   const worker = await getOcrWorker(onProgress);
 
-  // 1차 패스: 노란색 라벨 특화 캔버스 판독 (SN:260225-40, CON-B1 등 추출)
+  // 1차 패스: 노란색 라벨 특화 캔버스 판독 (SN:260225-40, WIN11 S/N, PC S/N 등 추출)
   const pass1 = await worker.recognize(yellowBoosted);
   let rawText = pass1.data.text || "";
   let confidence = Math.round(pass1.data.confidence || 0);
 
   const words = [...((pass1.data as any).words || [])];
+
+  // 세로 라벨(종횡비가 길거나 텍스트가 부족한 경우)을 위한 90도 회전 패스
+  const isVerticalAspect = canvas.height > canvas.width * 1.15;
+  if (isVerticalAspect || rawText.length < 10) {
+    try {
+      const rotatedYellow = rotateCanvas(yellowBoosted, 90);
+      const passRot = await worker.recognize(rotatedYellow);
+      const rotText = passRot.data.text || "";
+      if (rotText) {
+        rawText += "\n" + rotText;
+        confidence = Math.max(confidence, Math.round(passRot.data.confidence || 0));
+        words.push(...((passRot.data as any).words || []));
+      }
+      disposeCanvas(rotatedYellow);
+    } catch {}
+  }
 
   // 2차 패스: 텍스트 보강을 위해 고대비 캔버스 판독 결과 병합
   try {
@@ -708,7 +772,7 @@ export async function performInMemoryOcr(
   // ⚡ 하드웨어 바코드가 검출된 경우 100% 신뢰도로 1순위 즉시 확정
   if (nativeBarcode) {
     finalSerial = nativeBarcode;
-    finalCandidates = [nativeBarcode, ...finalCandidates.filter((c) => c !== nativeBarcode)].slice(0, 3);
+    finalCandidates = [nativeBarcode, ...finalCandidates.filter((c) => c !== nativeBarcode)].slice(0, 5);
     confidence = 100;
   }
 

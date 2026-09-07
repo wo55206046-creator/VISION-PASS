@@ -591,12 +591,12 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             <div className="relative">
               <input
                 type="text"
-                placeholder="시리얼 번호 (예: KSA7706685, 260225-40, TM1L-HK26-1007)"
+                placeholder="시리얼 번호 (예: KSA7965797 또는 JHTBB-N94YW-9HGGV-78RD3-3PH23)"
                 value={selectedSerial}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setSelectedSerial(e.target.value.toUpperCase())
                 }
-                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 pr-10 text-sm sm:text-base font-mono font-bold text-cyan-300 tracking-wider uppercase focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 pr-10 text-xs sm:text-sm font-mono font-bold text-cyan-300 tracking-wider uppercase focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 break-all"
               />
               {selectedSerial && (
                 <button
@@ -610,38 +610,52 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               )}
             </div>
 
-            {/* Serial Candidates Pills (다중 후보 원터치 선택) */}
+            {/* Serial Candidates Pills (다중 후보 원터치 선택: WIN 25자리 키 / PC 시리얼 자동 태깅) */}
             {ocrResult && ocrResult.candidates && ocrResult.candidates.length > 0 && (
               <div className="space-y-1.5 pt-0.5">
                 <span className="text-[10px] font-semibold text-slate-400">
                   인식된 시리얼 번호 후보 (터치하여 즉시 선택):
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {ocrResult.candidates.map((cand, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setSelectedSerial(cand)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                        selectedSerial === cand
-                          ? "bg-cyan-500 text-slate-950 shadow-glow-cyan font-bold ring-2 ring-cyan-300"
-                          : "bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700"
-                      }`}
-                    >
-                      <span
-                        className={`text-[9px] px-1 py-0.2 rounded font-bold ${
-                          idx === 0
-                            ? selectedSerial === cand
-                              ? "bg-slate-950 text-cyan-300"
-                              : "bg-cyan-950 text-cyan-300 border border-cyan-700"
-                            : "bg-slate-900 text-slate-400"
+                  {ocrResult.candidates.map((cand, idx) => {
+                    const isWinKey = /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cand);
+                    const isPcSsn = /^KSA[0-9]{6,10}$/i.test(cand);
+                    const labelBadge = isWinKey
+                      ? "WIN11 키 (25자)"
+                      : isPcSsn
+                      ? "PC S/N"
+                      : idx === 0
+                      ? "1순위 S/N"
+                      : `${idx + 1}순위`;
+
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setSelectedSerial(cand)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 max-w-full text-left ${
+                          selectedSerial === cand
+                            ? "bg-cyan-500 text-slate-950 shadow-glow-cyan font-bold ring-2 ring-cyan-300"
+                            : "bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700"
                         }`}
                       >
-                        {idx === 0 ? "1순위 S/N" : `${idx + 1}순위`}
-                      </span>
-                      <span>{cand}</span>
-                    </button>
-                  ))}
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
+                            selectedSerial === cand
+                              ? "bg-slate-950 text-cyan-300"
+                              : isWinKey
+                              ? "bg-amber-950 text-amber-300 border border-amber-700/60"
+                              : isPcSsn
+                              ? "bg-cyan-950 text-cyan-300 border border-cyan-700/60"
+                              : "bg-slate-900 text-slate-400"
+                          }`}
+                        >
+                          {labelBadge}
+                        </span>
+                        <span className="break-all tracking-tight">{cand}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

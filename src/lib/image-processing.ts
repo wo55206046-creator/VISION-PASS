@@ -273,6 +273,31 @@ export function disposeCanvas(canvas: HTMLCanvasElement | null) {
 }
 
 /**
+ * 캔버스 임의 각도(90도, 180도, 270도) 회전 유틸리티
+ */
+export function rotateCanvas(
+  sourceCanvas: HTMLCanvasElement,
+  angle: 90 | 180 | 270
+): HTMLCanvasElement {
+  const rotated = document.createElement("canvas");
+  if (angle === 90 || angle === 270) {
+    rotated.width = sourceCanvas.height;
+    rotated.height = sourceCanvas.width;
+  } else {
+    rotated.width = sourceCanvas.width;
+    rotated.height = sourceCanvas.height;
+  }
+  const ctx = rotated.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return sourceCanvas;
+
+  ctx.translate(rotated.width / 2, rotated.height / 2);
+  ctx.rotate((angle * Math.PI) / 180);
+  ctx.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2);
+
+  return rotated;
+}
+
+/**
  * 🟡 산업용 노란색 라벨 테이프 & 디지털 인쇄 폰트 초정밀 색상 분리 및 텍스트 극대화
  * 노란색 배경(High R, High G, Low B)을 순백색으로 분리하고 검정/짙은 인쇄 텍스트를 고대비로 추출
  */
@@ -300,15 +325,15 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
     const brightness = (r * 299 + g * 587 + b * 114) / 1000;
 
     let enhanced: number;
-    if (yellowIndex > 25 && brightness > 80) {
+    if (yellowIndex > 20 && brightness > 70) {
       // 노란색 배경 영역 -> 순백색(255)
       enhanced = 255;
-    } else if (brightness < 115) {
+    } else if (brightness < 110) {
       // 검은색/짙은 글자 영역 -> 순흑색(0)
       enhanced = 0;
     } else {
       // 완만한 대비 스트레칭
-      enhanced = brightness > 140 ? 255 : Math.max(0, Math.min(255, (brightness - 60) * (255 / 100)));
+      enhanced = brightness > 135 ? 255 : Math.max(0, Math.min(255, (brightness - 55) * (255 / 95)));
     }
 
     data[i] = enhanced;
