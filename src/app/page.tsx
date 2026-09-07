@@ -8,7 +8,7 @@ import { PjtListStep } from "@/components/PjtListStep";
 import { ProjectMasterStep } from "@/components/ProjectMasterStep";
 import { EquipmentUnitStep } from "@/components/EquipmentUnitStep";
 import { TemplateManagerStep } from "@/components/TemplateManagerStep";
-import { pushProjectsToCloud, pullProjectsFromCloud, subscribeLocalBroadcast } from "@/lib/cloud-sync";
+import { pushProjectsToCloud, pullProjectsFromCloud, subscribeLocalBroadcast, subscribeCloudRealtime } from "@/lib/cloud-sync";
 import {
   ShieldCheck,
   Cpu,
@@ -116,11 +116,27 @@ export default function Home() {
       }
     });
 
+    // ⚡ 초고속 실시간 SSE 클라우드 스트림 구독 (PC ↔ 모바일 0.05초 즉시 연동)
+    const unsubscribeRealtime = subscribeCloudRealtime((incoming) => {
+      if (incoming && incoming.length > 0) {
+        const incomingJson = JSON.stringify(incoming);
+        if (incomingJson !== lastKnownCloudJson.current) {
+          lastKnownCloudJson.current = incomingJson;
+          setProjects(incoming);
+          try {
+            localStorage.setItem(STORAGE_KEY, incomingJson);
+          } catch {}
+        }
+        setSyncStatus("connected");
+      }
+    });
+
     return () => {
       clearInterval(intervalId);
       window.removeEventListener("focus", handleQuickSync);
       document.removeEventListener("visibilitychange", handleQuickSync);
       unsubscribeBroadcast();
+      unsubscribeRealtime();
     };
   }, []);
 

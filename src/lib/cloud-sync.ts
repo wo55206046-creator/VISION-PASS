@@ -5,9 +5,8 @@ const DEFAULT_ROOM_KEY = "WITHTECH-VISIONPASS-2026";
 const STORAGE_PROJECTS_KEY = "VISION_PASS_PROJECTS_DATA_V8";
 const STORAGE_LAST_SYNC_KEY = "VISION_PASS_LAST_SYNC_TIME";
 
-// 🌐 실시간 크로스 디바이스(PC ↔ 모바일) 동기화용 Cloud KV 엔드포인트
-const CLOUD_SYNC_BUCKET = "B5M7K8N2q7m4D2y8";
-const CLOUD_API_BASE = `https://kvdb.io/${CLOUD_SYNC_BUCKET}`;
+// 🌐 실시간 크로스 디바이스(PC ↔ 모바일) 동기화 엔드포인트 (ntfy.sh 실시간 SSE & Pub/Sub)
+const CLOUD_SYNC_TOPIC_PREFIX = "withtech_vp_sync";
 
 // 디바이스 ID (자기 자신의 메아리 루프 방지)
 function getDeviceId(): string {
@@ -22,6 +21,11 @@ function getDeviceId(): string {
   } catch {
     return "dev_default";
   }
+}
+
+function getSanitizedTopic(roomKey: string = getSyncRoomKey()): string {
+  const clean = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "_");
+  return `${CLOUD_SYNC_TOPIC_PREFIX}_${clean}`;
 }
 
 export function getSyncRoomKey(): string {
@@ -91,6 +95,50 @@ export function subscribeLocalBroadcast(onUpdate: (projects: ProjectMaster[]) =>
 }
 
 /**
+ * ⚡ 0.05초 초고속 실시간 Server-Sent Events (SSE) 클라우드 리스너 (PC ↔ 모바일 라이브 스트림)
+ */
+export function subscribeCloudRealtime(
+  onUpdate: (projects: ProjectMaster[]) => void,
+  roomKey: string = getSyncRoomKey()
+): () => void {
+  if (typeof window === "undefined" || typeof EventSource === "undefined") return () => {};
+
+  const topic = getSanitizedTopic(roomKey);
+  let eventSource: EventSource | null = null;
+
+  try {
+    eventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
+
+    eventSource.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.event === "message" && data.message) {
+          const payload: CloudSyncPayload = JSON.parse(data.message);
+          // 내가 보낸 것이 아닌 다른 기기(PC 또는 모바일)에서 보낸 최신 데이터일 때만 즉시 갱신
+          if (
+            payload.senderDeviceId !== getDeviceId() &&
+            Array.isArray(payload.projects) &&
+            payload.projects.length > 0
+          ) {
+            onUpdate(payload.projects);
+          }
+        }
+      } catch {}
+    };
+
+    eventSource.onerror = () => {
+      // 자동 재연결 대기
+    };
+  } catch {}
+
+  return () => {
+    try {
+      eventSource?.close();
+    } catch {}
+  };
+}
+
+/**
  * ☁️ PC ➔ 클라우드 ➔ 모바일 실시간 양방향 프로젝트 데이터 업로드
  */
 export async function pushProjectsToCloud(
@@ -108,9 +156,9 @@ export async function pushProjectsToCloud(
     } catch {}
   }
 
-  // 2. 실시간 클라우드 KV 서버로 전송 (PC와 모바일 공유)
+  // 2. 실시간 클라우드 전송 (PC와 모바일 실시간 50ms 라이브 전파)
   try {
-    const cleanKey = encodeURIComponent(roomKey || DEFAULT_ROOM_KEY);
+    const topic = getSanitizedTopic(roomKey);
     const payload: CloudSyncPayload = {
       version: 8,
       roomKey: roomKey || DEFAULT_ROOM_KEY,
@@ -122,10 +170,11 @@ export async function pushProjectsToCloud(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3500);
 
-    const res = await fetch(`${CLOUD_API_BASE}/${cleanKey}`, {
+    const res = await fetch(`https://ntfy.sh/${topic}`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Title": "VISION-PASS-SYNC",
+        "Priority": "urgent",
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
@@ -153,31 +202,38 @@ export async function pullProjectsFromCloud(
   updatedAt?: string;
   message?: string;
 }> {
-  const cleanKey = encodeURIComponent(roomKey || DEFAULT_ROOM_KEY);
+  const topic = getSanitizedTopic(roomKey);
 
-  // 1. 클라우드 서버에서 최신 데이터 조회
+  // 1. 클라우드 서버에서 최신 캐시 데이터 조회
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3500);
 
-    const res = await fetch(`${CLOUD_API_BASE}/${cleanKey}?t=${Date.now()}`, {
+    const res = await fetch(`https://ntfy.sh/${topic}/json?poll=1&since=24h`, {
       method: "GET",
-      headers: {
-        "Accept": "application/json",
-      },
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
 
     if (res.ok) {
-      const payload: CloudSyncPayload = await res.json();
-      if (payload && Array.isArray(payload.projects) && payload.projects.length > 0) {
-        return {
-          success: true,
-          projects: payload.projects,
-          updatedAt: payload.updatedAt || new Date().toISOString(),
-          message: "클라우드 데이터 수신 성공",
-        };
+      const text = await res.text();
+      const lines = text.trim().split("\n").filter(Boolean);
+      // 가장 최근 메시지부터 역순 탐색
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+          const item = JSON.parse(lines[i]);
+          if (item.event === "message" && item.message) {
+            const payload: CloudSyncPayload = JSON.parse(item.message);
+            if (payload && Array.isArray(payload.projects) && payload.projects.length > 0) {
+              return {
+                success: true,
+                projects: payload.projects,
+                updatedAt: payload.updatedAt || new Date().toISOString(),
+                message: "클라우드 데이터 수신 성공",
+              };
+            }
+          }
+        } catch {}
       }
     }
   } catch (err) {
