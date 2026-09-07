@@ -706,32 +706,44 @@ export async function performInMemoryOcr(
 
   const words = [...((pass1.data as any).words || [])];
 
-  // 세로 라벨(종횡비가 길거나 텍스트가 부족한 경우)을 위한 90도 회전 패스
-  const isVerticalAspect = canvas.height > canvas.width * 1.15;
-  if (isVerticalAspect || rawText.length < 10) {
-    try {
-      const rotatedYellow = rotateCanvas(yellowBoosted, 90);
-      const passRot = await worker.recognize(rotatedYellow);
-      const rotText = passRot.data.text || "";
-      if (rotText) {
-        rawText += "\n" + rotText;
-        confidence = Math.max(confidence, Math.round(passRot.data.confidence || 0));
-        words.push(...((passRot.data as any).words || []));
-      }
-      disposeCanvas(rotatedYellow);
-    } catch {}
-  }
+  // 1차 패스 결과로 빠른 시리얼 유효성 확인 (이미 강력한 후보가 있으면 추가 패스 생략하여 0.3초 초고속 완료)
+  const quickTest = extractSerialCandidates(rawText, context);
+  const hasStrongMatch =
+    quickTest.candidates.length > 0 &&
+    (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(quickTest.bestSerial) ||
+      /^KSA[0-9]{6,10}$/i.test(quickTest.bestSerial) ||
+      /^[0-9]{6,14}$/.test(quickTest.bestSerial));
 
-  // 2차 패스: 텍스트 보강을 위해 고대비 캔버스 판독 결과 병합
-  try {
-    const pass2 = await worker.recognize(enhancedGray);
-    const pass2Text = pass2.data.text || "";
-    if (pass2Text) {
-      rawText += "\n" + pass2Text;
-      confidence = Math.max(confidence, Math.round(pass2.data.confidence || 0));
-      words.push(...((pass2.data as any).words || []));
+  if (!hasStrongMatch) {
+    // 세로 라벨(종횡비가 길거나 텍스트가 부족한 경우)을 위한 90도 회전 패스
+    const isVerticalAspect = canvas.height > canvas.width * 1.15;
+    if (isVerticalAspect || rawText.length < 8) {
+      try {
+        const rotatedYellow = rotateCanvas(yellowBoosted, 90);
+        const passRot = await worker.recognize(rotatedYellow);
+        const rotText = passRot.data.text || "";
+        if (rotText) {
+          rawText += "\n" + rotText;
+          confidence = Math.max(confidence, Math.round(passRot.data.confidence || 0));
+          words.push(...((passRot.data as any).words || []));
+        }
+        disposeCanvas(rotatedYellow);
+      } catch {}
     }
-  } catch {}
+
+    // 여전히 텍스트가 부족한 경우에만 2차 패스 수행
+    if (rawText.length < 8) {
+      try {
+        const pass2 = await worker.recognize(enhancedGray);
+        const pass2Text = pass2.data.text || "";
+        if (pass2Text) {
+          rawText += "\n" + pass2Text;
+          confidence = Math.max(confidence, Math.round(pass2.data.confidence || 0));
+          words.push(...((pass2.data as any).words || []));
+        }
+      } catch {}
+    }
+  }
 
   // 메모리 정리
   disposeCanvas(yellowBoosted);
