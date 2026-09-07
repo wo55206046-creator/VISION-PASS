@@ -9,12 +9,13 @@
  */
 
 export const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSy_YOUR_FIREBASE_API_KEY",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "vision-pass-withtech.firebaseapp.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "vision-pass-withtech",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "vision-pass-withtech.appspot.com",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "123456789012",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:123456789012:web:abcdef1234567890",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyAFHdV3Z3YWeGwqz0EhdplN-qfg5pPJBL0",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "vision-pass.firebaseapp.com",
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DB_URL || "https://vision-pass-default-rtdb.firebaseio.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "vision-pass",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "vision-pass.firebasestorage.app",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "859226758620",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:859226758620:web:af5cb0e530f02c76624319",
 };
 
 export const FIREBASE_STORAGE_CONFIG_KEY = "VISION_PASS_FIREBASE_CUSTOM_CONFIG";
