@@ -5,9 +5,6 @@ const DEFAULT_ROOM_KEY = "WITHTECH-VISIONPASS-2026";
 const STORAGE_PROJECTS_KEY = "VISION_PASS_PROJECTS_DATA_V8";
 const STORAGE_LAST_SYNC_KEY = "VISION_PASS_LAST_SYNC_TIME";
 
-// 🌐 실시간 크로스 디바이스(PC ↔ 모바일) 동기화 엔드포인트 (ntfy.sh 실시간 SSE & Pub/Sub)
-const CLOUD_SYNC_TOPIC_PREFIX = "withtech_vp_sync";
-
 // 디바이스 ID (자기 자신의 메아리 루프 방지)
 function getDeviceId(): string {
   if (typeof window === "undefined") return "server";
@@ -21,11 +18,6 @@ function getDeviceId(): string {
   } catch {
     return "dev_default";
   }
-}
-
-function getSanitizedTopic(roomKey: string = getSyncRoomKey()): string {
-  const clean = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "_");
-  return `${CLOUD_SYNC_TOPIC_PREFIX}_${clean}`;
 }
 
 export function getSyncRoomKey(): string {
