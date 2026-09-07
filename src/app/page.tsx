@@ -16,6 +16,7 @@ import {
   getSyncRoomKey,
   setSyncRoomKey,
 } from "@/lib/cloud-sync";
+import { initOfflineQueueListener } from "@/lib/offline-sync-queue";
 import {
   ShieldCheck,
   Cpu,
@@ -140,11 +141,15 @@ export default function Home() {
       }
     });
 
+    // 3. 📦 오프라인 큐 리스너 등록 (네트워크 재연결 시 대기 중인 수정사항 자동 일괄 반영)
+    const unsubscribeOfflineQueue = initOfflineQueueListener();
+
     return () => {
       window.removeEventListener("focus", handleQuickSync);
       document.removeEventListener("visibilitychange", handleQuickSync);
       unsubscribeBroadcast();
       unsubscribeRealtime();
+      unsubscribeOfflineQueue();
     };
   }, []);
 
