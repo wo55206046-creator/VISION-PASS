@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // VISION-PASS 실시간 프로젝트 & OCR 데이터 동기화 컬렉션
+    match /vision_pass_rooms/{roomId} {
+      allow read, write: if true;
+    }
+    
+    // 전체 문서 읽기/쓰기 허용 (사내 폐쇄망 또는 개발/테스트용)
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,10 +1,16 @@
 import { ProjectMaster } from "@/types";
+import {
+  SYNC_MODE,
+  FIREBASE_CONFIG,
+  getFirebaseConfig,
+  isFirebaseConfigured,
+} from "./firebase-config";
 
 // ============================================================================
 // 1. 중앙 원격 데이터베이스 설정 및 인터페이스 정의
 // ============================================================================
 export interface CentralDbConfig {
-  provider: "supabase" | "firebase" | "central-rest";
+  provider: "firebase" | "supabase" | "ntfy";
   endpoint: string;
   roomKey: string;
 }
@@ -23,10 +29,9 @@ const STORAGE_DEVICE_ID = "VISION_PASS_DEVICE_ID";
 const STORAGE_PROJECTS_KEY = "VISION_PASS_PROJECTS_DATA_V8";
 const STORAGE_LAST_SYNC_KEY = "VISION_PASS_LAST_SYNC_TIME";
 
-// Supabase / Firebase 환경변수 (설정 시 우선 바인딩)
+// Supabase 환경변수 (옵션)
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const FIREBASE_DB_URL = process.env.NEXT_PUBLIC_FIREBASE_DB_URL || "";
 
 // ============================================================================
 // 2. 디바이스 식별자 & 방 키 관리
@@ -62,8 +67,21 @@ export function setSyncRoomKey(key: string): void {
   } catch {}
 }
 
+export function getCleanTopicKey(roomKey: string = getSyncRoomKey()): string {
+  const clean = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "");
+  return clean || "withtechvisionpass2026";
+}
+
 export function getActiveDbConfig(): CentralDbConfig {
   const roomKey = getSyncRoomKey();
+  const fbConf = getFirebaseConfig();
+  if (SYNC_MODE === "FIREBASE" && isFirebaseConfigured()) {
+    return {
+      provider: "firebase",
+      endpoint: `https://${fbConf.projectId}.firebaseio.com`,
+      roomKey,
+    };
+  }
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     return {
       provider: "supabase",
@@ -71,22 +89,15 @@ export function getActiveDbConfig(): CentralDbConfig {
       roomKey,
     };
   }
-  if (FIREBASE_DB_URL) {
-    return {
-      provider: "firebase",
-      endpoint: FIREBASE_DB_URL,
-      roomKey,
-    };
-  }
   return {
-    provider: "central-rest",
+    provider: "ntfy",
     endpoint: "https://ntfy.sh",
     roomKey,
   };
 }
 
 // ============================================================================
-// 3. GZIP 85% 초경량 압축 / 해제 엔진 (대용량 JSON 전송 지원)
+// 3. GZIP 85% 초경량 압축 / 해제 유틸리티
 // ============================================================================
 export async function compressJson(str: string): Promise<string> {
   try {
@@ -165,9 +176,70 @@ export function subscribeLocalBroadcast(onUpdate: (projects: ProjectMaster[]) =>
 }
 
 // ============================================================================
-// 5. 중앙 데이터베이스 CRUD 함수 (Central DB API)
+// 5. Google Firebase Firestore CDN 동적 로더 & 인스턴스 싱글톤
+// ============================================================================
+let firestoreDbInstance: any = null;
+let firestoreLoadingPromise: Promise<any> | null = null;
+
+async function getFirestoreDb(): Promise<any> {
+  if (firestoreDbInstance) return firestoreDbInstance;
+  if (typeof window === "undefined") return null;
+
+  if (firestoreLoadingPromise) return firestoreLoadingPromise;
+
+  firestoreLoadingPromise = new Promise((resolve) => {
+    const config = getFirebaseConfig();
+    if ((window as any).firebase?.firestore) {
+      const fb = (window as any).firebase;
+      if (!fb.apps.length) {
+        fb.initializeApp(config);
+      }
+      firestoreDbInstance = fb.firestore();
+      return resolve(firestoreDbInstance);
+    }
+
+    // 1. Firebase App CDN 스크립트 로드
+    const scriptApp = document.createElement("script");
+    scriptApp.src = "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js";
+    scriptApp.async = true;
+
+    scriptApp.onload = () => {
+      // 2. Firebase Firestore CDN 스크립트 로드
+      const scriptFirestore = document.createElement("script");
+      scriptFirestore.src = "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js";
+      scriptFirestore.async = true;
+
+      scriptFirestore.onload = () => {
+        try {
+          const fb = (window as any).firebase;
+          if (fb && !fb.apps.length) {
+            fb.initializeApp(config);
+          }
+          firestoreDbInstance = fb?.firestore ? fb.firestore() : null;
+          resolve(firestoreDbInstance);
+        } catch (e) {
+          console.warn("Firestore initialization error", e);
+          resolve(null);
+        }
+      };
+
+      scriptFirestore.onerror = () => resolve(null);
+      document.head.appendChild(scriptFirestore);
+    };
+
+    scriptApp.onerror = () => resolve(null);
+    document.head.appendChild(scriptApp);
+  });
+
+  return firestoreLoadingPromise;
+}
+
+// ============================================================================
+// 6. 중앙 데이터베이스 CRUD (Firebase ➔ Supabase ➔ ntfy 순차 처리)
 // ============================================================================
 let memoryCacheProjects: ProjectMaster[] | null = null;
+let lastNtfyPushTime = 0;
+const NTFY_PUSH_THROTTLE_MS = 1200; // 1.2초 쓰로틀링 (429 에러 방지)
 
 /**
  * ☁️ 중앙 DB에 전체 프로젝트 데이터 저장 (Create/Update)
@@ -176,7 +248,7 @@ export async function saveCentralProjects(
   projects: ProjectMaster[],
   roomKey: string = getSyncRoomKey()
 ): Promise<{ success: boolean; message?: string }> {
-  // 1. 로컬 탭 전파 및 로컬 스토리지 즉각 저장 (오프라인 보존)
+  // 1. 로컬 탭 전파 및 로컬 스토리지 즉각 보존
   broadcastLocalUpdate(projects);
   const nowStr = new Date().toISOString();
 
@@ -197,7 +269,24 @@ export async function saveCentralProjects(
     projects,
   };
 
-  // 2. Supabase 연동 시 Supabase REST API로 저장
+  const cleanDocKey = getCleanTopicKey(roomKey);
+
+  // 2. [모드 1: Firebase Firestore CDN 저장]
+  if (SYNC_MODE === "FIREBASE" && isFirebaseConfigured()) {
+    try {
+      const db = await getFirestoreDb();
+      if (db) {
+        // Firestore는 순수 JSON 객체만 지원하므로 직렬화 보장
+        const cleanPayload = JSON.parse(JSON.stringify(payload));
+        await db.collection("vision_pass_rooms").doc(cleanDocKey).set(cleanPayload);
+        return { success: true, message: "Firebase Firestore 실시간 DB 저장 완료" };
+      }
+    } catch (err) {
+      console.warn("Firebase Firestore write failed, falling back", err);
+    }
+  }
+
+  // 3. [모드 2: Supabase REST 저장]
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync`, {
@@ -220,31 +309,21 @@ export async function saveCentralProjects(
     } catch {}
   }
 
-  // 3. Firebase 연동 시 Firebase Realtime DB REST API로 저장
-  if (FIREBASE_DB_URL) {
-    try {
-      const cleanKey = (roomKey || DEFAULT_ROOM_KEY).replace(/[^a-zA-Z0-9_-]/g, "_");
-      const res = await fetch(`${FIREBASE_DB_URL}/rooms/${cleanKey}.json`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        return { success: true, message: "Firebase DB 저장 완료" };
-      }
-    } catch {}
+  // 4. [모드 3: ntfy.sh 쓰로틀링 + Simple CORS 전송]
+  const now = Date.now();
+  if (now - lastNtfyPushTime < NTFY_PUSH_THROTTLE_MS) {
+    // 단시간 다중 전송 쓰로틀링 (로컬에는 이미 안전 저장됨)
+    return { success: true, message: "로컬 저장 완료 (전송 쓰로틀링 적용)" };
   }
+  lastNtfyPushTime = now;
 
-  // 4. Zero-Setup 초고속 실시간 중앙 클라우드 채널 전송
   try {
-    const cleanKey = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "");
-    const topic = `withtech_vp_${cleanKey}`;
+    const topic = `withtech_vp_${cleanDocKey}`;
     const compressedBody = await compressJson(JSON.stringify(payload));
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-    // 단순 요청(Simple Request) 표준 헤더를 사용하여 브라우저 CORS OPTIONS Preflight 차단 문제 원천 해결
     const res = await fetch(`https://ntfy.sh/${topic}`, {
       method: "POST",
       body: compressedBody,
@@ -257,7 +336,7 @@ export async function saveCentralProjects(
     clearTimeout(timeoutId);
 
     if (res.ok) {
-      return { success: true, message: "중앙 클라우드 DB 저장 및 실시간 전송 완료" };
+      return { success: true, message: "ntfy 채널 전송 완료" };
     }
   } catch (err) {
     // 네트워크 단절 시 오프라인 큐로 처리
@@ -283,11 +362,32 @@ export async function fetchCentralProjects(
       success: true,
       projects: memoryCacheProjects,
       updatedAt: new Date().toISOString(),
-      message: "메모리 캐시 데이터 사용",
+      message: "메모리 캐시 사용",
     };
   }
 
-  // 2. Supabase DB 조회
+  const cleanDocKey = getCleanTopicKey(roomKey);
+
+  // 2. [모드 1: Firebase Firestore 조회]
+  if (SYNC_MODE === "FIREBASE" && isFirebaseConfigured()) {
+    try {
+      const db = await getFirestoreDb();
+      if (db) {
+        const docSnapshot = await db.collection("vision_pass_rooms").doc(cleanDocKey).get();
+        if (docSnapshot.exists) {
+          const data = docSnapshot.data();
+          if (data && Array.isArray(data.projects) && data.projects.length > 0) {
+            memoryCacheProjects = data.projects;
+            return { success: true, projects: data.projects, updatedAt: data.updatedAt };
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Firestore fetch error, falling back", err);
+    }
+  }
+
+  // 3. [모드 2: Supabase DB 조회]
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
       const cleanKey = (roomKey || DEFAULT_ROOM_KEY).toUpperCase();
@@ -311,25 +411,9 @@ export async function fetchCentralProjects(
     } catch {}
   }
 
-  // 3. Firebase DB 조회
-  if (FIREBASE_DB_URL) {
-    try {
-      const cleanKey = (roomKey || DEFAULT_ROOM_KEY).replace(/[^a-zA-Z0-9_-]/g, "_");
-      const res = await fetch(`${FIREBASE_DB_URL}/rooms/${cleanKey}.json`);
-      if (res.ok) {
-        const payload: CentralSyncPayload = await res.json();
-        if (payload && Array.isArray(payload.projects) && payload.projects.length > 0) {
-          memoryCacheProjects = payload.projects;
-          return { success: true, projects: payload.projects, updatedAt: payload.updatedAt };
-        }
-      }
-    } catch {}
-  }
-
-  // 4. Zero-Setup 중앙 클라우드 최신 캐시 조회 (poll 1회)
+  // 4. [모드 3: ntfy 1회 캐시 폴]
   try {
-    const cleanKey = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "");
-    const topic = `withtech_vp_${cleanKey}`;
+    const topic = `withtech_vp_${cleanDocKey}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2500);
 
@@ -389,22 +473,83 @@ export async function fetchCentralProjects(
 }
 
 // ============================================================================
-// 6. 0.05초 초고속 실시간 스트림 리스너 (Realtime Listener)
+// 7. 실시간 스트림 리스너 (Firebase onSnapshot / ntfy 지수 백오프 SSE)
 // ============================================================================
 export function subscribeCentralRealtime(
   onUpdate: (projects: ProjectMaster[]) => void,
   roomKey: string = getSyncRoomKey()
 ): () => void {
-  if (typeof window === "undefined" || typeof EventSource === "undefined") return () => {};
+  if (typeof window === "undefined") return () => {};
 
-  const cleanKey = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "");
-  const topic = `withtech_vp_${cleanKey}`;
+  const cleanDocKey = getCleanTopicKey(roomKey);
+  let isUnsubscribed = false;
+  let unsubscribeFirestore: (() => void) | null = null;
   let eventSource: EventSource | null = null;
-  let isClosed = false;
-  let retryTimeout: NodeJS.Timeout | null = null;
+  let ntfyRetryTimeout: NodeJS.Timeout | null = null;
+
+  // 지수 백오프 변수 (Exponential Backoff: 3초 ~ 최대 30초)
+  let backoffDelay = 3000;
+  const MIN_BACKOFF = 3000;
+  const MAX_BACKOFF = 30000;
+
+  // 1. [모드 1: Firebase Firestore onSnapshot 리스너 실행]
+  if (SYNC_MODE === "FIREBASE" && isFirebaseConfigured()) {
+    getFirestoreDb().then((db) => {
+      if (isUnsubscribed || !db) return;
+
+      try {
+        unsubscribeFirestore = db
+          .collection("vision_pass_rooms")
+          .doc(cleanDocKey)
+          .onSnapshot(
+            (docSnapshot: any) => {
+              if (isUnsubscribed || !docSnapshot || !docSnapshot.exists) return;
+              const data = docSnapshot.data();
+              if (
+                data &&
+                Array.isArray(data.projects) &&
+                data.projects.length > 0 &&
+                data.senderDeviceId !== getDeviceId()
+              ) {
+                memoryCacheProjects = data.projects;
+                if (typeof window !== "undefined") {
+                  try {
+                    localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(data.projects));
+                    if (data.updatedAt) {
+                      localStorage.setItem(STORAGE_LAST_SYNC_KEY, data.updatedAt);
+                    }
+                  } catch {}
+                }
+                onUpdate(data.projects);
+              }
+            },
+            (error: any) => {
+              console.warn("Firestore realtime listener error", error);
+            }
+          );
+      } catch (err) {
+        console.warn("Failed to attach Firestore snapshot listener", err);
+      }
+    });
+
+    return () => {
+      isUnsubscribed = true;
+      if (unsubscribeFirestore) {
+        try {
+          unsubscribeFirestore();
+        } catch {}
+      }
+    };
+  }
+
+  // 2. [모드 2: ntfy 지수 백오프 SSE 리스너]
+  if (typeof EventSource === "undefined") return () => {};
+
+  const topic = `withtech_vp_${cleanDocKey}`;
 
   const connectSSE = () => {
-    if (isClosed) return;
+    if (isUnsubscribed) return;
+
     try {
       if (eventSource) {
         try {
@@ -414,6 +559,11 @@ export function subscribeCentralRealtime(
 
       eventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
 
+      eventSource.onopen = () => {
+        // 정상 연결 시 백오프 딜레이 3초로 초기화
+        backoffDelay = MIN_BACKOFF;
+      };
+
       eventSource.onmessage = async (e) => {
         try {
           const data = JSON.parse(e.data);
@@ -421,7 +571,6 @@ export function subscribeCentralRealtime(
             const decompressed = await decompressJson(data.message);
             const payload: CentralSyncPayload = JSON.parse(decompressed);
 
-            // 다른 기기(모바일/PC)에서 발송한 최신 프로젝트 변경사항을 즉시 수신
             if (
               payload &&
               Array.isArray(payload.projects) &&
@@ -444,15 +593,18 @@ export function subscribeCentralRealtime(
       };
 
       eventSource.onerror = () => {
-        // 일시적 단절 시 과도한 재연결 루프(429)를 방지하기 위해 4초 대기 후 안전 재연결
-        if (!isClosed) {
+        if (!isUnsubscribed) {
           try {
             eventSource?.close();
           } catch {}
-          if (retryTimeout) clearTimeout(retryTimeout);
-          retryTimeout = setTimeout(() => {
-            if (!isClosed) connectSSE();
-          }, 4000);
+
+          // 429 방지: 지수 백오프 적용 (3초 ➔ 6초 ➔ 12초 ➔ 24초 ➔ 최대 30초)
+          if (ntfyRetryTimeout) clearTimeout(ntfyRetryTimeout);
+          ntfyRetryTimeout = setTimeout(() => {
+            if (!isUnsubscribed) connectSSE();
+          }, backoffDelay);
+
+          backoffDelay = Math.min(backoffDelay * 2, MAX_BACKOFF);
         }
       };
     } catch {}
@@ -461,11 +613,10 @@ export function subscribeCentralRealtime(
   connectSSE();
 
   return () => {
-    isClosed = true;
-    if (retryTimeout) clearTimeout(retryTimeout);
+    isUnsubscribed = true;
+    if (ntfyRetryTimeout) clearTimeout(ntfyRetryTimeout);
     try {
       eventSource?.close();
     } catch {}
   };
 }
-

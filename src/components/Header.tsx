@@ -71,7 +71,15 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* System Badges & Zero-Storage Indicator */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 rounded-lg bg-emerald-950/50 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium text-emerald-400 border border-emerald-800/50">
+            <div className="flex items-center gap-1.5 rounded-lg bg-cyan-950/40 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium text-cyan-300 border border-cyan-800/40">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+              </span>
+              <span>Live Sync</span>
+            </div>
+
+            <div className="hidden sm:flex items-center gap-1.5 rounded-lg bg-emerald-950/50 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium text-emerald-400 border border-emerald-800/50">
               <ShieldCheck className="h-3.5 w-3.5" />
               <span>Storage-Zero</span>
             </div>
