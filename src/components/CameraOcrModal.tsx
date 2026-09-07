@@ -19,7 +19,6 @@ import {
   CheckCircle2,
   Sliders,
   Sparkles,
-  Upload,
   Layers,
   Eye,
   AlertCircle,
@@ -75,7 +74,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
   // Canvas Refs (In-Memory Only, Zero-Storage)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const cycleGuideMode = () => {
     setGuideMode((prev) => (prev === "horizontal" ? "vertical" : prev === "vertical" ? "full" : "horizontal"));
@@ -91,7 +89,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
       if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia) {
         setHasCameraError(
-          "카메라 접근 권한이 없거나 지원되지 않는 브라우저 환경입니다. [📷 사진 직접 촬영 / 앨범 업로드] 버튼을 이용해주세요."
+          "카메라 접근 권한이 없거나 지원되지 않는 브라우저 환경입니다. 브라우저 설정에서 카메라 접근을 허용해주세요."
         );
         return;
       }
@@ -147,7 +145,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     } catch (err: unknown) {
       console.warn("Camera access failed:", err);
       setHasCameraError(
-        "카메라 연결에 실패하였습니다. 브라우저/앱 설정에서 [카메라 권한]이 허용되어 있는지 확인하시거나, 아래의 [📷 사진 직접 촬영 / 앨범 업로드] 버튼을 이용해주세요."
+        "카메라 연결에 실패하였습니다. 브라우저/앱 설정에서 [카메라 권한]이 허용되어 있는지 확인 후 [카메라 다시 연결]을 눌러주세요."
       );
     }
   }, [facingMode]);
@@ -217,76 +215,65 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     } catch {}
   };
 
-  // 인메모리 원터치 셔터 캡처 & OCR 수행 (Storage Zero: 사진 즉시 휘발)
-  const captureAndRecognize = async (customCanvas?: HTMLCanvasElement) => {
+  // 인메모리 원터치 셔터 캡처 & Gemini 2.0 AI OCR 수행 (Storage Zero: 사진 즉시 휘발)
+  const captureAndRecognize = async () => {
     setIsProcessing(true);
     setOcrProgress(5);
     setOcrStatusText("명판 프레임 순간 캡처 중...");
 
-    let rawCanvas: HTMLCanvasElement;
-
-    if (customCanvas) {
-      rawCanvas = customCanvas;
-    } else {
-      const video = videoRef.current;
-      if (!video) {
-        setIsProcessing(false);
-        return;
-      }
-
-      // 화면 일시정지 (작업자가 팔을 편하게 내릴 수 있도록 프레임 동결)
-      try {
-        video.pause();
-        setIsFrozen(true);
-      } catch {}
-
-      rawCanvas = document.createElement("canvas");
-      rawCanvas.width = video.videoWidth || 1280;
-      rawCanvas.height = video.videoHeight || 720;
-      const ctx = rawCanvas.getContext("2d");
-      if (!ctx) {
-        setIsProcessing(false);
-        return;
-      }
-      ctx.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
+    const video = videoRef.current;
+    if (!video) {
+      setIsProcessing(false);
+      return;
     }
 
+    // 화면 일시정지 (작업자가 팔을 편하게 내릴 수 있도록 프레임 동결)
+    try {
+      video.pause();
+      setIsFrozen(true);
+    } catch {}
+
+    const rawCanvas = document.createElement("canvas");
+    rawCanvas.width = video.videoWidth || 1280;
+    rawCanvas.height = video.videoHeight || 720;
+    const ctx = rawCanvas.getContext("2d");
+    if (!ctx) {
+      setIsProcessing(false);
+      return;
+    }
+    ctx.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
+
     // ROI 타겟팅 정밀 크롭 (선택된 가이드 모드에 맞춤)
-    let colorCanvas: HTMLCanvasElement;
-    let croppedCanvas: HTMLCanvasElement | null = null;
+    let roiWidth: number;
+    let roiHeight: number;
 
-    if (customCanvas) {
-      // 직접 사진 업로드 시: 원본 컬러 그대로 유지
-      colorCanvas = customCanvas;
+    if (guideMode === "vertical") {
+      roiWidth = rawCanvas.width * 0.52;
+      roiHeight = rawCanvas.height * 0.86;
+    } else if (guideMode === "full") {
+      roiWidth = rawCanvas.width * 0.96;
+      roiHeight = rawCanvas.height * 0.92;
     } else {
-      // 카메라 촬영 시: 중앙 가이드 칸과 1:1 정밀 ROI 크롭
-      let roiWidth: number;
-      let roiHeight: number;
+      // horizontal 기본 모드
+      roiWidth = rawCanvas.width * 0.88;
+      roiHeight = rawCanvas.height * 0.48;
+    }
 
-      if (guideMode === "vertical") {
-        roiWidth = rawCanvas.width * 0.52;
-        roiHeight = rawCanvas.height * 0.86;
-      } else if (guideMode === "full") {
-        roiWidth = rawCanvas.width * 0.96;
-        roiHeight = rawCanvas.height * 0.92;
-      } else {
-        // horizontal 기본 모드
-        roiWidth = rawCanvas.width * 0.88;
-        roiHeight = rawCanvas.height * 0.48;
-      }
+    const roiX = (rawCanvas.width - roiWidth) / 2;
+    const roiY = (rawCanvas.height - roiHeight) / 2;
 
-      const roiX = (rawCanvas.width - roiWidth) / 2;
-      const roiY = (rawCanvas.height - roiHeight) / 2;
-
-      croppedCanvas = cropCanvasROI(rawCanvas, {
+    const croppedCanvas = cropCanvasROI(
+      rawCanvas,
+      {
         x: roiX,
         y: roiY,
         width: roiWidth,
         height: roiHeight,
-      }, 2.0);
+      },
+      2.0
+    );
 
-      colorCanvas = croppedCanvas;
-    }
+    const colorCanvas = croppedCanvas;
 
     // 1. 프리뷰 캔버스에 표시
     setOcrProgress(20);
@@ -301,9 +288,9 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       }
     }
 
-    // 2. Gemini Vision AI & 고정밀 광학 OCR 심층 실행 (컬러 원본 + 고대비 전처리 자동 결합)
+    // 2. Gemini 2.0 Vision AI & 고정밀 광학 OCR 심층 실행
     setOcrProgress(45);
-    setOcrStatusText("🤖 Gemini Vision AI 라벨 방향 감지 & 다중 시리얼 분석 중...");
+    setOcrStatusText("🤖 Gemini 2.0 Vision AI 라벨 방향 감지 & 시리얼 분석 중...");
 
     try {
       const result = await performGeminiDeepOcr(
@@ -340,31 +327,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       setOcrProgress(100);
       setIsProcessing(false);
     }
-  };
-
-
-  // 로컬 사진 파일 업로드 핸들러 (스토리지 제로: 브라우저 메모리 Canvas로만 로드)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(img, 0, 0);
-        captureAndRecognize(canvas);
-      }
-      URL.revokeObjectURL(objectUrl);
-    };
-
-    img.src = objectUrl;
-    e.target.value = "";
   };
 
   // 최종 저장 & 검증 완료
@@ -524,19 +486,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               >
                 <RefreshCw className="h-4 w-4" />
               </button>
-
-              <label
-                className="p-2 rounded-xl bg-slate-900/80 text-white border border-slate-700 backdrop-blur-md hover:bg-slate-800 transition-all cursor-pointer"
-                title="사진 파일 직접 불러오기"
-              >
-                <Upload className="h-4 w-4" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
             </div>
 
             {/* Error Overlay */}
