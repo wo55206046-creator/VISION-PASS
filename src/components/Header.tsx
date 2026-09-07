@@ -75,17 +75,17 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* System Badges & Zero-Storage Indicator */}
           <div className="flex items-center gap-2">
-            {/* 실시간 클라우드 동기화 버튼 & 상태 표시등 */}
+            {/* 실시간 클라우드 동기화 & QR 연동 버튼 */}
             {onForceSync && (
               <button
                 type="button"
                 onClick={onForceSync}
-                title="클라우드 실시간 동기화 (클릭 시 모바일↔PC 즉시 동기화)"
-                className="flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 px-2.5 sm:px-3 py-1.5 text-xs border border-slate-700 hover:border-cyan-500 text-slate-200 transition-all cursor-pointer shadow-sm active:scale-95"
+                title="PC ↔ 모바일 실시간 데이터 연동 및 QR 연결"
+                className="flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 px-2.5 sm:px-3 py-1.5 text-xs border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 transition-all cursor-pointer shadow-sm active:scale-95"
               >
-                <span className="text-cyan-400 font-bold">🔄</span>
-                <span className="hidden sm:inline font-bold">
-                  {syncStatus === "syncing" ? "동기화 중..." : "실시간 동기화"}
+                <span className="font-bold">📲</span>
+                <span className="font-bold">
+                  {syncStatus === "syncing" ? "동기화 중..." : "기기 연동 (QR)"}
                 </span>
                 <span
                   className={`h-2 w-2 rounded-full ${

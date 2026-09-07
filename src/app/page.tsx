@@ -8,7 +8,15 @@ import { PjtListStep } from "@/components/PjtListStep";
 import { ProjectMasterStep } from "@/components/ProjectMasterStep";
 import { EquipmentUnitStep } from "@/components/EquipmentUnitStep";
 import { TemplateManagerStep } from "@/components/TemplateManagerStep";
-import { pushProjectsToCloud, pullProjectsFromCloud, subscribeLocalBroadcast, subscribeCloudRealtime } from "@/lib/cloud-sync";
+import { SyncModal } from "@/components/SyncModal";
+import {
+  pushProjectsToCloud,
+  pullProjectsFromCloud,
+  subscribeLocalBroadcast,
+  subscribeCloudRealtime,
+  getSyncRoomKey,
+  setSyncRoomKey,
+} from "@/lib/cloud-sync";
 import {
   ShieldCheck,
   Cpu,
@@ -47,6 +55,7 @@ export default function Home() {
   );
   const [draftProject, setDraftProject] = useState<ProjectMaster | null>(null);
   const [syncStatus, setSyncStatus] = useState<"connected" | "syncing" | "error">("connected");
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
 
   // 실시간 동기화 제어용 Refs
   const isInitialMount = useRef(true);
@@ -79,8 +88,19 @@ export default function Home() {
     }
   };
 
-  // 2. 초기 로드 및 백그라운드 실시간 3.5초 주기 자동 동기화 (PC ↔ 모바일 양방향)
+  // 2. 초기 로드 및 URL 파라미터 연동, SSE 실시간 동기화 리스너 등록
   useEffect(() => {
+    // URL ?room=... 파라미터 확인 (QR 스캔 또는 링크로 접속 시 해당 방 자동 접속)
+    if (typeof window !== "undefined") {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const room = params.get("room");
+        if (room && room.trim()) {
+          setSyncRoomKey(room.trim().toUpperCase());
+        }
+      } catch {}
+    }
+
     const saved = loadSavedProjects();
     if (saved && saved.length > 0) {
       setProjects(saved);
@@ -190,31 +210,15 @@ export default function Home() {
     });
   };
 
-  // 수동 즉시 동기화 버튼 핸들러 (PC 및 모바일 상단 버튼)
+  // 수동 즉시 동기화 버튼 핸들러 (PC 및 모바일 상단 버튼 클릭 시 동기화 모달 오픈 & 즉시 백그라운드 푸시)
   const handleForceManualSync = async () => {
+    setIsSyncModalOpen(true);
     setSyncStatus("syncing");
     try {
-      // 1. 현재 로컬 데이터를 클라우드로 즉시 업로드
       await pushProjectsToCloud(projects);
-      
-      // 2. 클라우드 최신 상태 강제 조회 및 동기화
-      const pullRes = await pullProjectsFromCloud(undefined, true);
-      if (pullRes.success && pullRes.projects && pullRes.projects.length > 0) {
-        setProjects(pullRes.projects);
-        lastKnownCloudJson.current = JSON.stringify(pullRes.projects);
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(pullRes.projects));
-        } catch {}
-        setSyncStatus("connected");
-        alert(`✅ [PC ↔ 모바일 실시간 연동 완료]\n클라우드와 연결되어 총 ${pullRes.projects.length}개의 프로젝트가 완벽히 동기화되었습니다!`);
-        return;
-      }
-
       setSyncStatus("connected");
-      alert(`✅ [PC ↔ 모바일 실시간 동기화 완료]\n총 ${projects.length}개의 프로젝트가 클라우드에 안전하게 반영되었습니다.`);
-    } catch (e) {
+    } catch {
       setSyncStatus("connected");
-      alert("✅ 실시간 동기화 채널이 연결되었습니다.");
     }
   };
 
@@ -450,6 +454,25 @@ export default function Home() {
           </div>
         </div>
       </footer>
+
+      {/* 🌐 PC ↔ 모바일 실시간 데이터 동기화 & 스마트폰 연결 QR 모달 */}
+      <SyncModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        projects={projects}
+        onUpdateProjects={(newProjects) => {
+          setProjects(newProjects);
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(newProjects));
+          } catch {}
+        }}
+        onResetDefault={() => {
+          setProjects(INITIAL_PROJECT_LIST);
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_PROJECT_LIST));
+          } catch {}
+        }}
+      />
     </div>
   );
 }

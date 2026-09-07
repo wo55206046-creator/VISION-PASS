@@ -94,12 +94,16 @@ export function subscribeLocalBroadcast(onUpdate: (projects: ProjectMaster[]) =>
   };
 }
 
-// ⚡ 마지막 풀 요청 시각 (스로틀링용)
+// 🌐 클라우드 데이터 저장소 & 실시간 시그널링 엔드포인트
+const KVDB_BUCKET_ID = "B5M7K8N2q7m4D2y8";
+const SIGNAL_TOPIC_PREFIX = "withtech_vp_sig";
+
+// 마지막 풀 요청 시각 및 메모리 캐시
 let lastPullTime = 0;
 let cachedCloudProjects: ProjectMaster[] | null = null;
 
 /**
- * ⚡ 0.05초 초고속 실시간 Server-Sent Events (SSE) 클라우드 리스너 (PC ↔ 모바일 라이브 스트림)
+ * ⚡ 0.05초 초고속 실시간 Server-Sent Events (SSE) 시그널링 리스너 (PC ↔ 모바일 라이브 트리거)
  */
 export function subscribeCloudRealtime(
   onUpdate: (projects: ProjectMaster[]) => void,
@@ -107,37 +111,41 @@ export function subscribeCloudRealtime(
 ): () => void {
   if (typeof window === "undefined" || typeof EventSource === "undefined") return () => {};
 
-  const topic = getSanitizedTopic(roomKey);
+  const cleanRoom = (roomKey || DEFAULT_ROOM_KEY).toLowerCase().replace(/[^a-z0-9]/g, "_");
+  const topic = `${SIGNAL_TOPIC_PREFIX}_${cleanRoom}`;
   let eventSource: EventSource | null = null;
   let isClosed = false;
 
   const connectSSE = () => {
     if (isClosed) return;
     try {
-      // ?since=24h 파라미터로 연결 즉시 최근 24시간 내 클라우드에 저장된 최신 프로젝트 상태를 스트림으로 자동 수신
-      eventSource = new EventSource(`https://ntfy.sh/${topic}/sse?since=24h`);
+      eventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
 
-      eventSource.onmessage = (e) => {
+      eventSource.onmessage = async (e) => {
         try {
           const data = JSON.parse(e.data);
           if (data.event === "message" && data.message) {
-            const payload: CloudSyncPayload = JSON.parse(data.message);
-            // 다른 기기에서 보낸 최신 프로젝트 데이터 수신 시 즉각 반영
-            if (
-              payload &&
-              Array.isArray(payload.projects) &&
-              payload.projects.length > 0 &&
-              payload.senderDeviceId !== getDeviceId()
-            ) {
-              cachedCloudProjects = payload.projects;
-              onUpdate(payload.projects);
+            let signal: any = null;
+            try {
+              signal = JSON.parse(data.message);
+            } catch {
+              signal = { type: "PING" };
+            }
+
+            // 내가 보낸 것이 아닌 다른 기기(PC 또는 스마트폰)에서 보낸 갱신 신호 수신 시
+            if (!signal.senderDeviceId || signal.senderDeviceId !== getDeviceId()) {
+              const res = await pullProjectsFromCloud(roomKey, true);
+              if (res.success && res.projects && res.projects.length > 0) {
+                cachedCloudProjects = res.projects;
+                onUpdate(res.projects);
+              }
             }
           }
         } catch {}
       };
 
       eventSource.onerror = () => {
-        // 네트워크 단절 시 브라우저가 자동 재연결 시도
+        // 네트워크 단절 시 자동 재연결 대기
       };
     } catch {}
   };
@@ -172,25 +180,26 @@ export async function pushProjectsToCloud(
 
   cachedCloudProjects = projects;
 
-  // 2. 실시간 클라우드 전송 (PC와 모바일 실시간 50ms 라이브 전파)
+  const cleanRoom = (roomKey || DEFAULT_ROOM_KEY).toUpperCase().replace(/[^A-Z0-9_-]/g, "_");
+  const payload: CloudSyncPayload = {
+    version: 8,
+    roomKey: cleanRoom,
+    updatedAt: nowStr,
+    senderDeviceId: getDeviceId(),
+    projects,
+  };
+
+  let savedToCloud = false;
+
+  // 2. 고용량 Cloud KV Store에 전체 JSON 영구 저장 (크기 제한 없음)
   try {
-    const topic = getSanitizedTopic(roomKey);
-    const payload: CloudSyncPayload = {
-      version: 8,
-      roomKey: roomKey || DEFAULT_ROOM_KEY,
-      updatedAt: nowStr,
-      senderDeviceId: getDeviceId(),
-      projects,
-    };
-
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
 
-    const res = await fetch(`https://ntfy.sh/${topic}`, {
+    const res = await fetch(`https://kvdb.io/${KVDB_BUCKET_ID}/${cleanRoom}`, {
       method: "POST",
       headers: {
-        "Title": "VISION-PASS-SYNC",
-        "Priority": "urgent",
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
@@ -198,17 +207,39 @@ export async function pushProjectsToCloud(
     clearTimeout(timeoutId);
 
     if (res.ok) {
-      return { success: true, message: "클라우드 실시간 동기화 완료" };
+      savedToCloud = true;
     }
   } catch (err) {
-    // 네트워크 일시 불안정 시 로컬 저장으로 안전 유지
+    // 1차 클라우드 통신 실패 시 백업
   }
 
-  return { success: true, message: "로컬 저장 완료" };
+  // 3. 상대 기기(모바일/PC)에 0.05초 즉시 갱신 알림 전송 (초경량 30바이트 시그널링)
+  try {
+    const topic = `${SIGNAL_TOPIC_PREFIX}_${cleanRoom.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+    const signalPayload = {
+      type: "SYNC_TRIGGER",
+      senderDeviceId: getDeviceId(),
+      updatedAt: nowStr,
+    };
+
+    fetch(`https://ntfy.sh/${topic}`, {
+      method: "POST",
+      headers: {
+        "Title": "SYNC_PING",
+        "Priority": "high",
+      },
+      body: JSON.stringify(signalPayload),
+    }).catch(() => {});
+  } catch {}
+
+  return {
+    success: true,
+    message: savedToCloud ? "클라우드 저장 및 실시간 연동 완료" : "로컬 저장 완료 (오프라인)",
+  };
 }
 
 /**
- * ☁️ 모바일/PC ➔ 클라우드 최신 프로젝트 데이터 조회 (안전한 스로틀링 적용)
+ * ☁️ 모바일/PC ➔ 클라우드 최신 프로젝트 데이터 조회
  */
 export async function pullProjectsFromCloud(
   roomKey: string = getSyncRoomKey(),
@@ -220,53 +251,52 @@ export async function pullProjectsFromCloud(
   message?: string;
 }> {
   const now = Date.now();
-  // 429 에러 방지: 강제 조회가 아니면 8초 이내 재호출 시 캐시된 최신 데이터 즉시 반환
-  if (!force && now - lastPullTime < 8000 && cachedCloudProjects && cachedCloudProjects.length > 0) {
+  // 3초 이내 중복 호출 방지 (강제 호출이 아닐 때)
+  if (!force && now - lastPullTime < 3000 && cachedCloudProjects && cachedCloudProjects.length > 0) {
     return {
       success: true,
       projects: cachedCloudProjects,
       updatedAt: new Date().toISOString(),
-      message: "캐시된 최신 데이터 사용",
+      message: "캐시된 데이터 사용",
     };
   }
   lastPullTime = now;
 
-  const topic = getSanitizedTopic(roomKey);
+  const cleanRoom = (roomKey || DEFAULT_ROOM_KEY).toUpperCase().replace(/[^A-Z0-9_-]/g, "_");
 
-  // 1. 클라우드 서버에서 최신 캐시 데이터 조회
+  // 1. Cloud KV Store에서 최신 전체 프로젝트 데이터 수신
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-    const res = await fetch(`https://ntfy.sh/${topic}/json?poll=1&since=24h`, {
+    const res = await fetch(`https://kvdb.io/${KVDB_BUCKET_ID}/${cleanRoom}?t=${Date.now()}`, {
       method: "GET",
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
 
     if (res.ok) {
-      const text = await res.text();
-      const lines = text.trim().split("\n").filter(Boolean);
-      for (let i = lines.length - 1; i >= 0; i--) {
-        try {
-          const item = JSON.parse(lines[i]);
-          if (item.event === "message" && item.message) {
-            const payload: CloudSyncPayload = JSON.parse(item.message);
-            if (payload && Array.isArray(payload.projects) && payload.projects.length > 0) {
-              cachedCloudProjects = payload.projects;
-              return {
-                success: true,
-                projects: payload.projects,
-                updatedAt: payload.updatedAt || new Date().toISOString(),
-                message: "클라우드 데이터 수신 성공",
-              };
+      const payload: CloudSyncPayload = await res.json();
+      if (payload && Array.isArray(payload.projects) && payload.projects.length > 0) {
+        cachedCloudProjects = payload.projects;
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(payload.projects));
+            if (payload.updatedAt) {
+              localStorage.setItem(STORAGE_LAST_SYNC_KEY, payload.updatedAt);
             }
-          }
-        } catch {}
+          } catch {}
+        }
+        return {
+          success: true,
+          projects: payload.projects,
+          updatedAt: payload.updatedAt || new Date().toISOString(),
+          message: "클라우드 최신 데이터 수신 완료",
+        };
       }
     }
   } catch (err) {
-    // 클라우드 연결 오류 시 무소음 로컬 폴백
+    // 네트워크 단절 시 무소음 로컬 캐시 폴백
   }
 
   // 2. 오프라인 로컬 스토리지 폴백
@@ -281,7 +311,7 @@ export async function pullProjectsFromCloud(
             success: true,
             projects,
             updatedAt: localStorage.getItem(STORAGE_LAST_SYNC_KEY) || new Date().toISOString(),
-            message: "로컬 캐시 데이터 로드",
+            message: "로컬 캐시 데이터 사용",
           };
         }
       }
