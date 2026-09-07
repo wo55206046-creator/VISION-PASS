@@ -9,8 +9,6 @@ interface HeaderProps {
   onStepChange: (step: number) => void;
   pjtCode?: string;
   equipmentName?: string;
-  syncStatus?: "connected" | "syncing" | "error";
-  onForceSync?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,8 +16,6 @@ export const Header: React.FC<HeaderProps> = ({
   onStepChange,
   pjtCode,
   equipmentName,
-  syncStatus = "connected",
-  onForceSync,
 }) => {
   const steps = [
     { num: 1, label: "1. PJT List" },
@@ -75,30 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* System Badges & Zero-Storage Indicator */}
           <div className="flex items-center gap-2">
-            {/* 100% 전자동 실시간 클라우드 동기화 상태 표시등 */}
-            {onForceSync && (
-              <button
-                type="button"
-                onClick={onForceSync}
-                title="PC ↔ 모바일 100% 실시간 자동 연동 중 (클릭 시 상세 설정/QR 확인 가능)"
-                className="flex items-center gap-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 px-2.5 sm:px-3 py-1.5 text-xs border border-emerald-500/30 hover:border-cyan-400 text-slate-200 transition-all cursor-pointer shadow-sm active:scale-95"
-              >
-                <span
-                  className={`h-2 w-2 rounded-full ${
-                    syncStatus === "connected"
-                      ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
-                      : syncStatus === "syncing"
-                      ? "bg-amber-400 animate-pulse"
-                      : "bg-emerald-400 shadow-[0_0_8px_#34d399]"
-                  }`}
-                />
-                <span className="font-bold text-emerald-400">
-                  {syncStatus === "syncing" ? "자동 동기화 중..." : "실시간 자동 연동"}
-                </span>
-              </button>
-            )}
-
-            <div className="hidden lg:flex items-center gap-1.5 rounded-lg bg-emerald-950/50 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium text-emerald-400 border border-emerald-800/50">
+            <div className="flex items-center gap-1.5 rounded-lg bg-emerald-950/50 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium text-emerald-400 border border-emerald-800/50">
               <ShieldCheck className="h-3.5 w-3.5" />
               <span>Storage-Zero</span>
             </div>

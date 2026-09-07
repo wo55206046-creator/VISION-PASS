@@ -8,7 +8,6 @@ import { PjtListStep } from "@/components/PjtListStep";
 import { ProjectMasterStep } from "@/components/ProjectMasterStep";
 import { EquipmentUnitStep } from "@/components/EquipmentUnitStep";
 import { TemplateManagerStep } from "@/components/TemplateManagerStep";
-import { SyncModal } from "@/components/SyncModal";
 import {
   pushProjectsToCloud,
   pullProjectsFromCloud,
@@ -54,8 +53,6 @@ export default function Home() {
     () => INITIAL_PROJECT_LIST[0]?.id || "pjt-001"
   );
   const [draftProject, setDraftProject] = useState<ProjectMaster | null>(null);
-  const [syncStatus, setSyncStatus] = useState<"connected" | "syncing" | "error">("connected");
-  const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
 
   // 실시간 동기화 제어용 Refs
   const isInitialMount = useRef(true);
@@ -79,7 +76,6 @@ export default function Home() {
             localStorage.setItem(STORAGE_KEY, incomingJson);
           } catch {}
         }
-        setSyncStatus("connected");
       }
     } catch {
       // 백그라운드 네트워크 상태 무소음 처리
@@ -127,7 +123,6 @@ export default function Home() {
             localStorage.setItem(STORAGE_KEY, incomingJson);
           } catch {}
         }
-        setSyncStatus("connected");
       }
     });
 
@@ -142,7 +137,6 @@ export default function Home() {
             localStorage.setItem(STORAGE_KEY, incomingJson);
           } catch {}
         }
-        setSyncStatus("connected");
       }
     });
 
@@ -174,12 +168,10 @@ export default function Home() {
     if (currentJson !== lastKnownCloudJson.current) {
       if (syncPushTimeoutRef.current) clearTimeout(syncPushTimeoutRef.current);
       syncPushTimeoutRef.current = setTimeout(async () => {
-        setSyncStatus("syncing");
         const res = await pushProjectsToCloud(projects);
         if (res.success) {
           lastKnownCloudJson.current = currentJson;
         }
-        setSyncStatus("connected");
       }, 350);
     }
 
@@ -208,18 +200,6 @@ export default function Home() {
 
       return nextProjects;
     });
-  };
-
-  // 수동 즉시 동기화 버튼 핸들러 (PC 및 모바일 상단 버튼 클릭 시 동기화 모달 오픈 & 즉시 백그라운드 푸시)
-  const handleForceManualSync = async () => {
-    setIsSyncModalOpen(true);
-    setSyncStatus("syncing");
-    try {
-      await pushProjectsToCloud(projects);
-      setSyncStatus("connected");
-    } catch {
-      setSyncStatus("connected");
-    }
   };
 
   const handleCreateNewProject = () => {
@@ -334,8 +314,6 @@ export default function Home() {
         }}
         pjtCode={currentProject?.pjtCode}
         equipmentName={currentProject?.equipmentName}
-        syncStatus={syncStatus}
-        onForceSync={handleForceManualSync}
       />
 
       {/* Main Workspace View */}
@@ -461,25 +439,6 @@ export default function Home() {
           </div>
         </div>
       </footer>
-
-      {/* 🌐 PC ↔ 모바일 실시간 데이터 동기화 & 스마트폰 연결 QR 모달 */}
-      <SyncModal
-        isOpen={isSyncModalOpen}
-        onClose={() => setIsSyncModalOpen(false)}
-        projects={projects}
-        onUpdateProjects={(newProjects) => {
-          setProjects(newProjects);
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(newProjects));
-          } catch {}
-        }}
-        onResetDefault={() => {
-          setProjects(INITIAL_PROJECT_LIST);
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_PROJECT_LIST));
-          } catch {}
-        }}
-      />
     </div>
   );
 }
