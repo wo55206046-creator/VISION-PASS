@@ -264,20 +264,27 @@ export default function Home() {
       })),
       updatedAt: new Date().toISOString(),
     };
-    setProjects((prev) => [dup, ...prev]);
+    const next = [dup, ...projects];
+    setProjects(next);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {}
+    pushProjectsToCloud(next).catch(console.warn);
   };
 
   const handleDeleteProject = (projectId: string) => {
     const target = projects.find((p) => p.id === projectId);
     const targetName = target ? `${target.pjtCode} (${target.equipmentName})` : "해당 프로젝트";
     if (confirm(`[${targetName}] 를 정말 삭제하시겠습니까?`)) {
-      setProjects((prev) => {
-        const next = prev.filter((p) => p.id !== projectId);
-        if (next.length > 0 && currentProjectId === projectId) {
-          setCurrentProjectId(next[0].id || "");
-        }
-        return next;
-      });
+      const next = projects.filter((p) => p.id !== projectId);
+      setProjects(next);
+      if (next.length > 0 && currentProjectId === projectId) {
+        setCurrentProjectId(next[0].id || "");
+      }
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+      pushProjectsToCloud(next).catch(console.warn);
     }
   };
 
@@ -297,19 +304,16 @@ export default function Home() {
       } catch {}
     }
 
-    setProjects((prev) => {
-      const exists = prev.some((p) => p.id === finalizedPjt.id);
-      const next = exists
-        ? prev.map((p) => (p.id === finalizedPjt.id ? finalizedPjt : p))
-        : [finalizedPjt, ...prev];
+    const exists = projects.some((p) => p.id === finalizedPjt.id);
+    const next = exists
+      ? projects.map((p) => (p.id === finalizedPjt.id ? finalizedPjt : p))
+      : [finalizedPjt, ...projects];
 
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {}
-
-      pushProjectsToCloud(next).catch(console.warn);
-      return next;
-    });
+    setProjects(next);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {}
+    pushProjectsToCloud(next).catch(console.warn);
 
     setCurrentProjectId(finalizedPjt.id || "");
     setDraftProject(null);
@@ -345,11 +349,14 @@ export default function Home() {
             onCreateNewProject={handleCreateNewProject}
             onDuplicateProject={handleDuplicateProject}
             onDeleteProject={handleDeleteProject}
-            onUpdateProject={(updated) =>
-              setProjects((prev) =>
-                prev.map((p) => (p.id === updated.id ? updated : p))
-              )
-            }
+            onUpdateProject={(updated) => {
+              const next = projects.map((p) => (p.id === updated.id ? updated : p));
+              setProjects(next);
+              try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+              } catch {}
+              pushProjectsToCloud(next).catch(console.warn);
+            }}
           />
         )}
 
