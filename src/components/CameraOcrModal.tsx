@@ -610,7 +610,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               )}
             </div>
 
-            {/* Serial Candidates Pills (다중 후보 원터치 선택: WIN 25자리 키 / PC 시리얼 자동 태깅) */}
+            {/* Serial Candidates Pills (다중 후보 원터치 선택: 1순위 WIN 25자리 키 추천 / 2순위 PC S/N) */}
             {ocrResult && ocrResult.candidates && ocrResult.candidates.length > 0 && (
               <div className="space-y-1.5 pt-0.5">
                 <span className="text-[10px] font-semibold text-slate-400">
@@ -620,12 +620,18 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                   {ocrResult.candidates.map((cand, idx) => {
                     const isWinKey = /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cand);
                     const isPcSsn = /^KSA[0-9]{6,10}$/i.test(cand);
-                    const labelBadge = isWinKey
+                    const labelBadge = idx === 0
+                      ? isWinKey
+                        ? "★ 1순위 추천 (WIN11 키)"
+                        : "★ 1순위 추천"
+                      : idx === 1
+                      ? isPcSsn
+                        ? "2순위 (PC S/N)"
+                        : "2순위"
+                      : isWinKey
                       ? "WIN11 키 (25자)"
                       : isPcSsn
                       ? "PC S/N"
-                      : idx === 0
-                      ? "1순위 S/N"
                       : `${idx + 1}순위`;
 
                     return (
@@ -643,16 +649,16 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                           className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
                             selectedSerial === cand
                               ? "bg-slate-950 text-cyan-300"
-                              : isWinKey
-                              ? "bg-amber-950 text-amber-300 border border-amber-700/60"
-                              : isPcSsn
+                              : idx === 0
+                              ? "bg-amber-950 text-amber-300 border border-amber-600/70 shadow-sm"
+                              : idx === 1
                               ? "bg-cyan-950 text-cyan-300 border border-cyan-700/60"
                               : "bg-slate-900 text-slate-400"
                           }`}
                         >
                           {labelBadge}
                         </span>
-                        <span className="break-all tracking-tight">{cand}</span>
+                        <span className="break-all tracking-tight font-bold">{cand}</span>
                       </button>
                     );
                   })}

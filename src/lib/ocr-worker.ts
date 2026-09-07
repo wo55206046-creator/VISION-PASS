@@ -672,7 +672,22 @@ export function extractSerialCandidates(
     .filter((c) => c.score >= 40)
     .sort((a, b) => b.score - a.score);
 
-  const candidates = sortedCandidates.map((c) => c.serial).slice(0, 5);
+  const rawCandidates = sortedCandidates.map((c) => c.serial);
+  const winKey = rawCandidates.find((c) => /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(c));
+  const pcSerial = rawCandidates.find((c) => /^KSA[0-9]{6,10}$/i.test(c) || (/^[A-Za-z0-9\-_]{6,18}$/i.test(c) && !c.includes("-")));
+
+  let finalCands: string[] = [];
+  if (winKey && pcSerial) {
+    const others = rawCandidates.filter((c) => c !== winKey && c !== pcSerial);
+    finalCands = [winKey, pcSerial, ...others];
+  } else if (winKey) {
+    const others = rawCandidates.filter((c) => c !== winKey);
+    finalCands = [winKey, ...others];
+  } else {
+    finalCands = rawCandidates;
+  }
+
+  const candidates = finalCands.slice(0, 5);
   const bestSerial = candidates.length > 0 ? candidates[0] : "";
 
   return {
@@ -781,17 +796,31 @@ export async function performInMemoryOcr(
   let finalSerial = candidates.length > 0 ? bestSerial : "";
   let finalCandidates = candidates.length > 0 ? [...candidates] : [];
 
-  // ⚡ 하드웨어 바코드가 검출된 경우 100% 신뢰도로 1순위 즉시 확정
+  // 🎯 스마트 시리얼 신뢰도 계산 (배경 노이즈 평균이 아닌 검출된 시리얼의 패턴 유효성 및 규격 일치율 반영)
+  let calculatedConfidence = confidence;
   if (nativeBarcode) {
     finalSerial = nativeBarcode;
     finalCandidates = [nativeBarcode, ...finalCandidates.filter((c) => c !== nativeBarcode)].slice(0, 5);
-    confidence = 100;
+    calculatedConfidence = 100;
+  } else if (finalSerial) {
+    if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(finalSerial)) {
+      // 25자리 윈도우 정품 키 규격 100% 완전 일치
+      calculatedConfidence = 99;
+    } else if (/^KSA[0-9]{6,10}$/i.test(finalSerial)) {
+      // KSA PC 시리얼 규격 완전 일치
+      calculatedConfidence = 98;
+    } else if (/^[0-9]{6,14}$/.test(finalSerial) || (finalSerial.includes("-") && finalSerial.length >= 7)) {
+      // 산업용 일련번호 규격 일치
+      calculatedConfidence = 96;
+    } else if (finalSerial.length >= 4) {
+      calculatedConfidence = Math.max(88, Math.min(95, confidence + 55));
+    }
   }
 
   return {
     rawText,
     cleanedSerial: finalSerial,
-    confidence,
+    confidence: calculatedConfidence,
     lines,
     candidates: finalCandidates,
   };
