@@ -1,5 +1,11 @@
 import { createWorker, Worker } from "tesseract.js";
 import { OcrResult } from "@/types";
+import {
+  createYellowLabelBoostCanvas,
+  preprocessCanvas,
+  disposeCanvas,
+  DEFAULT_PREPROCESSING_OPTIONS,
+} from "./image-processing";
 
 let cachedWorker: Worker | null = null;
 let isInitializing = false;
@@ -450,10 +456,20 @@ export function extractSerialCandidates(
   // [전략 1] S/N :, Serial Number, SERIAL, Serial, S/N 및 수기/한글 라벨 우측 값 직접 추출
   // ============================================================================
   const labelRightRegexes = [
-    // 1-0-0. SN: / S/N: / 5N: / SN; 직후 5~25자리 고유 일련번호 (예: "SN:360025389" -> 360025389, "PC S/N : KSA7706685") (2500점 최우선)
+    // 1-0-0. SN: / S/N: / 5N: / SN; 직후 4~25자리 고유 일련번호 (예: "SN:260225-40" -> 260225-40, "SN:210708-28" -> 210708-28, "SN:360025389" -> 360025389) (2600점 최우선)
     {
-      regex: /(?:S\s*[\/\\|\-.;:]?\s*N|5\s*[\/\\|\-.;:]?\s*N|S\s*N|SN|5N|S#|S\.N\.|S\/NO)\s*[:.\-|=;#\s]*([0-9A-Za-z\-_]{5,25})/gi,
+      regex: /(?:S\s*[\/\\|\-.;:]?\s*N|5\s*[\/\\|\-.;:]?\s*N|S\s*N|SN|5N|S#|S\.N\.|S\/NO)\s*[:.\-|=;#\s]*([0-9A-Za-z\-_]{4,25})/gi,
+      score: 2600,
+    },
+    // 1-0-0-1. CON-B1 SN:260225-40 등 산업용 모듈 태그 라벨 (2500점)
+    {
+      regex: /(?:CON-[A-Z0-9]+\s*S[\/\\|\-.]?N|CON-[A-Z0-9]+)\s*[:.\-|=;#\s]*([0-9A-Za-z\-_]{4,25})/gi,
       score: 2500,
+    },
+    // 1-0-0-2. 날짜-순번 하이픈 시리얼 패턴 (예: 260225-40, 210708-28) (2400점)
+    {
+      regex: /\b([0-9]{6}-[0-9]{1,4})\b/g,
+      score: 2400,
     },
     // 1-0. 한글 수기 라벨: "시리얼 :", "일련번호 :", "제조번호 :", "시리얼넘버 :", "관리번호 :" (2000점)
     {
@@ -619,7 +635,7 @@ export function extractSerialCandidates(
 }
 
 /**
- * 캔버스 메모리 상에서 순수 문자/숫자 정밀 광학 OCR 실행 (하드웨어 바코드 + Tesseract 5 LSTM)
+ * 캔버스 메모리 상에서 순수 문자/숫자 정밀 광학 OCR 실행 (하드웨어 바코드 + Tesseract 5 LSTM + 노란색 라벨 듀얼 채널)
  */
 export async function performInMemoryOcr(
   canvas: HTMLCanvasElement,
@@ -629,12 +645,33 @@ export async function performInMemoryOcr(
   // 1. 하드웨어 가속 Native BarcodeDetector 병렬 실행 (0.005초 초고속 바코드 감지)
   const nativeBarcodePromise = scanNativeBarcode(canvas);
 
-  // 2. Tesseract 5 LSTM 정밀 광학 OCR 실행
-  const worker = await getOcrWorker(onProgress);
-  const result = await worker.recognize(canvas);
+  // 2. 산업용 라벨 듀얼 채널(노란색 라벨 분리 + 고대비 샤프닝) 생성
+  const yellowBoosted = createYellowLabelBoostCanvas(canvas);
+  const enhancedGray = preprocessCanvas(canvas, DEFAULT_PREPROCESSING_OPTIONS);
 
-  const rawText = result.data.text || "";
-  let confidence = Math.round(result.data.confidence || 0);
+  const worker = await getOcrWorker(onProgress);
+
+  // 1차 패스: 노란색 라벨 특화 캔버스 판독 (SN:260225-40, CON-B1 등 추출)
+  const pass1 = await worker.recognize(yellowBoosted);
+  let rawText = pass1.data.text || "";
+  let confidence = Math.round(pass1.data.confidence || 0);
+
+  const words = [...((pass1.data as any).words || [])];
+
+  // 2차 패스: 텍스트 보강을 위해 고대비 캔버스 판독 결과 병합
+  try {
+    const pass2 = await worker.recognize(enhancedGray);
+    const pass2Text = pass2.data.text || "";
+    if (pass2Text) {
+      rawText += "\n" + pass2Text;
+      confidence = Math.max(confidence, Math.round(pass2.data.confidence || 0));
+      words.push(...((pass2.data as any).words || []));
+    }
+  } catch {}
+
+  // 메모리 정리
+  disposeCanvas(yellowBoosted);
+  disposeCanvas(enhancedGray);
 
   // 화면 정가운데 거리 좌표 계산 (화면 중심 = 0.0, 모서리 = 1.0+)
   const imgWidth = canvas.width || 1280;
@@ -643,7 +680,6 @@ export async function performInMemoryOcr(
   const cY = imgHeight / 2;
 
   const spatialTokens: SpatialToken[] = [];
-  const words = (result.data as any).words || [];
 
   for (const w of words) {
     if (w && w.text && w.bbox) {

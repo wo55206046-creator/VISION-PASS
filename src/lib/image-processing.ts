@@ -273,6 +273,54 @@ export function disposeCanvas(canvas: HTMLCanvasElement | null) {
 }
 
 /**
+ * 🟡 산업용 노란색 라벨 테이프 & 디지털 인쇄 폰트 초정밀 색상 분리 및 텍스트 극대화
+ * 노란색 배경(High R, High G, Low B)을 순백색으로 분리하고 검정/짙은 인쇄 텍스트를 고대비로 추출
+ */
+export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): HTMLCanvasElement {
+  const width = sourceCanvas.width;
+  const height = sourceCanvas.height;
+
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = width;
+  outCanvas.height = height;
+  const ctx = outCanvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return sourceCanvas;
+
+  ctx.drawImage(sourceCanvas, 0, 0);
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const data = imgData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+
+    // 노란색 색상 지수: Yellow index = (R + G)/2 - B
+    const yellowIndex = (r + g) / 2 - b;
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+
+    let enhanced: number;
+    if (yellowIndex > 25 && brightness > 80) {
+      // 노란색 배경 영역 -> 순백색(255)
+      enhanced = 255;
+    } else if (brightness < 115) {
+      // 검은색/짙은 글자 영역 -> 순흑색(0)
+      enhanced = 0;
+    } else {
+      // 완만한 대비 스트레칭
+      enhanced = brightness > 140 ? 255 : Math.max(0, Math.min(255, (brightness - 60) * (255 / 100)));
+    }
+
+    data[i] = enhanced;
+    data[i + 1] = enhanced;
+    data[i + 2] = enhanced;
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  return outCanvas;
+}
+
+/**
  * Blob URL 즉시 폐기 유틸
  */
 export function revokeUrl(url?: string | null) {

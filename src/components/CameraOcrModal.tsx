@@ -52,6 +52,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   const [torchSupported, setTorchSupported] = useState(false);
 
   // Preview & Processing State
+  const [zoomLevel, setZoomLevel] = useState<1 | 2 | 3>(1);
   const [previewMode, setPreviewMode] = useState<"live" | "enhanced" | "binary">("live");
   const [guideMode, setGuideMode] = useState<"horizontal" | "vertical" | "full">("horizontal");
   const [options, setOptions] = useState<PreprocessingOptions>(DEFAULT_PREPROCESSING_OPTIONS);
@@ -237,22 +238,24 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     }
     ctx.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
 
-    // ROI 타겟팅 정밀 크롭 (선택된 가이드 모드에 맞춤)
-    let roiWidth: number;
-    let roiHeight: number;
+    // ROI 타겟팅 정밀 크롭 (선택된 가이드 모드 및 줌 배율 반영)
+    let baseRoiW: number;
+    let baseRoiH: number;
 
     if (guideMode === "vertical") {
-      roiWidth = rawCanvas.width * 0.52;
-      roiHeight = rawCanvas.height * 0.86;
+      baseRoiW = rawCanvas.width * 0.52;
+      baseRoiH = rawCanvas.height * 0.86;
     } else if (guideMode === "full") {
-      roiWidth = rawCanvas.width * 0.96;
-      roiHeight = rawCanvas.height * 0.92;
+      baseRoiW = rawCanvas.width * 0.96;
+      baseRoiH = rawCanvas.height * 0.92;
     } else {
       // horizontal 기본 모드
-      roiWidth = rawCanvas.width * 0.88;
-      roiHeight = rawCanvas.height * 0.48;
+      baseRoiW = rawCanvas.width * 0.88;
+      baseRoiH = rawCanvas.height * 0.48;
     }
 
+    const roiWidth = baseRoiW / zoomLevel;
+    const roiHeight = baseRoiH / zoomLevel;
     const roiX = (rawCanvas.width - roiWidth) / 2;
     const roiY = (rawCanvas.height - roiHeight) / 2;
 
@@ -264,7 +267,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         width: roiWidth,
         height: roiHeight,
       },
-      2.0
+      Math.max(2.0, 2.5 * zoomLevel)
     );
 
     const colorCanvas = croppedCanvas;
@@ -369,12 +372,34 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         <div className="p-3.5 sm:p-5 space-y-3.5 overflow-y-auto max-h-[calc(94vh-60px)]">
           {/* Enriched Large Camera Viewfinder Box (카메라 화면 대폭 확대: h-64 ~ h-80) */}
           <div className="relative w-full h-64 sm:h-80 rounded-2xl overflow-hidden bg-black border-2 border-slate-800 shadow-inner">
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              className="w-full h-full object-cover"
-            />
+            <div className="w-full h-full overflow-hidden flex items-center justify-center">
+              <video
+                ref={videoRef}
+                playsInline
+                muted
+                className="w-full h-full object-cover transition-transform duration-200 ease-out"
+                style={{ transform: `scale(${zoomLevel})` }}
+              />
+            </div>
+
+            {/* Quick Digital Zoom Control (1x / 2x / 3x 원터치 정밀 확대) */}
+            <div className="absolute bottom-2.5 left-2.5 z-10 flex items-center gap-1 bg-slate-900/85 backdrop-blur-md p-1 rounded-xl border border-cyan-500/40 shadow-glow-cyan">
+              {[1, 2, 3].map((z) => (
+                <button
+                  key={z}
+                  type="button"
+                  onClick={() => setZoomLevel(z as 1 | 2 | 3)}
+                  className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                    zoomLevel === z
+                      ? "bg-cyan-500 text-slate-950 shadow-glow-cyan font-extrabold"
+                      : "text-slate-300 hover:text-cyan-300"
+                  }`}
+                  title={`${z}배 정밀 확대`}
+                >
+                  {z}x
+                </button>
+              ))}
+            </div>
 
             {/* Industrial Viewfinder Crosshair & Guide Bounding Box */}
             <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-3">

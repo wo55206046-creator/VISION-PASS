@@ -157,38 +157,52 @@ export async function performGeminiDeepOcr(
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
         const requestBody = {
+          system_instruction: {
+            parts: [{ text: GEMINI_SYSTEM_PROMPT }],
+          },
           contents: [
             {
               parts: [
-                { text: GEMINI_SYSTEM_PROMPT },
                 { text: userText },
-                { inline_data: { mime_type: "image/jpeg", data: streamABase64 } },
-                { inline_data: { mime_type: "image/jpeg", data: streamBBase64 } },
+                {
+                  inlineData: {
+                    mimeType: "image/jpeg",
+                    data: streamABase64,
+                  },
+                },
               ],
             },
           ],
           generationConfig: {
             temperature: 0.0,
-            response_mime_type: "application/json",
+            responseMimeType: "application/json",
           },
         };
 
         const res = await fetch(endpoint, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
           body: JSON.stringify(requestBody),
         });
 
         if (res.ok) {
           const jsonRes = await res.json();
-          const rawContent = jsonRes?.candidates?.[0]?.content?.parts?.[0]?.text;
+          let rawContent = jsonRes?.candidates?.[0]?.content?.parts?.[0]?.text;
           if (rawContent) {
+            // Markdown 코드 블록이 포함된 경우 정리
+            rawContent = rawContent.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
             parsed = JSON.parse(rawContent);
             break;
           }
+        } else {
+          const errText = await res.text();
+          console.warn(`Gemini API [${model}] status ${res.status}:`, errText);
         }
       } catch (e) {
-        // 다음 모델 시도
+        console.warn(`Gemini API [${model}] fetch error:`, e);
       }
     }
   }
