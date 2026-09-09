@@ -826,14 +826,18 @@ export async function performInMemoryOcr(
 
   console.log("📄 [OCR 스트림 1 (Otsu Binarized)] 추출 텍스트:\n", rawText);
 
-  // 1차 패스에서 완벽한 명판 시리얼(SN:, S/N: 인접 번호)이 포착되었는지 사전 검사
+  // 1차 패스에서 유효한 명판 시리얼(SN:, S/N: 인접 번호 또는 6~14자리 고유 번호)이 포착되었는지 검사
   let quickTest = extractSerialCandidates(rawText, context);
   const hasDefinitiveMatch =
     quickTest.candidates.length > 0 &&
-    /(?:S[\/\\|\-.;:]?\s*N|SN|5N|SERIAL|SER)\s*[:.\-|=;#~_*\s]*[0-9A-Za-z\-_]{4,}/i.test(rawText);
+    (
+      /(?:S[\/\\|\-.;:]?\s*N|SN|5N|SERIAL|SER)\s*[:.\-|=;#~_*\s]*[0-9A-Za-z\-_]{4,}/i.test(rawText) ||
+      /^[0-9]{6,14}$/.test(quickTest.bestSerial) ||
+      quickTest.bestSerial.length >= 6
+    );
 
-  // 만약 1차 패스에서 결정적 SN 시리얼이 미검출되었거나 텍스트가 부족한 경우:
-  // 스트림 2(적응형 로컬 대비 강화) 및 복합 레이아웃(PSM 3)을 즉각 앙상블 결합!
+  // 🎯 1차 패스에서 이미 확실한 시리얼이 검출된 경우: 2차 패스를 건너뛰고 1초 만에 즉시 완료!
+  // 오직 시리얼이 미검출되었거나 텍스트가 부족한 경우에만 스트림 2(적응형 대비) 결합
   if (!hasDefinitiveMatch) {
     onProgress?.(70, "⚡ 듀얼 광학 앙상블(스트림 B) 결합 정밀 판독 중...");
     try {

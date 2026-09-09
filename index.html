@@ -628,12 +628,19 @@
       return processed;
     }
 
-    function cropROI(canvas, roi) {
+    function cropROI(canvas, roi, scale = 1.0) {
+      let targetW = Math.max(1, Math.floor(roi.w * scale));
+      let targetH = Math.max(1, Math.floor(roi.h * scale));
+      if (targetW > 960) {
+        const ratio = 960 / targetW;
+        targetW = 960;
+        targetH = Math.round(targetH * ratio);
+      }
       const crop = document.createElement("canvas");
-      crop.width = Math.max(1, Math.floor(roi.w));
-      crop.height = Math.max(1, Math.floor(roi.h));
+      crop.width = targetW;
+      crop.height = targetH;
       const ctx = crop.getContext("2d");
-      if (ctx) ctx.drawImage(canvas, roi.x, roi.y, roi.w, roi.h, 0, 0, crop.width, crop.height);
+      if (ctx) ctx.drawImage(canvas, roi.x, roi.y, roi.w, roi.h, 0, 0, targetW, targetH);
       return crop;
     }
 

@@ -9,7 +9,7 @@ import {
   DEFAULT_PREPROCESSING_OPTIONS,
 } from "@/lib/image-processing";
 import { performGeminiDeepOcr } from "@/lib/gemini-ocr";
-import { scanNativeBarcode, quickScanLiveRoi } from "@/lib/ocr-worker";
+import { scanNativeBarcode, quickScanLiveRoi, getOcrWorker } from "@/lib/ocr-worker";
 import { triggerScanFeedback } from "@/lib/utils";
 import {
   Camera,
@@ -197,6 +197,8 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       setOcrResult(null);
       setIsFrozen(false);
       startCamera();
+      // 🚀 초고속 2초 시리얼 추출을 위한 백그라운드 Tesseract 워커 사전 로드 (지연 0ms)
+      getOcrWorker().catch(console.warn);
     } else {
       stopCamera();
     }

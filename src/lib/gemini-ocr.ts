@@ -12,16 +12,21 @@ function getDefaultKey(): string {
   return "";
 }
 
+export function isLikelyValidGeminiKey(key?: string | null): boolean {
+  if (!key) return false;
+  const trimmed = key.trim();
+  // Google AI Studio 정식 키는 'AIzaSy'로 시작하고 약 39자
+  return trimmed.startsWith("AIzaSy") && trimmed.length >= 35;
+}
+
 export function getGeminiApiKey(): string {
   if (typeof window !== "undefined") {
     const userKey = localStorage.getItem(GEMINI_API_KEY_STORAGE);
     if (userKey && userKey.trim()) return userKey.trim();
   }
-  return (
-    process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
-    process.env.GEMINI_API_KEY ||
-    getDefaultKey()
-  );
+  const envKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  if (envKey && isLikelyValidGeminiKey(envKey)) return envKey.trim();
+  return "";
 }
 
 export function setGeminiApiKey(key: string): void {
@@ -166,7 +171,7 @@ export async function performGeminiDeepOcr(
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
 
         const requestBody = {
           system_instruction: {
