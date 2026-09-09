@@ -682,12 +682,17 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
           {/* OCR Result & Quick-Review Section */}
           <div className="rounded-2xl bg-slate-950 p-3.5 border border-slate-800 space-y-3 shadow-lg">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+              <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5 flex-wrap">
                 <Cpu className="h-3.5 w-3.5 text-cyan-400" />
                 <span>추출된 시리얼 번호 (최종 확인 및 수정)</span>
+                {ocrResult?.detectedLabel && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/60 font-extrabold shadow-glow-cyan">
+                    [{ocrResult.detectedLabel} 기준 추출]
+                  </span>
+                )}
               </label>
               {ocrResult?.confidence !== undefined && ocrResult.cleanedSerial && (
-                <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-500/40 font-bold">
+                <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-500/40 font-bold shrink-0">
                   🎯 정확도 {ocrResult.confidence}%
                 </span>
               )}
@@ -726,28 +731,48 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               )}
             </div>
 
-            {/* Serial Candidates Pills (다중 후보 원터치 선택: 1순위 WIN 25자리 키 추천 / 2순위 PC S/N) */}
+            {/* Serial Candidates Pills (다중 후보 원터치 선택: 라벨 기준 명칭 표시) */}
             {ocrResult && ocrResult.candidates && ocrResult.candidates.length > 0 && (
               <div className="space-y-1.5 pt-0.5">
-                <span className="text-[10px] font-semibold text-slate-400">
-                  인식된 시리얼 번호 목록 (터치하여 원하는 번호 즉시 선택):
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-slate-400">
+                    인식된 시리얼 번호 목록 (라벨 기준 판독 완료):
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    총 {ocrResult.candidates.length}개 검출
+                  </span>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {ocrResult.candidates.map((cand, idx) => {
-                    const isWinKey = /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cand);
-                    const isPcSsn = /^KSA[0-9]{6,10}$/i.test(cand);
-                    const isDateSerial = /^[0-9]{6}-[0-9]{1,4}$/.test(cand);
-                    const isConTag = /^CON-[A-Z0-9]+$/i.test(cand);
+                    const detail = ocrResult.candidateDetails?.find((d) => d.serial === cand);
+                    const sourceLabel = detail?.sourceLabel || (
+                      /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cand)
+                        ? "WIN11 S/N"
+                        : /^KSA[0-9]{6,10}$/i.test(cand)
+                        ? "PC S/N"
+                        : /^[0-9]{6,14}$/.test(cand)
+                        ? "SN"
+                        : cand.includes("-")
+                        ? "S/N"
+                        : "SN"
+                    );
 
-                    const labelBadge = isWinKey
-                      ? "WIN11 25자리 키"
-                      : isPcSsn
-                      ? "PC S/N"
-                      : isDateSerial
-                      ? "S/N 일련번호"
-                      : isConTag
-                      ? "모듈 태그"
-                      : `번호 ${idx + 1}`;
+                    const isWin = sourceLabel.includes("WIN");
+                    const isPn = sourceLabel.includes("P/N");
+                    const isBarcode = sourceLabel === "BARCODE";
+                    const isSn = sourceLabel === "SN" || sourceLabel === "S/N" || sourceLabel === "SERIAL";
+
+                    const badgeStyle = selectedSerial === cand
+                      ? "bg-slate-950 text-cyan-300 font-black ring-1 ring-cyan-400"
+                      : isWin
+                      ? "bg-amber-950 text-amber-300 border border-amber-600/70 shadow-sm"
+                      : isPn
+                      ? "bg-blue-950 text-blue-300 border border-blue-600/70"
+                      : isBarcode
+                      ? "bg-purple-950 text-purple-300 border border-purple-600/70"
+                      : isSn
+                      ? "bg-cyan-950 text-cyan-300 border border-cyan-600/70 shadow-glow-cyan"
+                      : "bg-slate-900 text-slate-300 border border-slate-700";
 
                     return (
                       <button
@@ -760,18 +785,8 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                             : "bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700"
                         }`}
                       >
-                        <span
-                          className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
-                            selectedSerial === cand
-                              ? "bg-slate-950 text-cyan-300"
-                              : idx === 0
-                              ? "bg-amber-950 text-amber-300 border border-amber-600/70 shadow-sm"
-                              : idx === 1
-                              ? "bg-cyan-950 text-cyan-300 border border-cyan-700/60"
-                              : "bg-slate-900 text-slate-400"
-                          }`}
-                        >
-                          {labelBadge}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-black shrink-0 ${badgeStyle}`}>
+                          {sourceLabel}
                         </span>
                         <span className="break-all tracking-tight font-bold">{cand}</span>
                       </button>

@@ -1,5 +1,5 @@
 import { createWorker, Worker } from "tesseract.js";
-import { OcrResult } from "@/types";
+import { OcrResult, OcrCandidateDetail } from "@/types";
 import {
   createYellowLabelBoostCanvas,
   preprocessCanvas,
@@ -390,6 +390,8 @@ export function extractSerialCandidates(
 ): {
   bestSerial: string;
   candidates: string[];
+  candidateDetails: OcrCandidateDetail[];
+  detectedLabel: string;
   lines: string[];
 } {
   const rawLines = rawText
@@ -398,6 +400,7 @@ export function extractSerialCandidates(
     .filter((l) => l.length > 0 && !/^[|/\\_\-\s.]{4,}$/.test(l));
 
   const scoredMap = new Map<string, number>();
+  const labelOriginMap = new Map<string, string>();
   const forbiddenSpecTokens = extractForbiddenSpecTokens(context);
 
   // 공간 거리 맵 (토큰별 화면 정가운데 거리 비율 캐시)
@@ -477,6 +480,7 @@ export function extractSerialCandidates(
 
   if (detectedFullWinKey) {
     scoredMap.set(detectedFullWinKey, 20000);
+    labelOriginMap.set(detectedFullWinKey, "WIN11 S/N");
     console.log("🏆 [WIN11 25자리 키 100% 완전 조립 성공]:", detectedFullWinKey);
   }
 
@@ -488,6 +492,16 @@ export function extractSerialCandidates(
   let snMatch: RegExpExecArray | null;
   while ((snMatch = snKeywordsRegex.exec(rawText)) !== null) {
     if (snMatch[1]) {
+      const matchedFull = snMatch[0];
+      let matchedLabel = "SN";
+      if (/^S[\/\\|\-.;:]?\s*N/i.test(matchedFull.trim())) matchedLabel = "S/N";
+      else if (/^SN\b|^5N\b/i.test(matchedFull.trim())) matchedLabel = "SN";
+      else if (/^SERIAL/i.test(matchedFull.trim())) matchedLabel = "SERIAL";
+      else if (/^SER\b/i.test(matchedFull.trim())) matchedLabel = "SER";
+      else if (/^S#/i.test(matchedFull.trim())) matchedLabel = "S#";
+      else if (/일련\s*번호/i.test(matchedFull.trim())) matchedLabel = "일련번호";
+      else if (/시리얼/i.test(matchedFull.trim())) matchedLabel = "시리얼";
+
       const rawVal = snMatch[1];
       const sanitized = sanitizeSerialToken(rawVal);
       if (sanitized && isValidSerialFormat(sanitized)) {
@@ -497,6 +511,7 @@ export function extractSerialCandidates(
         // 25자리 5x5 윈도우 키인 경우 20,000점 부여
         if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(upper)) {
           scoredMap.set(upper, 20000);
+          labelOriginMap.set(upper, "WIN11 S/N");
           continue;
         }
 
@@ -505,10 +520,11 @@ export function extractSerialCandidates(
           continue;
         }
 
-        // 모델명 접미사(-PRO, U6-PRO 등)나 규격 블랙리스트가 아닌 경우 15,000점 부여!
-        if (!IGNORE_WORDS.has(upper) && !/(?:-PRO|-PLUS|-MAX|-MINI|-LITE|-REV|-VER)$/i.test(upper)) {
+        // 모델명 접미사(-PRO, U6-PRO, -PRC 등)나 규격 블랙리스트가 아닌 경우 15,000점 부여!
+        if (!IGNORE_WORDS.has(upper) && !/(?:-PRO|-PRC|-PLUS|-MAX|-MINI|-LITE|-REV|-VER)$/i.test(upper)) {
           const score = /^[0-9]{6,14}$/.test(disambiguated) || /^[0-9]{6}-[0-9]{1,4}$/.test(disambiguated) ? 15000 : 14000;
           scoredMap.set(disambiguated, score);
+          labelOriginMap.set(disambiguated, matchedLabel);
         }
       }
     }
@@ -517,40 +533,47 @@ export function extractSerialCandidates(
   // 1-1) P/N / Part No / 품번 전역 매칭 (4900점)
   const fullPnMatch = rawText.match(/(?:P\s*[\/\\|\-.]\s*N|PART\s*(?:NO\.?|NUMBER)?|품번)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/i);
   if (fullPnMatch && fullPnMatch[1]) {
-    scoredMap.set(fullPnMatch[1].trim().toUpperCase(), 4900);
+    const pn = fullPnMatch[1].trim().toUpperCase();
+    scoredMap.set(pn, 4900);
+    labelOriginMap.set(pn, "P/N");
   }
 
   // 2) KSA PC 시리얼 (예: KSA7706705)
   const fullPcMatch = rawText.match(/\b(KSA[0-9]{6,10})\b/i);
   if (fullPcMatch && fullPcMatch[1]) {
-    scoredMap.set(fullPcMatch[1].toUpperCase(), 4500);
+    const pc = fullPcMatch[1].toUpperCase();
+    scoredMap.set(pc, 4500);
+    labelOriginMap.set(pc, "PC S/N");
   }
 
   // 3) 산업용 날짜-순번 고유 시리얼 (예: 210708-28, 260225-40, SN:210708-28) (4800점)
   const fullDateSerialMatch = rawText.match(/(?:SN\s*[:.\-|=;#\s]*)?([0-9]{6}-[0-9]{1,4})\b/i);
   if (fullDateSerialMatch && fullDateSerialMatch[1]) {
     scoredMap.set(fullDateSerialMatch[1], 4800);
+    labelOriginMap.set(fullDateSerialMatch[1], "SN");
   }
 
   // 4) 산업용 모듈 식별 태그 (예: CON-B2, CON-B1) (3500점)
   const fullConTagMatch = rawText.match(/\b(CON-[A-Z0-9]+)\b/i);
   if (fullConTagMatch && fullConTagMatch[1]) {
-    scoredMap.set(fullConTagMatch[1].toUpperCase(), 3500);
+    const con = fullConTagMatch[1].toUpperCase();
+    scoredMap.set(con, 3500);
+    labelOriginMap.set(con, "모듈 태그");
   }
 
-  const addCandidate = (token: string, baseScore: number, lineIndex: number = 0) => {
+  const addCandidate = (token: string, baseScore: number, lineIndex: number = 0, defaultLabel: string = "SN") => {
     const cleaned = sanitizeSerialToken(token);
     if (!cleaned) return;
     if (!isValidSerialFormat(cleaned)) return;
 
     const upper = cleaned.toUpperCase();
 
-    // 1. 모델명 / 하드웨어 접미사 페널티 (예: U6-PRO, U6, PRO, PLUS, MAX, MINI, LITE, REV1, VER)
+    // 1. 모델명 / 하드웨어 접미사 페널티 (예: U6-PRO, U6-PRC, U6, PRO, PRC, PLUS, MAX, MINI, LITE, REV1, VER)
     if (
-      /(?:-PRO|-PLUS|-MAX|-MINI|-LITE|-REV|-VER|-V\d+|PRO|PLUS|MAX|MINI|LITE|REV|VER)$/i.test(upper) ||
-      /^(?:REV|VER|MOD|TYPE|SERIES)\b/i.test(upper)
+      /(?:-PRO|-PRC|-PLUS|-MAX|-MINI|-LITE|-REV|-VER|-V\d+|PRO|PRC|PLUS|MAX|MINI|LITE|REV|VER)$/i.test(upper) ||
+      /^(?:REV|VER|MOD|TYPE|SERIES|JACK)\b/i.test(upper)
     ) {
-      baseScore -= 1200;
+      baseScore -= 1500;
     }
 
     // 2. 부품 품명/규격(모델번호)과 일치하면 점수 대폭 삭감
@@ -561,21 +584,25 @@ export function extractSerialCandidates(
     // 3. 25자리 5x5 윈도우 정품 라이센스 키 (예: 2398N-XY7BW-W962X-WDDVV-T3FC3)
     if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cleaned)) {
       baseScore += 5000;
+      defaultLabel = "WIN11 S/N";
     }
 
     // 4. KSA 하드웨어/PC 시리얼 (예: KSA7965797, KSA7706685) (+1600)
     if (/^KSA[0-9]{6,10}$/i.test(cleaned)) {
       baseScore += 1600;
+      defaultLabel = "PC S/N";
     }
 
     // 5. 6~14자리 순수 숫자 시리얼 (예: 360025389, 360025446, 26022540) - 제조사 고유 일련번호: 최우선 가산점!
     if (/^[0-9]{6,14}$/.test(cleaned)) {
       baseScore += 2500;
+      defaultLabel = "SN";
     }
 
     // 6. 산업용 하이픈 복합 시리얼 (예: 25X-0049H, TM1L-HK26-1007, 260225-40)
-    if (cleaned.includes("-") && /[0-9]/.test(cleaned) && cleaned.length >= 7 && !/(?:PRO|PLUS|MAX|MINI)$/i.test(upper)) {
+    if (cleaned.includes("-") && /[0-9]/.test(cleaned) && cleaned.length >= 7 && !/(?:PRO|PRC|PLUS|MAX|MINI)$/i.test(upper)) {
       baseScore += 600;
+      defaultLabel = "S/N";
     }
 
     // 대상 부품 컨텍스트에 따른 추가 가산점
@@ -599,6 +626,9 @@ export function extractSerialCandidates(
     const currentScore = scoredMap.get(cleaned) || 0;
     if (totalScore > currentScore) {
       scoredMap.set(cleaned, totalScore);
+      if (!labelOriginMap.has(cleaned)) {
+        labelOriginMap.set(cleaned, defaultLabel);
+      }
     }
   };
 
@@ -607,86 +637,100 @@ export function extractSerialCandidates(
   // ============================================================================
   const labelRightRegexes = [
     // ★★★ [절대 0순위] WIN11 S/N / WIN S/N / Windows Key 25자리 정품 키 (20,000점)
-    // 예: "WIN11 S/N : 2398N-XY7BW-W962X-WDDVV-T3FC3", "WIN11 S/N : JHTBB-N94YW-9HGGV-78RD3-3PH23"
     {
       regex: /(?:WIN(?:11|10|7|8|DOWS)?\s*S[\/\\|\-.;:]?\s*N|WIN(?:11|10|7|8|DOWS)?\s*KEY|WIN(?:11|10|7|8)?)\s*[:.\-|=;#~_*\s]*([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}|[A-Za-z0-9\-_]{4,35})/gi,
       score: 20000,
+      labelName: "WIN11 S/N",
     },
-    // ★★★ [0순위] 25자리 5x5 윈도우 정품키 단독 패턴 (예: "2398N-XY7BW-W962X-WDDVV-T3FC3") (19,500점)
+    // ★★★ [0순위] 25자리 5x5 윈도우 정품키 단독 패턴 (19,500점)
     {
       regex: /\b([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5})\b/gi,
       score: 19500,
+      labelName: "WIN KEY",
     },
     // ★★★ [0순위 최고 우선순위] SN: / S/N: / SERIAL: / SER: 직후 4~35자리 고유 일련번호 (15,000점 압도적 1순위)
-    // 예: "SN: 360025446" -> 360025446, "SN:360025446", "S/N: 260225-40" -> 260225-40, "SERIAL NO: 99401"
     {
       regex: /(?:S\s*[\/\\|\-.;:]?\s*N|5\s*[\/\\|\-.;:]?\s*N|S\s*N|SN|5N|S#|S\.N\.|S\/NO|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*(?:NO\.?|#)?)\s*[:.\-|=;#~_*\s]+([0-9A-Za-z\-_]{4,35})/gi,
       score: 15000,
+      labelName: "SN",
     },
-    // 1-0-0-P. 품번 / Part Number / P/N / Item No / 품목번호 / 도번 (예: "P/N : 1234-ABCD", "PART NO: FX-300", "품번: M8812") (4900점)
+    // 1-0-0-P. 품번 / Part Number / P/N / Item No / 품목번호 / 도번 (4900점)
     {
       regex: /(?:P\s*[\/\\|\-.]\s*N|PART\s*(?:NO\.?|NUMBER|#|CODE)?|ITEM\s*(?:NO\.?|#|NUMBER)|품\s*번|품목\s*번호|도\s*번|MAT\s*NO\.?)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 4900,
+      labelName: "P/N",
     },
-    // 1-0-0-0-2. PC S/N / IPC S/N (예: "PC S/N : KSA7965797", "IPC S/N : KSA7706685") (2800점)
+    // 1-0-0-0-2. PC S/N / IPC S/N (2800점)
     {
       regex: /(?:PC\s*S[\/\\|\-.]?N|IPC\s*S[\/\\|\-.]?N|PC\s*SN|IPC\s*SN)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_]{4,25})/gi,
       score: 2800,
+      labelName: "PC S/N",
     },
-    // 1-0-0-0-3. KSA 하드웨어 시리얼 (예: "KSA7965797", "KSA7706685") (2700점)
+    // 1-0-0-0-3. KSA 하드웨어 시리얼 (2700점)
     {
       regex: /\b(KSA[0-9]{6,10})\b/gi,
       score: 2700,
+      labelName: "PC S/N",
     },
-    // 1-0-0-1. CON-B1 SN:260225-40 등 산업용 모듈 태그 라벨 (2500점)
+    // 1-0-0-1. CON-B1 등 산업용 모듈 태그 라벨 (2500점)
     {
       regex: /(?:CON-[A-Z0-9]+\s*S[\/\\|\-.]?N|CON-[A-Z0-9]+)\s*[:.\-|=;#\s]*([0-9A-Za-z\-_]{4,25})/gi,
       score: 2500,
+      labelName: "모듈 태그",
     },
-    // 1-0-0-2. 날짜-순번 하이픈 시리얼 패턴 (예: 260225-40, 210708-28) (2400점)
+    // 1-0-0-2. 날짜-순번 하이픈 시리얼 패턴 (2400점)
     {
       regex: /\b([0-9]{6}-[0-9]{1,4})\b/g,
       score: 2400,
+      labelName: "SN",
     },
-    // 1-0. 한글 수기 라벨: "시리얼 :", "일련번호 :", "제조번호 :", "시리얼넘버 :", "관리번호 :" (2000점)
+    // 1-0. 한글 수기 라벨 (2000점)
     {
       regex: /(?:시리얼\s*넘버|시리얼\s*번호|시리얼|일련\s*번호|제조\s*번호|식별\s*번호|관리\s*번호)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 2000,
+      labelName: "시리얼",
     },
-    // 1-0-1. 수기 파트 표기: "호기 :", "단품 :", "부품 :", "샘플 :", "LOT :" (1800점)
+    // 1-0-1. 수기 파트 표기 (1800점)
     {
       regex: /(?:호기|단품|설비|부품|샘플|LOT|TAG)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1800,
+      labelName: "부품/호기",
     },
     // 1-1. Production S/N : (1800점)
     {
       regex: /(?:Production\s*S[\/\\|\-.]?N|Product\s*S[\/\\|\-.]?N|Prod\.?\s*S[\/\\|\-.]?N|Mfg\s*S[\/\\|\-.]?N)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1800,
+      labelName: "S/N",
     },
-    // 1-2. Serial Number : / Serial No : / SERIAL NO. : (1800점)
+    // 1-2. Serial Number : / Serial No : (1800점)
     {
       regex: /(?:SERIAL\s*(?:NUMBER|NO\.?|#|CODE)|Serial\s*(?:Number|No\.?|#)|SER\.?\s*NO\.?|SER\.?\s*#)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1800,
+      labelName: "SERIAL",
     },
     // 1-3. SERIAL : / Serial : (1700점)
     {
       regex: /(?:SERIAL|Serial)\s*[:.\-|=;#\s]+([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1700,
+      labelName: "SERIAL",
     },
-    // 1-4. S/N : / SN : / S.N. : / S/N / SN (1700점)
+    // 1-4. S/N : / SN : (1700점)
     {
       regex: /(?:S\s*[\/\\|\-.]\s*N|S\s*N|S\/NO\.?|S\.NO\.?|S\.N\.)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1700,
+      labelName: "S/N",
     },
-    // 1-5. No. : / Number : (1400점)
+    // 1-5. No. : (1400점)
     {
       regex: /(?:^|\s)(?:NO\.?|N°|NUMBER|CODE)\s*[:.\-|=;#\s]+([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1400,
+      labelName: "NO.",
     },
-    // 1-6. OCR 오인식 보정 접두사: SIN:, 5/N:, S|N:, SER1AL (1500점)
+    // 1-6. OCR 오인식 보정 접두사 (1500점)
     {
       regex: /(?:S[I1|l5]N|5\s*[\/\\|\-.]\s*N|S\s*\|\s*N|SER[I1|l]AL\s*(?:NO\.?|#)?|S\/M|S\s*M)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 1500,
+      labelName: "SN",
     },
   ];
 
@@ -721,7 +765,7 @@ export function extractSerialCandidates(
       let match: RegExpExecArray | null;
       while ((match = rule.regex.exec(line)) !== null) {
         if (match[1]) {
-          addCandidate(match[1], rule.score, i);
+          addCandidate(match[1], rule.score, i, rule.labelName);
         }
       }
     }
@@ -733,7 +777,7 @@ export function extractSerialCandidates(
         let match: RegExpExecArray | null;
         while ((match = rule.regex.exec(deSpacedLine)) !== null) {
           if (match[1]) {
-            addCandidate(match[1], rule.score + 50, i);
+            addCandidate(match[1], rule.score + 50, i, rule.labelName);
           }
         }
       }
@@ -742,19 +786,19 @@ export function extractSerialCandidates(
     if (isBarcodeLine(line)) {
       const starMatch = line.match(/\*([A-Za-z0-9\-_./]{3,35})\*/);
       if (starMatch && starMatch[1]) {
-        addCandidate(starMatch[1], 1600, i);
+        addCandidate(starMatch[1], 1600, i, "BARCODE");
       }
 
       if (i + 1 < rawLines.length) {
         const nextTokens = rawLines[i + 1].split(/[\s,;:()[\]|=]+/);
         for (const t of nextTokens) {
-          addCandidate(t, 1400, i + 1);
+          addCandidate(t, 1400, i + 1, "BARCODE");
         }
       }
       if (i + 2 < rawLines.length) {
         const next2Tokens = rawLines[i + 2].split(/[\s,;:()[\]|=]+/);
         for (const t of next2Tokens) {
-          addCandidate(t, 1200, i + 2);
+          addCandidate(t, 1200, i + 2, "BARCODE");
         }
       }
     }
@@ -766,13 +810,13 @@ export function extractSerialCandidates(
       if (i + 1 < rawLines.length) {
         const nextTokens = rawLines[i + 1].split(/[\s,;:()[\]|=]+/);
         for (const t of nextTokens) {
-          addCandidate(t, 12000, i + 1);
+          addCandidate(t, 12000, i + 1, "SN");
         }
       }
       if (i + 2 < rawLines.length) {
         const next2Tokens = rawLines[i + 2].split(/[\s,;:()[\]|=]+/);
         for (const t of next2Tokens) {
-          addCandidate(t, 8000, i + 2);
+          addCandidate(t, 8000, i + 2, "SN");
         }
       }
     }
@@ -782,23 +826,29 @@ export function extractSerialCandidates(
       const tok = sanitizeSerialToken(rawTok);
       if (!tok || !isValidSerialFormat(tok)) continue;
 
+      const upperTok = tok.toUpperCase();
+      // 모델명/버전/규격 접미사 및 특정 노이즈 키워드는 잡음 토큰으로 판단하여 추가 차단 (U6-PRC, U6-PRO 등 배제)
+      if (/(?:-PRO|-PRC|-PLUS|-MAX|-MINI|-LITE|-REV|-VER|-V\d+|PRO|PRC|PLUS|MAX|MINI|LITE|REV|VER)$/i.test(upperTok)) continue;
+      if (/^(?:REV|VER|MOD|TYPE|SERIES|JACK|HDMI|USB|LAN|COM)\b/i.test(upperTok)) continue;
+      if (forbiddenSpecTokens.has(tok)) continue;
+
       const hasAlpha = /[A-Za-z]/.test(tok);
       const hasDigit = /[0-9]/.test(tok);
 
       // 6~14자리 순수 숫자 시리얼 (예: 360025389, 360025446) - 제조사 표준 일련번호
       if (!hasAlpha && hasDigit && tok.length >= 6 && tok.length <= 14) {
-        addCandidate(tok, 3000, i);
+        addCandidate(tok, 3000, i, "SN");
       } else if (hasAlpha && hasDigit && tok.length >= 6 && tok.length <= 30) {
-        addCandidate(tok, 800, i);
+        addCandidate(tok, 800, i, "식별번호");
       } else if (hasDigit && tok.includes("-") && tok.length >= 7) {
-        addCandidate(tok, 1000, i);
+        addCandidate(tok, 1000, i, "일련번호");
       }
     }
   }
 
   // 윈도우 25자리 키가 감지된 경우: 윈도우 키의 앞부분 파편(예: 4개 블록, 3개 블록 등)은 완벽 제거
   let fullWinCandidate: string | null = null;
-  for (const serial of scoredMap.keys()) {
+  for (const serial of Array.from(scoredMap.keys())) {
     if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(serial)) {
       fullWinCandidate = serial;
       break;
@@ -822,7 +872,25 @@ export function extractSerialCandidates(
     .filter((c) => c.score >= 40)
     .sort((a, b) => b.score - a.score);
 
-  const rawCandidates = sortedCandidates.map((c) => c.serial);
+  // 🎯 최고 득점자가 10,000점 이상(SN:, S/N:, SERIAL:, WIN11 S/N: 등 명확한 라벨 우측 값)인 경우:
+  // 점수가 현격히 떨어지는 라벨 없는 잡음 파편(예: U6-PRC 등 모델명 오인식 토큰)을 후보 목록에서 완전 영구 배제!
+  const topScore = sortedCandidates[0]?.score || 0;
+  let validCandidates = sortedCandidates;
+  if (topScore >= 10000) {
+    validCandidates = sortedCandidates.filter((c) => {
+      if (c.score >= 10000) return true;
+      // 4000점 이상이면서 명확한 P/N, PC S/N, 날짜 시리얼인 경우만 보조 후보로 허용
+      if (c.score >= 4000 && labelOriginMap.has(c.serial)) {
+        const origin = labelOriginMap.get(c.serial);
+        if (origin === "WIN11 S/N" || origin === "PC S/N" || origin === "P/N" || origin === "S/N" || origin === "SN") {
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+
+  const rawCandidates = validCandidates.map((c) => c.serial);
   const winKey = fullWinCandidate || rawCandidates.find((c) => /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(c));
   const pcSerial = rawCandidates.find((c) => /^KSA[0-9]{6,10}$/i.test(c) || (/^[A-Za-z0-9\-_]{6,18}$/i.test(c) && !c.includes("-")));
 
@@ -830,8 +898,7 @@ export function extractSerialCandidates(
   const conTag = rawCandidates.find((c) => /^CON-[A-Z0-9]+$/i.test(c));
 
   // 🎯 윈도우 키가 감지된 경우: 25자리 완전 정품 키를 무조건 1순위로 즉시 확정!
-  const topCandidate = sortedCandidates[0]?.serial;
-  const topScore = sortedCandidates[0]?.score || 0;
+  const topCandidate = rawCandidates[0];
 
   let finalCands: string[] = [];
   if (winKey) {
@@ -856,9 +923,36 @@ export function extractSerialCandidates(
   const candidates = finalCands.slice(0, 5);
   const bestSerial = candidates.length > 0 ? candidates[0] : "";
 
+  // 각 후보별 라벨 기준 메타데이터 생성 (SN, S/N, WIN11 S/N, P/N 등)
+  const candidateDetails: OcrCandidateDetail[] = candidates.map((cand) => {
+    let sourceLabel = labelOriginMap.get(cand) || "";
+    if (!sourceLabel) {
+      if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cand)) {
+        sourceLabel = "WIN11 S/N";
+      } else if (/^KSA[0-9]{6,10}$/i.test(cand)) {
+        sourceLabel = "PC S/N";
+      } else if (/^[0-9]{6,14}$/.test(cand)) {
+        sourceLabel = "SN";
+      } else if (cand.includes("-")) {
+        sourceLabel = "S/N";
+      } else {
+        sourceLabel = "SN";
+      }
+    }
+    return {
+      serial: cand,
+      sourceLabel,
+      score: scoredMap.get(cand) || 0,
+    };
+  });
+
+  const detectedLabel = candidateDetails[0]?.sourceLabel || "SN";
+
   return {
     bestSerial,
     candidates,
+    candidateDetails,
+    detectedLabel,
     lines: rawLines,
   };
 }
@@ -962,7 +1056,7 @@ export async function performInMemoryOcr(
     }
   }
 
-  const { bestSerial, candidates, lines } = extractSerialCandidates(
+  const { bestSerial, candidates, candidateDetails, detectedLabel, lines } = extractSerialCandidates(
     rawText,
     context,
     spatialTokens
@@ -971,12 +1065,19 @@ export async function performInMemoryOcr(
   const nativeBarcode = await nativeBarcodePromise;
   let finalSerial = candidates.length > 0 ? bestSerial : "";
   let finalCandidates = candidates.length > 0 ? [...candidates] : [];
+  let finalCandidateDetails = [...candidateDetails];
+  let finalDetectedLabel = detectedLabel;
 
   // 🎯 스마트 시리얼 신뢰도 계산 (배경 노이즈 평균이 아닌 검출된 시리얼의 패턴 유효성 및 규격 일치율 반영)
   let calculatedConfidence = confidence;
   if (nativeBarcode) {
     finalSerial = nativeBarcode;
     finalCandidates = [nativeBarcode, ...finalCandidates.filter((c) => c !== nativeBarcode)].slice(0, 5);
+    finalCandidateDetails = [
+      { serial: nativeBarcode, sourceLabel: "BARCODE", score: 25000 },
+      ...finalCandidateDetails.filter((c) => c.serial !== nativeBarcode),
+    ].slice(0, 5);
+    finalDetectedLabel = "BARCODE";
     calculatedConfidence = 100;
   } else if (finalSerial) {
     if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(finalSerial)) {
@@ -999,6 +1100,8 @@ export async function performInMemoryOcr(
     confidence: calculatedConfidence,
     lines,
     candidates: finalCandidates,
+    candidateDetails: finalCandidateDetails,
+    detectedLabel: finalDetectedLabel,
   };
 }
 
@@ -1019,6 +1122,8 @@ export async function quickScanLiveRoi(
       confidence: 100,
       lines: [barcode],
       candidates: [barcode],
+      candidateDetails: [{ serial: barcode, sourceLabel: "BARCODE", score: 25000 }],
+      detectedLabel: "BARCODE",
     };
   }
 
@@ -1031,7 +1136,7 @@ export async function quickScanLiveRoi(
 
     const rawText = ret.data.text || "";
     if (rawText.trim().length >= 4) {
-      const { bestSerial, candidates, lines } = extractSerialCandidates(rawText, context);
+      const { bestSerial, candidates, candidateDetails, detectedLabel, lines } = extractSerialCandidates(rawText, context);
       if (bestSerial && bestSerial.length >= 3) {
         // 🎯 95% 이상 고신뢰도 정밀 판정 알고리즘
         const isWinKey = /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(bestSerial);
@@ -1064,6 +1169,8 @@ export async function quickScanLiveRoi(
           confidence: calcConf,
           lines,
           candidates,
+          candidateDetails,
+          detectedLabel,
         };
       }
     }

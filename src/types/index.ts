@@ -44,13 +44,22 @@ export interface PreprocessingOptions {
   thresholdDelta: number; // Adaptive thresholding delta percentage
 }
 
-// 5. OCR 스캔 결과
+// 5. OCR 후보 세부 정보 (라벨 기준 메타데이터)
+export interface OcrCandidateDetail {
+  serial: string;
+  sourceLabel: string; // 예: "SN", "S/N", "SERIAL", "WIN11 S/N", "P/N", "PC S/N", "BARCODE", "일련번호" 등
+  score?: number;
+}
+
+// 6. OCR 스캔 결과
 export interface OcrResult {
   rawText: string;
   cleanedSerial: string;
   confidence: number;
   lines: string[];
   candidates: string[];
+  candidateDetails?: OcrCandidateDetail[]; // 각 후보별 추출 기준 라벨 메타데이터
+  detectedLabel?: string;                  // 1순위 시리얼의 추출 기준 라벨 (예: "SN", "S/N" 등)
 }
 
 // 6. 표준 부품 BOM 프리셋

@@ -1,4 +1,4 @@
-import { OcrResult } from "@/types";
+import { OcrResult, OcrCandidateDetail } from "@/types";
 import { performInMemoryOcr, scanNativeBarcode } from "./ocr-worker";
 
 const GEMINI_API_KEY_STORAGE = "VISION_PASS_GEMINI_API_KEY";
@@ -322,12 +322,34 @@ export async function performGeminiDeepOcr(
       lines.push(`[저확신 문자]: ${parsed.low_confidence_chars.join(", ")}`);
     }
 
+    const finalCandidates = candidatesList.slice(0, 5);
+    const candidateDetails: OcrCandidateDetail[] = finalCandidates.map((cand) => {
+      let sourceLabel = "SN";
+      if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cand)) {
+        sourceLabel = "WIN11 S/N";
+      } else if (/^KSA[0-9]{6,10}$/i.test(cand)) {
+        sourceLabel = "PC S/N";
+      } else if (/^[0-9]{6,14}$/.test(cand)) {
+        sourceLabel = "SN";
+      } else if (cand.includes("-")) {
+        sourceLabel = "S/N";
+      }
+      return {
+        serial: cand,
+        sourceLabel,
+      };
+    });
+
+    const detectedLabel = candidateDetails[0]?.sourceLabel || "SN";
+
     return {
       rawText: JSON.stringify(parsed, null, 2),
       cleanedSerial: literalSerial,
       confidence: confidenceNumeric,
       lines,
-      candidates: candidatesList.slice(0, 5),
+      candidates: finalCandidates,
+      candidateDetails,
+      detectedLabel,
     };
   }
 

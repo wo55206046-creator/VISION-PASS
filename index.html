@@ -1344,6 +1344,7 @@
       const [isOcrProcessing, setIsOcrProcessing] = useState(false);
       const [ocrProgress, setOcrProgress] = useState(0);
       const [ocrCandidate, setOcrCandidate] = useState("");
+      const [ocrDetectedLabel, setOcrDetectedLabel] = useState("SN");
       const [isVerifiedCheck, setIsVerifiedCheck] = useState(true);
       const [searchPjtFilter, setSearchPjtFilter] = useState("");
 
@@ -1891,18 +1892,29 @@
           const genMatch = raw.match(/[A-Z0-9\-_]{4,35}/g);
 
           let best = "";
+          let label = "SN";
           if (detectedWinKey) {
             best = detectedWinKey;
+            label = "WIN11 S/N";
           } else if (snMatch && snMatch[1]) {
             best = snMatch[1].trim().toUpperCase();
+            const matchedFull = snMatch[0];
+            if (/^S[\/\\|\-.;:]?\s*N/i.test(matchedFull.trim())) label = "S/N";
+            else if (/^SN\b|^5N\b/i.test(matchedFull.trim())) label = "SN";
+            else if (/^SERIAL/i.test(matchedFull.trim())) label = "SERIAL";
+            else label = "SN";
           } else if (numMatch && numMatch[1]) {
             best = numMatch[1];
+            label = "SN";
           } else if (pnMatch && pnMatch[1]) {
             best = pnMatch[1].trim().toUpperCase();
+            label = "P/N";
           } else if (genMatch && genMatch.length > 0) {
             best = genMatch[0].toUpperCase();
+            label = "일련번호";
           } else {
             best = raw.trim().toUpperCase();
+            label = "SN";
           }
 
           // 접두사 및 기호 정제
@@ -1912,6 +1924,7 @@
             best = best.replace(/[Oo]/g, "0").replace(/[Il]/g, "1").replace(/[Ss]/g, "5");
           }
 
+          setOcrDetectedLabel(label);
           setOcrCandidate(best);
           triggerScanFeedback();
         } catch (e) {
@@ -3775,7 +3788,14 @@
                 </button>
 
                 <div>
-                  <label className="text-[11px] text-slate-400 block mb-1">인식된 시리얼 번호 (수정 가능):</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] text-slate-400">인식된 시리얼 번호 (수정 가능):</label>
+                    {ocrCandidate && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/60 font-bold shadow-glow-cyan">
+                        [{ocrDetectedLabel} 기준 자동 추출]
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={ocrCandidate}
