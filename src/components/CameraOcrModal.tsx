@@ -25,7 +25,6 @@ import {
   AlertCircle,
   AlertTriangle,
   Cpu,
-  FileText,
 } from "lucide-react";
 
 interface CameraOcrModalProps {
@@ -69,7 +68,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   const [ocrResult, setOcrResult] = useState<OcrResult | null>(null);
   const [selectedSerial, setSelectedSerial] = useState("");
   const [isVerifiedCheck, setIsVerifiedCheck] = useState(true);
-  const [showRawText, setShowRawText] = useState(false);
 
   // Canvas Refs (In-Memory Only, Zero-Storage)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -780,28 +778,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                     );
                   })}
                 </div>
-              </div>
-            )}
-
-            {/* 📜 엔진 판독 원문 (RAW 텍스트) 실시간 확인 아코디언 */}
-            {ocrResult && ocrResult.rawText && (
-              <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setShowRawText(!showRawText)}
-                  className="w-full flex items-center justify-between text-slate-400 hover:text-cyan-300 font-mono text-[11px] font-semibold py-0.5 cursor-pointer"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <FileText className="h-3.5 w-3.5 text-cyan-400" />
-                    <span>📜 엔진 판독 텍스트 원문 (RAW)</span>
-                  </span>
-                  <span className="text-[10px] text-slate-500">{showRawText ? "▲ 접기" : "▼ 펼쳐보기"}</span>
-                </button>
-                {showRawText && (
-                  <pre className="mt-2 p-2 rounded-lg bg-slate-950 text-slate-300 font-mono text-[11px] max-h-32 overflow-y-auto whitespace-pre-wrap break-all border border-slate-800">
-                    {ocrResult.rawText}
-                  </pre>
-                )}
               </div>
             )}
 
