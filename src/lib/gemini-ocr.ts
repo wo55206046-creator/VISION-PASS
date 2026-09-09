@@ -263,6 +263,10 @@ export async function performGeminiDeepOcr(
     if (conMatch && !candidatesList.includes(conMatch[1].toUpperCase())) {
       candidatesList.push(conMatch[1].toUpperCase());
     }
+    const snNumMatch = fullJsonStr.match(/(?:SN|S\/N|SERIAL)\s*[:.\-|=;#\s]*([0-9]{6,14})\b/i);
+    if (snNumMatch && !candidatesList.includes(snNumMatch[1])) {
+      candidatesList.push(snNumMatch[1]);
+    }
 
     // 2. 특정 포맷을 편애하지 않고, 현재 작업자가 점검 중인 부품(targetPart) 컨텍스트에 맞게 자연스럽게 기본 선택
     const targetText = `${context?.partName || ""} ${context?.spec || ""} ${context?.subSpec || ""}`.toUpperCase();

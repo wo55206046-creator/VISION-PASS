@@ -430,6 +430,18 @@ export function extractSerialCandidates(
     }
   }
 
+  // 0) SN:360025446 / S/N:360025446 등 명판 순수 숫자 일련번호 (5000점 전역 최우선)
+  const fullSnNumberMatch = rawText.match(/(?:S[\/\\|\-.;:]?\s*N|SN|5N|SERIAL)\s*[:.\-|=;#\s]*([0-9]{6,14})\b/i);
+  if (fullSnNumberMatch && fullSnNumberMatch[1]) {
+    scoredMap.set(fullSnNumberMatch[1], 5000);
+  }
+
+  // 0-1) P/N / Part No / 품번 전역 매칭 (4900점)
+  const fullPnMatch = rawText.match(/(?:P\s*[\/\\|\-.]\s*N|PART\s*(?:NO\.?|NUMBER)?|품번)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{4,25})/i);
+  if (fullPnMatch && fullPnMatch[1]) {
+    scoredMap.set(fullPnMatch[1].trim().toUpperCase(), 4900);
+  }
+
   // 2) KSA PC 시리얼 (예: KSA7706705)
   const fullPcMatch = rawText.match(/\b(KSA[0-9]{6,10})\b/i);
   if (fullPcMatch && fullPcMatch[1]) {
@@ -903,10 +915,35 @@ export async function quickScanLiveRoi(
     if (rawText.trim().length >= 4) {
       const { bestSerial, candidates, lines } = extractSerialCandidates(rawText, context);
       if (bestSerial && bestSerial.length >= 3) {
+        // 🎯 95% 이상 고신뢰도 정밀 판정 알고리즘
+        const isWinKey = /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(bestSerial);
+        const isPcSerial = /^KSA[0-9]{6,10}$/i.test(bestSerial);
+        const isDateSerial = /^[0-9]{6}-[0-9]{1,4}$/.test(bestSerial);
+        const isSnPrefixed = /(?:SN|S\/N|SERIAL|P\/N|PART|품번)\s*[:.\-|=;#\s]*[A-Za-z0-9\-_./]{3,}/i.test(rawText);
+        const isPureNumericSerial = /^[0-9]{6,14}$/.test(bestSerial); // 예: 360025446
+
+        let calcConf = 0;
+        if (isWinKey) {
+          calcConf = 99; // 25자리 키 규격 100% 일치
+        } else if (isSnPrefixed && (isPureNumericSerial || isDateSerial || bestSerial.length >= 6)) {
+          calcConf = 99; // SN:360025446 등 명판 시리얼 규격 100% 일치
+        } else if (isPcSerial) {
+          calcConf = 98; // PC S/N 규격 일치
+        } else if (isDateSerial) {
+          calcConf = 97; // 날짜-순번 규격 일치
+        } else if (isSnPrefixed) {
+          calcConf = 96; // 시리얼/품번 접두사 확실
+        } else if (isPureNumericSerial && bestSerial.length >= 8) {
+          calcConf = 95; // 8자리 이상 순수 고유 일련번호
+        } else {
+          // 단자대 핀 기호나 단순 파편 등은 95% 미만으로 강등 (자동 인식 트리거 방지!)
+          calcConf = Math.min(85, Math.round(ret.data.confidence || 70));
+        }
+
         return {
           rawText,
           cleanedSerial: bestSerial,
-          confidence: Math.max(90, Math.round(ret.data.confidence || 90)),
+          confidence: calcConf,
           lines,
           candidates,
         };

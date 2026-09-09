@@ -317,8 +317,8 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
           );
           disposeCanvas(roiCanvas);
 
-          if (liveResult && liveResult.cleanedSerial && isSubscribed) {
-            console.log("⚡ [Live Auto-Detect] 시리얼/품번 즉시 감지:", liveResult.cleanedSerial);
+          if (liveResult && liveResult.cleanedSerial && (liveResult.confidence || 0) >= 95 && isSubscribed) {
+            console.log("⚡ [Live Auto-Detect] 95% 이상 고신뢰도 시리얼/품번 즉시 감지:", liveResult.cleanedSerial, `(${liveResult.confidence}%)`);
             try {
               video.pause();
               setIsFrozen(true);
@@ -327,7 +327,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             setSelectedSerial(liveResult.cleanedSerial);
             setOcrResult(liveResult);
             setOcrProgress(100);
-            setOcrStatusText("⚡ 시리얼/품번 100% 즉시 자동 인식 완료!");
+            setOcrStatusText(`⚡ 시리얼/품번 자동 인식 완료 (정확도 ${liveResult.confidence}%)!`);
             disposeCanvas(offscreen);
             isAnalyzing = false;
             return;
@@ -682,7 +682,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                   ) : (
                     <span className="bg-slate-950/90 text-cyan-300 text-[10px] font-mono font-bold px-3 py-1 rounded-full border border-cyan-400/60 shadow-glow-cyan inline-flex items-center gap-1.5">
                       <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping" />
-                      <span>🎯 비추기만 하면 진동과 함께 100% 자동 인식됩니다</span>
+                      <span>🎯 정확도 95% 이상 감지 시 진동과 함께 즉시 자동 포착</span>
                     </span>
                   )}
                 </div>
@@ -752,10 +752,10 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                   </span>
                   <div>
                     <p className="text-xs font-bold text-cyan-300">
-                      ⚡ 무인 자동 감지 작동 중
+                      ⚡ 무인 자동 감지 (정확도 95% 이상 필터링)
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      라벨/시리얼/품번을 비추면 진동과 함께 즉시 감지됩니다
+                      시리얼/품번 규격이 95% 이상 확실할 때만 진동과 함께 자동 포착됩니다
                     </p>
                   </div>
                 </div>
