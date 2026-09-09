@@ -69,6 +69,11 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   const [selectedSerial, setSelectedSerial] = useState("");
   const [isVerifiedCheck, setIsVerifiedCheck] = useState(true);
 
+  // ⚡ 실시간 라이브 자동 감지 (바코드 0초 + 인쇄 텍스트 1초 자동 캡처 & 햅틱)
+  const [isAutoScanEnabled, setIsAutoScanEnabled] = useState(true);
+  const isAutoScanningTextRef = useRef(false);
+  const lastScanAttemptTimeRef = useRef(0);
+
   // Canvas Refs (In-Memory Only, Zero-Storage)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -239,9 +244,9 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     } catch {}
   };
 
-  // ⚡ 실시간 라이브 바코드 감지 루프 (바코드는 갖다 대기만 해도 0.1초 즉시 자동 감지!)
+  // ⚡ 실시간 라이브 자동 감지 루프 (바코드 0.05초 즉시 + 인쇄 텍스트 라벨 1.2초 자동 판독 & 햅틱 진동)
   useEffect(() => {
-    if (!isOpen || isFrozen || isProcessing || !stream) return;
+    if (!isOpen || isFrozen || isProcessing || !stream || !isAutoScanEnabled) return;
 
     let isSubscribed = true;
     const intervalId = setInterval(async () => {
@@ -256,6 +261,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         if (!ctx) return;
         ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
 
+        // 1. 하드웨어 가속 바코드 초고속 감지 (0.005초)
         const barcode = await scanNativeBarcode(offscreen);
         disposeCanvas(offscreen);
 
@@ -276,6 +282,57 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
           });
           setOcrProgress(100);
           setOcrStatusText("⚡ 하드웨어 바코드 100% 즉시 인식 완료!");
+          return;
+        }
+
+        // 2. 인쇄된 라벨/텍스트 실시간 자동 감지 (Auto-Text OCR: 1.2초 쿨다운 주기)
+        const now = Date.now();
+        if (now - lastScanAttemptTimeRef.current >= 1200 && !isAutoScanningTextRef.current) {
+          lastScanAttemptTimeRef.current = now;
+          isAutoScanningTextRef.current = true;
+
+          const rawFull = document.createElement("canvas");
+          rawFull.width = video.videoWidth || 1280;
+          rawFull.height = video.videoHeight || 720;
+          const rfCtx = rawFull.getContext("2d");
+          if (rfCtx) {
+            rfCtx.drawImage(video, 0, 0, rawFull.width, rawFull.height);
+
+            performGeminiDeepOcr(
+              rawFull,
+              undefined,
+              targetPart
+                ? {
+                    partName: targetPart.partName,
+                    spec: targetPart.spec,
+                    subSpec: targetPart.subSpec,
+                  }
+                : undefined
+            )
+              .then((result) => {
+                disposeCanvas(rawFull);
+                if (result && result.cleanedSerial && isSubscribed && !isFrozen) {
+                  console.log("⚡ [Live Text Auto-Detect] 인쇄 텍스트 자동 감지 완료:", result.cleanedSerial);
+                  try {
+                    video.pause();
+                    setIsFrozen(true);
+                  } catch {}
+                  triggerScanFeedback();
+                  setSelectedSerial(result.cleanedSerial);
+                  setOcrResult(result);
+                  setOcrProgress(100);
+                  setOcrStatusText("⚡ 인쇄 라벨 100% 자동 감지 완료!");
+                }
+              })
+              .catch(() => {
+                disposeCanvas(rawFull);
+              })
+              .finally(() => {
+                isAutoScanningTextRef.current = false;
+              });
+          } else {
+            isAutoScanningTextRef.current = false;
+          }
         }
       } catch (err) {
         // ignore
@@ -286,7 +343,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       isSubscribed = false;
       clearInterval(intervalId);
     };
-  }, [isOpen, isFrozen, isProcessing, stream]);
+  }, [isOpen, isFrozen, isProcessing, stream, isAutoScanEnabled, targetPart]);
 
   // 인메모리 원터치 셔터 캡처 & Gemini 2.0 AI OCR 수행 (Storage Zero: 사진 즉시 휘발)
   const captureAndRecognize = async () => {
@@ -535,16 +592,31 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                     </span>
                   ) : (
                     <span className="bg-slate-950/85 text-cyan-300 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border border-cyan-500/40 shadow-sm flex items-center justify-center gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                      <span>⚡ 바코드는 비추면 즉시 감지 / 노란 라벨은 [촬영] 터치</span>
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>{isAutoScanEnabled ? "⚡ 실시간 자동 감지 중: 바코드/라벨을 비추면 즉시 진동 인식" : "수동 촬영 모드: 가이드에 맞추고 [촬영] 클릭"}</span>
                     </span>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Camera Floating Controls (Guide, Torch, Flip) */}
+            {/* Camera Floating Controls (Auto-Scan, Guide, Torch, Flip) */}
             <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
+              {/* 실시간 자동 감지 ON/OFF 토글 버튼 */}
+              <button
+                type="button"
+                onClick={() => setIsAutoScanEnabled((prev) => !prev)}
+                className={`px-2 py-1.5 rounded-xl backdrop-blur-md border text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  isAutoScanEnabled
+                    ? "bg-emerald-950/85 text-emerald-300 border-emerald-500/60 shadow-glow-emerald"
+                    : "bg-slate-900/80 text-slate-400 border-slate-700 hover:bg-slate-800"
+                }`}
+                title="실시간 자동 감지 (비추기만 해도 0~1초 만에 자동 인식 & 진동)"
+              >
+                <Sparkles className={`h-3 w-3 ${isAutoScanEnabled ? "text-emerald-400" : "text-slate-400"}`} />
+                <span>{isAutoScanEnabled ? "자동ON" : "수동"}</span>
+              </button>
+
               {/* 가이드 모드 전환 버튼 */}
               <button
                 type="button"
