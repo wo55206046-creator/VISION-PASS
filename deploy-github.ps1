@@ -43,7 +43,7 @@ if (-not $checkUser) {
 
 Write-Host "[2/3] Adding and committing files..." -ForegroundColor Yellow
 & git add .
-& git commit -m "Feat: 윈도우 25자리 키 1순위 추천 및 PC S/N 2순위 듀얼 OCR, 카메라 하드웨어 줌 최적화, Supabase 실시간 동기화"
+& git commit -m "Feat: 바코드 실시간 0초 자동 감지 및 노란 라벨 25자리 키 전체 프레임 무절단 OCR 판독 강화"
 
 Write-Host ""
 Write-Host "[3/3] Uploading (git push) to GitHub..." -ForegroundColor Yellow

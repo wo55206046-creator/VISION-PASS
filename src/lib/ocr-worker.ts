@@ -416,6 +416,26 @@ export function extractSerialCandidates(
     return 100;
   };
 
+  // [전역 0순위] rawText 전체에서 25자리 5x5 윈도우 키 및 KSA PC S/N 사전 정밀 스캔
+  // 1) 25자리 5x5 하이픈 형태 (예: 2398N-XY7BW-W962X-WDDVV-T3FC3)
+  const fullWinMatch = rawText.match(/\b([A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5})\b/);
+  if (fullWinMatch && fullWinMatch[1]) {
+    scoredMap.set(fullWinMatch[1].toUpperCase(), 5000);
+  } else {
+    // 공백/줄바꿈/언더바로 쪼개진 5개 블록 결합 (예: 2398N XY7BW W962X WDDVV T3FC3)
+    const spacedWinMatch = rawText.match(/\b([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})\b/);
+    if (spacedWinMatch) {
+      const assembled = `${spacedWinMatch[1]}-${spacedWinMatch[2]}-${spacedWinMatch[3]}-${spacedWinMatch[4]}-${spacedWinMatch[5]}`.toUpperCase();
+      scoredMap.set(assembled, 4900);
+    }
+  }
+
+  // 2) KSA PC 시리얼 (예: KSA7706705)
+  const fullPcMatch = rawText.match(/\b(KSA[0-9]{6,10})\b/i);
+  if (fullPcMatch && fullPcMatch[1]) {
+    scoredMap.set(fullPcMatch[1].toUpperCase(), 4500);
+  }
+
   const addCandidate = (token: string, baseScore: number, lineIndex: number = 0) => {
     const cleaned = sanitizeSerialToken(token);
     if (!cleaned) return;
@@ -436,9 +456,9 @@ export function extractSerialCandidates(
       baseScore -= 800;
     }
 
-    // 3. 25자리 5x5 윈도우 정품 라이센스 키 (예: JHTBB-N94YW-9HGGV-78RD3-3PH23) (최우선 가산점 +2000)
+    // 3. 25자리 5x5 윈도우 정품 라이센스 키 (예: JHTBB-N94YW-9HGGV-78RD3-3PH23) (최우선 가산점 +3000)
     if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cleaned)) {
-      baseScore += 2000;
+      baseScore += 3000;
     }
 
     // 4. KSA 하드웨어/PC 시리얼 (예: KSA7965797, KSA7706685) (+1600)

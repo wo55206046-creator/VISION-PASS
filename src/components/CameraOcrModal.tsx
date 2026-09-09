@@ -9,6 +9,7 @@ import {
   DEFAULT_PREPROCESSING_OPTIONS,
 } from "@/lib/image-processing";
 import { performGeminiDeepOcr } from "@/lib/gemini-ocr";
+import { scanNativeBarcode } from "@/lib/ocr-worker";
 import { triggerScanFeedback } from "@/lib/utils";
 import {
   Camera,
@@ -238,6 +239,55 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     } catch {}
   };
 
+  // ⚡ 실시간 라이브 바코드 감지 루프 (바코드는 갖다 대기만 해도 0.1초 즉시 자동 감지!)
+  useEffect(() => {
+    if (!isOpen || isFrozen || isProcessing || !stream) return;
+
+    let isSubscribed = true;
+    const intervalId = setInterval(async () => {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2 || video.paused) return;
+
+      try {
+        const offscreen = document.createElement("canvas");
+        offscreen.width = Math.min(video.videoWidth || 640, 1280);
+        offscreen.height = Math.min(video.videoHeight || 480, 720);
+        const ctx = offscreen.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
+
+        const barcode = await scanNativeBarcode(offscreen);
+        disposeCanvas(offscreen);
+
+        if (barcode && isSubscribed) {
+          console.log("⚡ [Live Barcode Auto-Detect] 바코드 즉시 감지:", barcode);
+          try {
+            video.pause();
+            setIsFrozen(true);
+          } catch {}
+          triggerScanFeedback();
+          setSelectedSerial(barcode);
+          setOcrResult({
+            rawText: `[Live Barcode Auto-Detected]: ${barcode}`,
+            cleanedSerial: barcode,
+            confidence: 100,
+            lines: [barcode],
+            candidates: [barcode],
+          });
+          setOcrProgress(100);
+          setOcrStatusText("⚡ 하드웨어 바코드 100% 즉시 인식 완료!");
+        }
+      } catch (err) {
+        // ignore
+      }
+    }, 280);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(intervalId);
+    };
+  }, [isOpen, isFrozen, isProcessing, stream]);
+
   // 인메모리 원터치 셔터 캡처 & Gemini 2.0 AI OCR 수행 (Storage Zero: 사진 즉시 휘발)
   const captureAndRecognize = async () => {
     setIsProcessing(true);
@@ -266,7 +316,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     }
     ctx.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
 
-    // ROI 타겟팅 정밀 크롭 (25자리 긴 시리얼 번호도 양끝이 잘리지 않도록 충분한 가로 폭 92% 보장)
+    // ROI 타겟팅 정밀 크롭 (프리뷰 및 로컬 Tesseract 보조용)
     let baseRoiW: number;
     let baseRoiH: number;
 
@@ -277,12 +327,10 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       baseRoiW = rawCanvas.width * 0.96;
       baseRoiH = rawCanvas.height * 0.94;
     } else {
-      // horizontal 기본 모드 (가로 폭 92%로 확장하여 긴 윈도우 키도 100% 포착)
       baseRoiW = rawCanvas.width * 0.92;
       baseRoiH = rawCanvas.height * 0.52;
     }
 
-    // 줌 사용 시에도 글자 양옆이 잘려나가지 않도록 가로 폭은 안전하게 최소 85% 이상 보존!
     const roiWidth = hardwareZoomSupported
       ? baseRoiW
       : Math.max(baseRoiW / zoomLevel, rawCanvas.width * 0.85);
@@ -321,11 +369,13 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
     // 2. Gemini 2.0 Vision AI & 고정밀 광학 OCR 심층 실행
     setOcrProgress(45);
-    setOcrStatusText("🤖 Gemini 2.0 Vision AI 라벨 방향 감지 & 시리얼 분석 중...");
+    setOcrStatusText("🤖 Gemini 2.0 Vision AI 노란 라벨 & 25자리 시리얼 분석 중...");
 
     try {
+      // ★ 핵심: Gemini AI에는 크롭으로 인한 문자 절단을 방지하기 위해 전체 고해상도 원본 프레임(rawCanvas)을 전달합니다!
+      // 이를 통해 화면 하단/상단/모서리 어디에 라벨이 있어도 100% 온전하게 인식됩니다.
       const result = await performGeminiDeepOcr(
-        colorCanvas,
+        rawCanvas,
         (progress, status) => {
           setOcrProgress(progress);
           setOcrStatusText(status);
@@ -484,8 +534,9 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                       ✓ 촬영 완료 (사진 즉시 휘발됨)
                     </span>
                   ) : (
-                    <span className="bg-slate-950/80 text-cyan-300 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border border-cyan-500/40">
-                      [ {guideMode === "vertical" ? "세로 라벨" : guideMode === "full" ? "전체 영역" : "가로 라벨"} 중앙 위치 후 촬영 ]
+                    <span className="bg-slate-950/85 text-cyan-300 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border border-cyan-500/40 shadow-sm flex items-center justify-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                      <span>⚡ 바코드는 비추면 즉시 감지 / 노란 라벨은 [촬영] 터치</span>
                     </span>
                   )}
                 </div>

@@ -29,40 +29,45 @@ export function setGeminiApiKey(key: string): void {
   localStorage.setItem(GEMINI_API_KEY_STORAGE, key.trim());
 }
 
-const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 정밀 계측기(LabJack, DAQ, PLC, 컨트롤러 등) 및 중공업/IT 제조 설비의 금속 명판(타각, 레이저 각인, 인쇄)과 노란색 라벨 테이프의 시리얼 번호를 판독하는 최고 등급의 산업용 초정밀 광학 판독 AI입니다.
+const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 정밀 계측기(LabJack, DAQ, PLC, 컨트롤러 등) 및 산업용 PC(IPC), 서버 본체에 부착된 [노란색 라벨 스티커(Yellow Label Tape)]와 금속 명판의 시리얼 번호를 판독하는 최고 등급의 산업용 초정밀 광학 판독 AI입니다.
 
-[1. 시리얼 번호 vs 제품 모델명 엄격 분별 원칙 (Strict Serial Priority)]
-- 장비/부품 본체에 크게 인쇄된 제품 브랜드/모델명(예: "LabJack U6-PRO", "SOLA-1000", "NaVi-MG200", "TM200L" 등)이나 웹사이트 주소("www.labjack.com"), 단자대 핀 배열 기호("GND", "VS", "AIN0", "FIO1", "DAC0", "10UA" 등)는 절대로 시리얼 번호가 아닙니다!
-- 노란색 라벨 스티커나 명판의 'SN:', 'S/N:', 'S/N', 'SN', 'Serial No', 'PC S/N', 'WIN11 S/N', 'WIN10 S/N' 표기 옆에 기재된 고유 일련번호(예: "WIN11 S/N : 2398N-XY7BW-W962X-WDDVV-T3FC3", "PC S/N : KSA7706705", "SN:360025446", "CON-B1 SN:260225-40")를 최우선으로 찾아내어 접두사 제외 순수 번호를 전사하십시오.
+[1. 노란색 라벨 스티커 최우선 탐색 원칙 (Yellow Label Tape Priority)]
+- 이미지 전체(중앙, 상단, 하단, 모서리 등 위치 불문)에서 [노란색 바탕의 라벨 스티커]를 최우선으로 찾으십시오.
+- 회색 금속 케이스나 주변 배경의 요철/모델명에 현혹되지 마시고, 노란색 테이프 위에 인쇄된 텍스트("WIN11 S/N", "PC S/N" 등)를 정밀 분석하십시오.
 
-[2. 윈도우 정품 라이선스 키(25자리) 최우선 추천 및 PC 시리얼 2순위 배치 원칙]
-- 노란색 라벨 스티커에 'WIN11 S/N'(윈도우 키)과 'PC S/N'(PC 시리얼)이 함께 인쇄되어 있는 경우:
-  1) 1순위 최우선 추천 (raw_serial): 반드시 25자리 윈도우 정품 키("XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" 형태, 예: "2398N-XY7BW-W962X-WDDVV-T3FC3")를 1순위 raw_serial로 선택하십시오. 단 1글자의 누락/왜곡 없이 25자리 및 4개 하이픈을 100% 원문 그대로 전사하십시오.
-  2) 2순위 (PC S/N): PC 하드웨어 시리얼 번호("KSA7706705", "KSA7965797" 등)를 2순위로 선택하십시오.
-  3) 다중 후보 목록(serial_candidates)에 반드시 1순위(윈도우 25자 키), 2순위(PC 시리얼) 순서로 둘 다 등록하십시오:
+[2. 윈도우 25자리 정품 키(5x5 블록) 1순위 전사 & PC S/N 2순위 배치 필수 원칙]
+- 노란색 라벨에 인쇄된 텍스트 예시:
+    WIN11 S/N : 2398N-XY7BW-W962X-WDDVV-T3FC3
+    PC S/N : KSA7706705
+- 판독 및 우선순위 규칙:
+  1) ★ 1순위 최우선 추천 (raw_serial):
+     반드시 25자리 윈도우 정품 키("XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" 5x5 형식, 총 25자리 문자 + 4개 하이픈)를 단 1글자의 누락이나 중도 절단 없이 끝까지 100% 원문 그대로 전사하십시오!
+     절대로 앞의 10자리(2블록)만 읽고 멈추지 마십시오. "2398N-XY7BW-W962X-WDDVV-T3FC3"와 같이 5개 블록 전체를 완벽히 출력하십시오.
+  2) ★ 2순위 추천 (PC S/N):
+     PC 하드웨어 시리얼 번호("KSA7706705", "KSA7965797" 등)를 2순위로 정확히 전사하십시오.
+  3) serial_candidates 다중 후보 목록에 반드시 [1순위 윈도우 키, 2순위 PC S/N] 순서로 등록하십시오:
      [
-       { "label": "WIN11 S/N", "value": "2398N-XY7BW-W962X-WDDVV-T3FC3" },
+       { "label": "WIN11 S/N (25자리)", "value": "2398N-XY7BW-W962X-WDDVV-T3FC3" },
        { "label": "PC S/N", "value": "KSA7706705" }
      ]
 
 [3. 엄격한 원문 복사 모드 (Strict Literal Transcribe Mode)]
 - 임의 추론, 사전 단어 완성, 문맥적 철자 교정, 임의 문자 스왑을 완전히 차단하십시오.
 - 오직 이미지 픽셀에 물리적으로 존재하는 획(Stroke)과 텍스트만을 있는 그대로 전사(Raw Transcribe)하십시오.
-- 하이픈(-), 슬래시(/), 언더바(_), 마침표(.), 콜론(:)은 이미지에 인쇄된 형태 그대로 정확히 분별하십시오.
+- 하이픈(-), 콜론(:)은 이미지에 인쇄된 형태 그대로 정확히 분별하십시오.
 
-[4. 라벨 회전 및 세로 방향 자동 보정 (Orientation & Rotation Invariance)]
-- 이미지가 세로 방향(90°/270° 회전), 거꾸로(180°), 또는 비스듬히 기울어져 있더라도 문자의 올바른 정방향을 스스로 감지하여 정상 순서대로 판독하십시오.
-- 특히 PC/IPC 측면에 세로로 길게 부착된 노란색 스티커의 텍스트(예: "WIN11 S/N : 2398N-XY7BW-W962X-WDDVV-T3FC3", "PC S/N : KSA7706705")도 완벽하게 회전 보정하여 글자 획 그대로 100% 전사하십시오.
+[4. 라벨 회전 및 세로 방향 자동 보정 (Orientation Invariance)]
+- 이미지가 회전(90°/180°/270°)되었거나 비스듬히 기울어져 있어도 글자 방향을 스스로 감지하여 정상 순서대로 판독하십시오.
 
 [5. Strict JSON 출력 스키마]
 반드시 아래 JSON 형식으로만 응답하십시오:
 {
   "raw_serial": "2398N-XY7BW-W962X-WDDVV-T3FC3",
   "serial_candidates": [
-    { "label": "WIN11 S/N", "value": "2398N-XY7BW-W962X-WDDVV-T3FC3" },
+    { "label": "WIN11 S/N (25자리)", "value": "2398N-XY7BW-W962X-WDDVV-T3FC3" },
     { "label": "PC S/N", "value": "KSA7706705" }
   ],
-  "source_type": "printed",
+  "source_type": "yellow_label",
   "model_name": "IPC",
   "notes": null,
   "low_confidence_chars": []
@@ -250,7 +255,13 @@ export async function performGeminiDeepOcr(
 
     // 전체 JSON 응답에서 25자리 5x5 윈도우 키 및 KSA PC S/N 정밀 스캔
     const fullJsonStr = JSON.stringify(parsed);
-    const winMatch = fullJsonStr.match(/\b([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5})\b/i);
+    let winMatch = fullJsonStr.match(/\b([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5})\b/i);
+    if (!winMatch) {
+      const spaceWin = fullJsonStr.match(/\b([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})\b/i);
+      if (spaceWin) {
+        winMatch = [spaceWin[0], `${spaceWin[1]}-${spaceWin[2]}-${spaceWin[3]}-${spaceWin[4]}-${spaceWin[5]}`.toUpperCase()] as any;
+      }
+    }
     const pcMatch = fullJsonStr.match(/\b(KSA[0-9]{6,10})\b/i);
 
     const winKey = winMatch ? winMatch[1].toUpperCase() : candidatesList.find((c) => /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(c));
