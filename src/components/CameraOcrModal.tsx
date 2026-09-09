@@ -50,6 +50,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
+  const [hardwareZoomSupported, setHardwareZoomSupported] = useState(false);
 
   // Preview & Processing State
   const [zoomLevel, setZoomLevel] = useState<1 | 2 | 3>(1);
@@ -72,6 +73,27 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
   const cycleGuideMode = () => {
     setGuideMode((prev) => (prev === "horizontal" ? "vertical" : prev === "vertical" ? "full" : "horizontal"));
+  };
+
+  // 스마트폰 하드웨어 카메라 줌 & 디지털 줌 통합 제어
+  const handleZoomChange = async (z: 1 | 2 | 3) => {
+    setZoomLevel(z);
+    if (stream) {
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        const capabilities = (track.getCapabilities?.() || {}) as any;
+        if (capabilities?.zoom) {
+          try {
+            const minZ = capabilities.zoom.min || 1;
+            const maxZ = capabilities.zoom.max || 3;
+            const targetZ = Math.min(maxZ, Math.max(minZ, z));
+            await track.applyConstraints({ advanced: [{ zoom: targetZ }] } as any);
+          } catch (e) {
+            console.warn("Hardware zoom error:", e);
+          }
+        }
+      }
+    }
   };
 
   // 카메라 시작 (다단계 장애 극복 & 안드로이드 호환)
@@ -128,13 +150,12 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         };
       }
 
-      // 플래시(토치) 지원 여부 확인
+      // 플래시(토치) 및 하드웨어 줌 지원 여부 확인
       const videoTrack = mediaStream.getVideoTracks()[0];
-      const capabilities = (videoTrack?.getCapabilities?.() || {}) as {
-        torch?: boolean;
-      };
+      const capabilities = (videoTrack?.getCapabilities?.() || {}) as any;
 
       setTorchSupported(Boolean(capabilities.torch));
+      setHardwareZoomSupported(Boolean(capabilities.zoom));
     } catch (err: unknown) {
       const isNotFound =
         err instanceof Error &&
@@ -245,36 +266,42 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     }
     ctx.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
 
-    // ROI 타겟팅 정밀 크롭 (선택된 가이드 모드 및 줌 배율 반영)
+    // ROI 타겟팅 정밀 크롭 (25자리 긴 시리얼 번호도 양끝이 잘리지 않도록 충분한 가로 폭 92% 보장)
     let baseRoiW: number;
     let baseRoiH: number;
 
     if (guideMode === "vertical") {
-      baseRoiW = rawCanvas.width * 0.52;
-      baseRoiH = rawCanvas.height * 0.86;
+      baseRoiW = rawCanvas.width * 0.58;
+      baseRoiH = rawCanvas.height * 0.88;
     } else if (guideMode === "full") {
       baseRoiW = rawCanvas.width * 0.96;
-      baseRoiH = rawCanvas.height * 0.92;
+      baseRoiH = rawCanvas.height * 0.94;
     } else {
-      // horizontal 기본 모드
-      baseRoiW = rawCanvas.width * 0.88;
-      baseRoiH = rawCanvas.height * 0.48;
+      // horizontal 기본 모드 (가로 폭 92%로 확장하여 긴 윈도우 키도 100% 포착)
+      baseRoiW = rawCanvas.width * 0.92;
+      baseRoiH = rawCanvas.height * 0.52;
     }
 
-    const roiWidth = baseRoiW / zoomLevel;
-    const roiHeight = baseRoiH / zoomLevel;
+    // 줌 사용 시에도 글자 양옆이 잘려나가지 않도록 가로 폭은 안전하게 최소 85% 이상 보존!
+    const roiWidth = hardwareZoomSupported
+      ? baseRoiW
+      : Math.max(baseRoiW / zoomLevel, rawCanvas.width * 0.85);
+    const roiHeight = hardwareZoomSupported
+      ? baseRoiH
+      : Math.max(baseRoiH / zoomLevel, rawCanvas.height * 0.38);
+
     const roiX = (rawCanvas.width - roiWidth) / 2;
     const roiY = (rawCanvas.height - roiHeight) / 2;
 
     const croppedCanvas = cropCanvasROI(
       rawCanvas,
       {
-        x: roiX,
-        y: roiY,
-        width: roiWidth,
-        height: roiHeight,
+        x: Math.max(0, roiX),
+        y: Math.max(0, roiY),
+        width: Math.min(rawCanvas.width, roiWidth),
+        height: Math.min(rawCanvas.height, roiHeight),
       },
-      Math.max(2.0, 2.5 * zoomLevel)
+      2.2 // 고선명 2.2배 슈퍼샘플링
     );
 
     const colorCanvas = croppedCanvas;
@@ -395,7 +422,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                 <button
                   key={z}
                   type="button"
-                  onClick={() => setZoomLevel(z as 1 | 2 | 3)}
+                  onClick={() => handleZoomChange(z as 1 | 2 | 3)}
                   className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
                     zoomLevel === z
                       ? "bg-cyan-500 text-slate-950 shadow-glow-cyan font-extrabold"
@@ -629,17 +656,17 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                     const isPcSsn = /^KSA[0-9]{6,10}$/i.test(cand);
                     const labelBadge = idx === 0
                       ? isWinKey
-                        ? "★ 1순위 추천 (WIN11 키)"
-                        : "★ 1순위 추천"
+                        ? "★ 1순위 우선 추천 (WIN11 25자리)"
+                        : "★ 1순위 우선 추천"
                       : idx === 1
                       ? isPcSsn
-                        ? "2순위 (PC S/N)"
-                        : "2순위"
+                        ? "추천 2 (PC S/N)"
+                        : "추천 2"
                       : isWinKey
-                      ? "WIN11 키 (25자)"
+                      ? "WIN11 25자리 키"
                       : isPcSsn
                       ? "PC S/N"
-                      : `${idx + 1}순위`;
+                      : `후보 ${idx + 1}`;
 
                     return (
                       <button

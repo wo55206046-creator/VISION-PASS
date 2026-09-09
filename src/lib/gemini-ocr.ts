@@ -248,12 +248,16 @@ export async function performGeminiDeepOcr(
       }
     }
 
-    // 다중 후보(serial_candidates) 파싱 및 1순위(25자리 윈도우 키) / 2순위(PC S/N) 최우선 정렬
-    const winKey = candidatesList.find((c) => /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(c));
-    const pcSerial = candidatesList.find((c) => /^KSA[0-9]{6,10}$/i.test(c) || (/^[A-Za-z0-9\-_]{6,18}$/i.test(c) && !c.includes("-")));
+    // 전체 JSON 응답에서 25자리 5x5 윈도우 키 및 KSA PC S/N 정밀 스캔
+    const fullJsonStr = JSON.stringify(parsed);
+    const winMatch = fullJsonStr.match(/\b([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5})\b/i);
+    const pcMatch = fullJsonStr.match(/\b(KSA[0-9]{6,10})\b/i);
+
+    const winKey = winMatch ? winMatch[1].toUpperCase() : candidatesList.find((c) => /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(c));
+    const pcSerial = pcMatch ? pcMatch[1].toUpperCase() : candidatesList.find((c) => /^KSA[0-9]{6,10}$/i.test(c) || (/^[A-Za-z0-9\-_]{6,18}$/i.test(c) && !c.includes("-")));
 
     if (winKey && pcSerial) {
-      // 윈도우 25자 키와 PC 시리얼이 둘 다 검출된 경우: 1순위 = 윈도우 키(추천), 2순위 = PC S/N 고정 정렬!
+      // 윈도우 25자 키와 PC 시리얼이 둘 다 검출된 경우: 1순위 = 윈도우 키(추천 1), 2순위 = PC S/N(추천 2) 고정 정렬!
       literalSerial = winKey;
       const otherCands = candidatesList.filter((c) => c !== winKey && c !== pcSerial);
       candidatesList.length = 0;
@@ -261,6 +265,9 @@ export async function performGeminiDeepOcr(
     } else if (winKey) {
       literalSerial = winKey;
       if (!candidatesList.includes(winKey)) candidatesList.unshift(winKey);
+    } else if (pcSerial) {
+      literalSerial = pcSerial;
+      if (!candidatesList.includes(pcSerial)) candidatesList.unshift(pcSerial);
     } else {
       // 대상 부품 컨텍스트에 따른 1순위 시리얼 정렬
       const targetText = `${context?.partName || ""} ${context?.spec || ""} ${context?.subSpec || ""}`.toUpperCase();

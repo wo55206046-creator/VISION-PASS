@@ -1,7 +1,7 @@
 $Host.UI.RawUI.WindowTitle = "VISION-PASS GitHub Auto Deploy"
 
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "       [VISION-PASS] GitHub Pages Deployment Script" -ForegroundColor Cyan
+Write-Host "       [VISION-PASS] GitHub & Vercel Auto Deployment" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -41,25 +41,9 @@ if (-not $checkUser) {
     & git config user.email "visionpass@local.user"
 }
 
-# 4. Check / Configure Remote Origin
-$remoteOrigin = & git remote get-url origin 2>$null
-if (-not $remoteOrigin) {
-    Write-Host ""
-    Write-Host "[INFO] Please enter your GitHub Repository URL." -ForegroundColor Yellow
-    Write-Host "Example: https://github.com/username/vision-pass.git" -ForegroundColor Gray
-    Write-Host ""
-    $inputUrl = Read-Host "GitHub Repository URL"
-    while ([string]::IsNullOrWhiteSpace($inputUrl)) {
-        Write-Host "URL cannot be empty. Please enter a valid URL." -ForegroundColor Red
-        $inputUrl = Read-Host "GitHub Repository URL"
-    }
-    & git remote add origin $inputUrl.Trim()
-    Write-Host "[*] Remote repository 'origin' added successfully." -ForegroundColor Green
-}
-
 Write-Host "[2/3] Adding and committing files..." -ForegroundColor Yellow
 & git add .
-& git commit -m "Feature: Enable Gemini 2.0 Flash Vision AI 99% accuracy engine as default built-in OCR"
+& git commit -m "Feat: 윈도우 25자리 키 1순위 추천 및 PC S/N 2순위 듀얼 OCR, 카메라 하드웨어 줌 최적화, Supabase 실시간 동기화"
 
 Write-Host ""
 Write-Host "[3/3] Uploading (git push) to GitHub..." -ForegroundColor Yellow
@@ -71,17 +55,11 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host ""
     Write-Host "================================================================" -ForegroundColor Green
     Write-Host "  [SUCCESS] Code successfully uploaded to GitHub!" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "  ★ One-time GitHub Pages Setup in Browser:" -ForegroundColor Yellow
-    Write-Host "  1. Go to your GitHub Repository page"
-    Write-Host "  2. Click [Settings] -> [Pages]"
-    Write-Host "  3. Change 'Source' under 'Build and deployment' to [GitHub Actions]"
-    Write-Host ""
-    Write-Host "  Your live website URL: https://wo55206046-creator.github.io/VISION-PASS/" -ForegroundColor Cyan
+    Write-Host "  Live URL: https://vision-pass.vercel.app/" -ForegroundColor Cyan
     Write-Host "================================================================" -ForegroundColor Green
 } else {
     Write-Host ""
-    Write-Host "[NOTICE] If push failed, please sign in to GitHub if the browser popup appeared." -ForegroundColor Red
+    Write-Host "[NOTICE] If push failed, please check network or GitHub permissions." -ForegroundColor Red
 }
 
 Write-Host ""
