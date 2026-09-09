@@ -78,13 +78,15 @@ export async function getOcrWorker(
       },
     });
 
-    // 산업용 명판 및 수기(Handwriting) 메모 전방위 탐색 모드(PSM 11) + 300 DPI
+    // 산업용 명판 및 시리얼 정밀 판독 모드 (한글/잡음 기호 배제로 LSTM 분류 정확도 극대화)
     await worker.setParameters({
       tessedit_char_whitelist:
-        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_./:#()=*|! +~ㄱ-ㅎㅏ-ㅣ가-힣",
-      tessedit_pageseg_mode: "11" as any, // Sparse text: 인쇄 명판뿐만 아니라 불규칙한 수기 펜글씨/메모 완벽 포착
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_./:#() ",
+      tessedit_pageseg_mode: "6" as any, // Single uniform block: 라벨 줄글 결합력 극대화
       user_defined_dpi: "300",
       preserve_interword_spaces: "1",
+      textord_heavy_nr: "1", // 잡음 억제
+      classify_enable_learning: "0", // 학습 편향 배제
     });
 
     cachedWorker = worker;
@@ -813,44 +815,44 @@ export async function performInMemoryOcr(
 
   const worker = await getOcrWorker(onProgress);
 
-  // 1차 패스: 노란색 라벨 특화 캔버스 판독 (PSM 6: 단일 텍스트 블록/라벨 모드로 글자 라인 결합력 극대화!)
+  // 1차 스트림: 노란색 라벨 광학 채널 분리 + Otsu 최적 이진화 (PSM 6: 단일 텍스트 블록 모드)
   await worker.setParameters({
     tessedit_pageseg_mode: "6" as any,
   });
   const pass1 = await worker.recognize(yellowBoosted);
   let rawText = pass1.data.text || "";
   let confidence = Math.round(pass1.data.confidence || 0);
-
   const words = [...((pass1.data as any).words || [])];
 
-  // 1차 패스 결과로 빠른 시리얼 유효성 확인
-  let quickTest = extractSerialCandidates(rawText, context);
-  let hasStrongMatch =
-    quickTest.candidates.length > 0 &&
-    (quickTest.bestSerial.length >= 6 || /^[0-9]{6,14}$/.test(quickTest.bestSerial));
+  console.log("📄 [OCR 스트림 1 (Otsu Binarized)] 추출 텍스트:\n", rawText);
 
-  // 만약 PSM 6에서 충분한 텍스트나 시리얼이 감지되지 않은 경우: PSM 11(Sparse) 모드로 추가 판독
-  if (!hasStrongMatch) {
+  // 1차 패스에서 완벽한 명판 시리얼(SN:, S/N: 인접 번호)이 포착되었는지 사전 검사
+  let quickTest = extractSerialCandidates(rawText, context);
+  const hasDefinitiveMatch =
+    quickTest.candidates.length > 0 &&
+    /(?:S[\/\\|\-.;:]?\s*N|SN|5N|SERIAL|SER)\s*[:.\-|=;#~_*\s]*[0-9A-Za-z\-_]{4,}/i.test(rawText);
+
+  // 만약 1차 패스에서 결정적 SN 시리얼이 미검출되었거나 텍스트가 부족한 경우:
+  // 스트림 2(적응형 로컬 대비 강화) 및 복합 레이아웃(PSM 3)을 즉각 앙상블 결합!
+  if (!hasDefinitiveMatch) {
+    onProgress?.(70, "⚡ 듀얼 광학 앙상블(스트림 B) 결합 정밀 판독 중...");
     try {
       await worker.setParameters({
-        tessedit_pageseg_mode: "11" as any,
+        tessedit_pageseg_mode: "3" as any, // Fully automatic page segmentation
       });
-      const pass1Sparse = await worker.recognize(yellowBoosted);
-      const sparseText = pass1Sparse.data.text || "";
-      if (sparseText) {
-        rawText += "\n" + sparseText;
-        confidence = Math.max(confidence, Math.round(pass1Sparse.data.confidence || 0));
-        words.push(...((pass1Sparse.data as any).words || []));
+      const pass2 = await worker.recognize(enhancedGray);
+      const pass2Text = pass2.data.text || "";
+      if (pass2Text) {
+        console.log("📄 [OCR 스트림 2 (Enhanced Gray)] 추출 텍스트:\n", pass2Text);
+        rawText += "\n" + pass2Text;
+        confidence = Math.max(confidence, Math.round(pass2.data.confidence || 0));
+        words.push(...((pass2.data as any).words || []));
       }
-      quickTest = extractSerialCandidates(rawText, context);
-      hasStrongMatch = quickTest.candidates.length > 0 && quickTest.bestSerial.length >= 6;
     } catch {}
-  }
 
-  if (!hasStrongMatch) {
-    // 세로 라벨(종횡비가 길거나 텍스트가 부족한 경우)을 위한 90도 회전 패스
-    const isVerticalAspect = canvas.height > canvas.width * 1.15;
-    if (isVerticalAspect || rawText.length < 8) {
+    // 회전 라벨(세로 인쇄 등)에 대한 90도 회전 보조 패스
+    quickTest = extractSerialCandidates(rawText, context);
+    if (quickTest.candidates.length === 0 || rawText.length < 8) {
       try {
         const rotatedYellow = rotateCanvas(yellowBoosted, 90);
         const passRot = await worker.recognize(rotatedYellow);
@@ -861,19 +863,6 @@ export async function performInMemoryOcr(
           words.push(...((passRot.data as any).words || []));
         }
         disposeCanvas(rotatedYellow);
-      } catch {}
-    }
-
-    // 전체 이미지(고대비 흑백) 2차 패스 수행
-    if (rawText.length < 8 || !hasStrongMatch) {
-      try {
-        const pass2 = await worker.recognize(enhancedGray);
-        const pass2Text = pass2.data.text || "";
-        if (pass2Text) {
-          rawText += "\n" + pass2Text;
-          confidence = Math.max(confidence, Math.round(pass2.data.confidence || 0));
-          words.push(...((pass2.data as any).words || []));
-        }
       } catch {}
     }
   }

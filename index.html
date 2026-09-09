@@ -1838,15 +1838,15 @@
         const ctx = canvas.getContext("2d");
         if (video && ctx) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // ROI Crop & Preprocess
-        const roi = cropROI(canvas, { x: canvas.width * 0.1, y: canvas.height * 0.25, w: canvas.width * 0.8, h: canvas.height * 0.5 });
+        // ROI Crop & Preprocess (2.5x 고해상도 확대)
+        const roi = cropROI(canvas, { x: canvas.width * 0.05, y: canvas.height * 0.2, w: canvas.width * 0.9, h: canvas.height * 0.6 }, 2.5);
         const processed = preprocessCanvas(roi);
 
         setOcrProgress(50);
         try {
           const worker = await Tesseract.createWorker("eng");
           await worker.setParameters({
-            tessedit_char_whitelist: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_./:#()=*|! +~",
+            tessedit_char_whitelist: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_./:#() ",
             tessedit_pageseg_mode: "6",
           });
           setOcrProgress(75);

@@ -306,8 +306,50 @@ export function rotateCanvas(
 }
 
 /**
- * 🟡 산업용 노란색 라벨 테이프 & 디지털 인쇄 폰트 초정밀 색상 분리 및 텍스트 극대화
- * 노란색 배경(High R, High G, Low B)을 순백색으로 분리하고 검정/짙은 인쇄 텍스트를 고대비로 추출
+ * 📊 Otsu (오츠) 자동 최적 전역 이진화 임계값 계산기
+ * 영상의 밝기 히스토그램에서 클래스 간 분산(Between-class variance)이 최대가 되는 최적의 임계점(T) 산출
+ */
+export function computeOtsuThreshold(grayArray: Uint8Array, length: number): number {
+  const hist = new Int32Array(256);
+  for (let i = 0; i < length; i++) {
+    hist[grayArray[i]]++;
+  }
+
+  const total = length;
+  let sum = 0;
+  for (let t = 0; t < 256; t++) {
+    sum += t * hist[t];
+  }
+
+  let sumB = 0;
+  let wB = 0;
+  let maxVariance = 0;
+  let threshold = 128;
+
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+
+    const variance = wB * wF * (mB - mF) * (mB - mF);
+    if (variance > maxVariance) {
+      maxVariance = variance;
+      threshold = t;
+    }
+  }
+
+  return threshold;
+}
+
+/**
+ * 🟡 산업용 노란색 라벨 테이프 전용 광학 채널 분리(Optical Channel Decoupling) & Otsu 초고화질 이진화
+ * 노란색 배경(Red+Green)을 순백색(255)으로 날리고 검은 글씨 획을 칠흑색(0)으로 추출하며,
+ * Tesseract 신경망이 가장 정확하게 인식하는 글자 높이(35~50px)가 되도록 3.0배 슈퍼 스케일링 적용!
  */
 export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): HTMLCanvasElement {
   const width = sourceCanvas.width;
@@ -324,7 +366,6 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
   const data = imgData.data;
 
   // 1단계: 노란색 라벨 스티커 픽셀 탐색 (붉은색 본체 및 주변 노이즈 엄격 필터링)
-  // 노란색 스티커 특징: R과 G가 모두 높고(|R - G| <= 65), B가 현저히 낮음((R+G) > B*2.1)
   const yellowCols = new Int32Array(width);
   const yellowRows = new Int32Array(height);
   let totalYellowPixels = 0;
@@ -337,9 +378,10 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
       const g = data[idx + 1];
       const b = data[idx + 2];
 
+      // 노란색 스티커: R과 G가 모두 높고(|R - G| < 70), B가 현저히 낮음
       const isYellow =
-        r > 95 &&
-        g > 80 &&
+        r > 90 &&
+        g > 75 &&
         Math.abs(r - g) < 70 &&
         r - b > 30 &&
         g - b > 20 &&
@@ -353,8 +395,8 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
     }
   }
 
-  // 2단계: 노란색 라벨 군집(Clustering) 바운딩 박스 정밀 추출 (단일 픽셀 노이즈 제거)
-  if (totalYellowPixels >= 60) {
+  // 2단계: 노란색 라벨 군집(Clustering) 바운딩 박스 정밀 추출
+  if (totalYellowPixels >= 50) {
     let minX = 0;
     while (minX < width && yellowCols[minX] < 3) minX++;
 
@@ -371,9 +413,9 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
     const detectedH = maxY - minY;
 
     if (detectedW >= 25 && detectedH >= 8) {
-      // 키워드('SN:', 'SERIAL') 및 테두리가 잘리지 않도록 상하좌우 40% 안전 마진 확보
-      const padX = Math.round(detectedW * 0.4);
-      const padY = Math.round(detectedH * 0.6);
+      // 키워드('SN:', 'SERIAL') 및 테두리가 잘리지 않도록 상하좌우 45% 안전 마진 확보
+      const padX = Math.round(detectedW * 0.45);
+      const padY = Math.round(detectedH * 0.7);
       const boxMinX = Math.max(0, minX - padX);
       const boxMaxX = Math.min(width - 1, maxX + padX);
       const boxMinY = Math.max(0, minY - padY);
@@ -382,9 +424,9 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
       const cropW = boxMaxX - boxMinX;
       const cropH = boxMaxY - boxMinY;
 
-      // 🎯 라벨 영역만 2.5배 고해상도로 확대하는 전용 캔버스 생성 (작은 글씨 가독성 극대화)
+      // 🎯 [3.0x 슈퍼 스케일링]: 글자 높이를 Tesseract 최적 크기(35~50px)로 확대
       const zoomCanvas = document.createElement("canvas");
-      zoomCanvas.width = Math.max(1000, Math.round(cropW * 2.5));
+      zoomCanvas.width = Math.max(1280, Math.round(cropW * 3.0));
       zoomCanvas.height = Math.round(zoomCanvas.width * (cropH / cropW));
       const zCtx = zoomCanvas.getContext("2d", { willReadFrequently: true });
 
@@ -405,54 +447,63 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
 
         const zImgData = zCtx.getImageData(0, 0, zoomCanvas.width, zoomCanvas.height);
         const zData = zImgData.data;
-        const totalZ = zData.length;
+        const totalZPixels = zoomCanvas.width * zoomCanvas.height;
 
-        // 글자 획 보존형 스마트 그레이스케일 & 적응형 대비 스트레칭
-        // 검은 글씨의 안티앨리어싱된 획(숫자 0, 1, 3 및 콜론 ':')이 날아가지 않도록
-        // 하드 컷오프를 배제하고 글씨와 배경 사이의 계조를 온전히 보존
-        for (let i = 0; i < totalZ; i += 4) {
-          const r = zData[i];
-          const g = zData[i + 1];
-          const b = zData[i + 2];
-          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+        // 🎯 [광학 채널 분리]: Green & Red 채널 합성으로 노란색 배경과 검은 글씨 대비를 극대화
+        // 노란색 배경 = R/G가 높아 약 210~240, 검은 글씨 = R/G가 낮아 약 20~50
+        const opticalChannel = new Uint8Array(totalZPixels);
+        for (let i = 0; i < totalZPixels; i++) {
+          const idx = i * 4;
+          const r = zData[idx];
+          const g = zData[idx + 1];
+          opticalChannel[i] = Math.round(r * 0.5 + g * 0.5);
+        }
 
-          // 노란색 배경 계열(R, G 높고 B 낮음)인 경우 배경을 순백색에 가깝게 밝힘
-          const isYellowish = r > 110 && g > 95 && r + g > b * 1.8;
-          let val: number;
+        // 🎯 [Otsu 최적 이진화]: 조명 밝기에 상관없이 글자와 배경을 완벽하게 분리하는 임계점 산출
+        const otsuThreshold = computeOtsuThreshold(opticalChannel, totalZPixels);
 
-          if (isYellowish && gray > 110) {
-            // 노란색 바탕: 부드럽게 밝은 흰색으로 밀어올림
-            val = Math.min(255, Math.round(gray * 1.35 + 20));
-          } else if (gray < 85) {
-            // 검은색 글자 획: 진한 흑색으로 또렷하게 강화
-            val = Math.max(0, Math.round(gray * 0.7));
+        // 글자 획 보존형 고대비 이진화 렌더링
+        for (let i = 0; i < totalZPixels; i++) {
+          const idx = i * 4;
+          const val = opticalChannel[i];
+          
+          // Otsu 임계값보다 밝으면 순백색(255), 어두우면 칠흑색(0)으로 분리하되
+          // 경계선에 얇은 앤티앨리어싱 계조(글자 획 끊김 방지) 적용
+          let finalVal: number;
+          if (val > otsuThreshold + 8) {
+            finalVal = 255;
+          } else if (val < otsuThreshold - 8) {
+            finalVal = 0;
           } else {
-            // 중간 계조(글자 경계선): 글자 획이 얇아져 끊기지 않도록 부드러운 S-커브 적용
-            const normalized = (gray - 85) / (185 - 85);
-            val = Math.max(0, Math.min(255, Math.round(normalized * 255)));
+            finalVal = Math.round(((val - (otsuThreshold - 8)) / 16) * 255);
           }
 
-          zData[i] = val;
-          zData[i + 1] = val;
-          zData[i + 2] = val;
+          zData[idx] = finalVal;
+          zData[idx + 1] = finalVal;
+          zData[idx + 2] = finalVal;
         }
 
         zCtx.putImageData(zImgData, 0, 0);
+        console.log("🎯 [Yellow Optical Channel + Otsu] 전처리 완료. 임계값:", otsuThreshold);
         return zoomCanvas;
       }
     }
   }
 
-  // 노란 라벨이 특정되지 않은 경우: 전체 프레임 적응형 대비 그레이스케일 적용
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-    const val = gray < 80 ? 0 : gray > 190 ? 255 : Math.round(((gray - 80) / 110) * 255);
-    data[i] = val;
-    data[i + 1] = val;
-    data[i + 2] = val;
+  // 노란 라벨이 특정되지 않은 경우: 전체 프레임 Otsu 적응형 이진화 적용
+  const totalPixels = width * height;
+  const grays = new Uint8Array(totalPixels);
+  for (let i = 0; i < totalPixels; i++) {
+    const idx = i * 4;
+    grays[i] = Math.round(0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]);
+  }
+  const globalOtsu = computeOtsuThreshold(grays, totalPixels);
+  for (let i = 0; i < totalPixels; i++) {
+    const idx = i * 4;
+    const v = grays[i] > globalOtsu ? 255 : 0;
+    data[idx] = v;
+    data[idx + 1] = v;
+    data[idx + 2] = v;
   }
 
   ctx.putImageData(imgData, 0, 0);
