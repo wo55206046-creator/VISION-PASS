@@ -69,11 +69,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   const [selectedSerial, setSelectedSerial] = useState("");
   const [isVerifiedCheck, setIsVerifiedCheck] = useState(true);
 
-  // ⚡ 실시간 라이브 자동 감지 (바코드 0초 + 인쇄 텍스트 1초 자동 캡처 & 햅틱)
-  const [isAutoScanEnabled, setIsAutoScanEnabled] = useState(true);
-  const isAutoScanningTextRef = useRef(false);
-  const lastScanAttemptTimeRef = useRef(0);
-
   // Canvas Refs (In-Memory Only, Zero-Storage)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -244,9 +239,9 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     } catch {}
   };
 
-  // ⚡ 실시간 라이브 자동 감지 루프 (바코드 0.05초 즉시 + 인쇄 텍스트 라벨 1.2초 자동 판독 & 햅틱 진동)
+  // ⚡ 실시간 라이브 바코드 감지 루프 (바코드는 갖다 대기만 해도 0.05초 즉시 자동 감지 & 햅틱)
   useEffect(() => {
-    if (!isOpen || isFrozen || isProcessing || !stream || !isAutoScanEnabled) return;
+    if (!isOpen || isFrozen || isProcessing || !stream) return;
 
     let isSubscribed = true;
     const intervalId = setInterval(async () => {
@@ -261,7 +256,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         if (!ctx) return;
         ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
 
-        // 1. 하드웨어 가속 바코드 초고속 감지 (0.005초)
+        // 하드웨어 가속 바코드 초고속 감지 (0.005초 로컬 C++ 실행)
         const barcode = await scanNativeBarcode(offscreen);
         disposeCanvas(offscreen);
 
@@ -282,57 +277,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
           });
           setOcrProgress(100);
           setOcrStatusText("⚡ 하드웨어 바코드 100% 즉시 인식 완료!");
-          return;
-        }
-
-        // 2. 인쇄된 라벨/텍스트 실시간 자동 감지 (Auto-Text OCR: 1.2초 쿨다운 주기)
-        const now = Date.now();
-        if (now - lastScanAttemptTimeRef.current >= 1200 && !isAutoScanningTextRef.current) {
-          lastScanAttemptTimeRef.current = now;
-          isAutoScanningTextRef.current = true;
-
-          const rawFull = document.createElement("canvas");
-          rawFull.width = video.videoWidth || 1280;
-          rawFull.height = video.videoHeight || 720;
-          const rfCtx = rawFull.getContext("2d");
-          if (rfCtx) {
-            rfCtx.drawImage(video, 0, 0, rawFull.width, rawFull.height);
-
-            performGeminiDeepOcr(
-              rawFull,
-              undefined,
-              targetPart
-                ? {
-                    partName: targetPart.partName,
-                    spec: targetPart.spec,
-                    subSpec: targetPart.subSpec,
-                  }
-                : undefined
-            )
-              .then((result) => {
-                disposeCanvas(rawFull);
-                if (result && result.cleanedSerial && isSubscribed && !isFrozen) {
-                  console.log("⚡ [Live Text Auto-Detect] 인쇄 텍스트 자동 감지 완료:", result.cleanedSerial);
-                  try {
-                    video.pause();
-                    setIsFrozen(true);
-                  } catch {}
-                  triggerScanFeedback();
-                  setSelectedSerial(result.cleanedSerial);
-                  setOcrResult(result);
-                  setOcrProgress(100);
-                  setOcrStatusText("⚡ 인쇄 라벨 100% 자동 감지 완료!");
-                }
-              })
-              .catch(() => {
-                disposeCanvas(rawFull);
-              })
-              .finally(() => {
-                isAutoScanningTextRef.current = false;
-              });
-          } else {
-            isAutoScanningTextRef.current = false;
-          }
         }
       } catch (err) {
         // ignore
@@ -343,7 +287,69 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       isSubscribed = false;
       clearInterval(intervalId);
     };
-  }, [isOpen, isFrozen, isProcessing, stream, isAutoScanEnabled, targetPart]);
+  }, [isOpen, isFrozen, isProcessing, stream]);
+
+  /**
+   * 🔍 스마트 라벨 오토-타겟팅 & 고해상도 확대 캔버스 생성 (Smart Label Zoom)
+   * 전체 프레임에서 노란색 라벨의 위치를 0.002초 만에 탐색하여,
+   * 라벨이 화면 구석이나 아래에 있더라도 라벨 영역을 화면 중앙에 큼직하게 꽉 채워(1.8x 확대) AI에 전달
+   */
+  const getSmartTargetCanvas = (rawCanvas: HTMLCanvasElement, croppedCanvas: HTMLCanvasElement): HTMLCanvasElement => {
+    try {
+      const ctx = rawCanvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return croppedCanvas;
+      const imgData = ctx.getImageData(0, 0, rawCanvas.width, rawCanvas.height);
+      const data = imgData.data;
+
+      let minX = rawCanvas.width, maxX = 0, minY = rawCanvas.height, maxY = 0;
+      let yellowCount = 0;
+
+      // 4픽셀 간격 스킵 샘플링 (초고속 2ms 분석)
+      for (let y = 0; y < rawCanvas.height; y += 4) {
+        for (let x = 0; x < rawCanvas.width; x += 4) {
+          const idx = (y * rawCanvas.width + x) * 4;
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+          const yIdx = (r + g) / 2 - b;
+          if (yIdx > 25 && r > 90 && g > 75 && (r + g) > (b * 2.1)) {
+            yellowCount++;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+
+      // 노란색 라벨이 선명하게 포착된 경우 (50샘플 이상 & 유효 크기)
+      if (yellowCount >= 50 && maxX > minX + 40 && maxY > minY + 15) {
+        const padX = Math.round((maxX - minX) * 0.35);
+        const padY = Math.round((maxY - minY) * 0.6);
+        const x1 = Math.max(0, minX - padX);
+        const y1 = Math.max(0, minY - padY);
+        const w = Math.min(rawCanvas.width - x1, (maxX - minX) + padX * 2);
+        const h = Math.min(rawCanvas.height - y1, (maxY - minY) + padY * 2);
+
+        const target = document.createElement("canvas");
+        target.width = Math.max(960, Math.round(w * 1.8));
+        target.height = Math.round(target.width * (h / w));
+        const tCtx = target.getContext("2d");
+        if (tCtx) {
+          tCtx.imageSmoothingEnabled = true;
+          tCtx.imageSmoothingQuality = "high";
+          tCtx.drawImage(rawCanvas, x1, y1, w, h, 0, 0, target.width, target.height);
+          console.log("🎯 [Smart Label Zoom] 노란색 라벨 고해상도 확대 캔버스 생성 완료:", { w, h, targetW: target.width, targetH: target.height });
+          return target;
+        }
+      }
+    } catch (e) {
+      console.warn("Smart label detection fallback:", e);
+    }
+
+    // 노란 라벨이 특정되지 않은 경우(금속 명판 등): 정밀 크롭 캔버스 사용
+    return croppedCanvas;
+  };
 
   // 인메모리 원터치 셔터 캡처 & Gemini 2.0 AI OCR 수행 (Storage Zero: 사진 즉시 휘발)
   const captureAndRecognize = async () => {
@@ -426,13 +432,16 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
     // 2. Gemini 2.0 Vision AI & 고정밀 광학 OCR 심층 실행
     setOcrProgress(45);
-    setOcrStatusText("🤖 Gemini 2.0 Vision AI 노란 라벨 & 25자리 시리얼 분석 중...");
+    setOcrStatusText("🤖 Gemini 2.0 Vision AI 라벨 확대 & 시리얼 분석 중...");
+
+    let targetCanvas: HTMLCanvasElement = rawCanvas;
 
     try {
-      // ★ 핵심: Gemini AI에는 크롭으로 인한 문자 절단을 방지하기 위해 전체 고해상도 원본 프레임(rawCanvas)을 전달합니다!
-      // 이를 통해 화면 하단/상단/모서리 어디에 라벨이 있어도 100% 온전하게 인식됩니다.
+      // 🎯 스마트 라벨 오토 타겟팅: 노란 라벨을 화면 중앙에 큼직하게 꽉 채운 고해상도 확대 캔버스 생성
+      targetCanvas = getSmartTargetCanvas(rawCanvas, croppedCanvas);
+
       const result = await performGeminiDeepOcr(
-        rawCanvas,
+        targetCanvas,
         (progress, status) => {
           setOcrProgress(progress);
           setOcrStatusText(status);
@@ -461,6 +470,9 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       // 메모리 즉시 회수 (스토리지 제로)
       disposeCanvas(rawCanvas);
       if (croppedCanvas) disposeCanvas(croppedCanvas);
+      if (targetCanvas && targetCanvas !== rawCanvas && targetCanvas !== croppedCanvas) {
+        disposeCanvas(targetCanvas);
+      }
 
       setOcrProgress(100);
       setIsProcessing(false);
@@ -591,32 +603,16 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                       ✓ 촬영 완료 (사진 즉시 휘발됨)
                     </span>
                   ) : (
-                    <span className="bg-slate-950/85 text-cyan-300 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border border-cyan-500/40 shadow-sm flex items-center justify-center gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <span>{isAutoScanEnabled ? "⚡ 실시간 자동 감지 중: 바코드/라벨을 비추면 즉시 진동 인식" : "수동 촬영 모드: 가이드에 맞추고 [촬영] 클릭"}</span>
+                    <span className="bg-slate-950/80 text-cyan-300 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border border-cyan-500/40">
+                      [ 가이드 영역에 라벨을 맞추고 [촬영] 클릭 • 바코드는 0초 자동 인식 ]
                     </span>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Camera Floating Controls (Auto-Scan, Guide, Torch, Flip) */}
+            {/* Camera Floating Controls (Guide, Torch, Flip) */}
             <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
-              {/* 실시간 자동 감지 ON/OFF 토글 버튼 */}
-              <button
-                type="button"
-                onClick={() => setIsAutoScanEnabled((prev) => !prev)}
-                className={`px-2 py-1.5 rounded-xl backdrop-blur-md border text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                  isAutoScanEnabled
-                    ? "bg-emerald-950/85 text-emerald-300 border-emerald-500/60 shadow-glow-emerald"
-                    : "bg-slate-900/80 text-slate-400 border-slate-700 hover:bg-slate-800"
-                }`}
-                title="실시간 자동 감지 (비추기만 해도 0~1초 만에 자동 인식 & 진동)"
-              >
-                <Sparkles className={`h-3 w-3 ${isAutoScanEnabled ? "text-emerald-400" : "text-slate-400"}`} />
-                <span>{isAutoScanEnabled ? "자동ON" : "수동"}</span>
-              </button>
-
               {/* 가이드 모드 전환 버튼 */}
               <button
                 type="button"

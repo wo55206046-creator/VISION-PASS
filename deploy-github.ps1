@@ -43,7 +43,7 @@ if (-not $checkUser) {
 
 Write-Host "[2/3] Adding and committing files..." -ForegroundColor Yellow
 & git add .
-& git commit -m "Feat: 바코드뿐만 아니라 인쇄 라벨 텍스트도 비추면 즉시 진동과 함께 실시간 자동 인식(Live Auto-OCR) 탑재"
+& git commit -m "Fix: 실시간 텍스트 API 부하 제거, 원클릭 정밀 촬영 모드 복원 및 스마트 라벨 확대(Smart Zoom Crop) 탑재"
 
 Write-Host ""
 Write-Host "[3/3] Uploading (git push) to GitHub..." -ForegroundColor Yellow
