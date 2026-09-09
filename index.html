@@ -1826,72 +1826,6 @@
         setTargetPart(null);
       };
 
-      // ⚡ 실시간 무인 자동 감지 루프 (바코드 / 시리얼 S/N / 품번 P/N 비추면 자동 진동 & 포착)
-      React.useEffect(() => {
-        if (!ocrModalOpen || isOcrProcessing) return;
-
-        let isSubscribed = true;
-        let isAnalyzing = false;
-
-        const intervalId = setInterval(async () => {
-          if (!isSubscribed || isOcrProcessing || isAnalyzing) return;
-          const video = videoRef.current;
-          if (!video || video.readyState < 2 || video.paused) return;
-
-          isAnalyzing = true;
-
-          try {
-            const canvas = document.createElement("canvas");
-            canvas.width = Math.min(video.videoWidth || 640, 1280);
-            canvas.height = Math.min(video.videoHeight || 480, 720);
-            const ctx = canvas.getContext("2d");
-            if (!ctx) {
-              isAnalyzing = false;
-              return;
-            }
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            // 하드웨어 네이티브 바코드 감지
-            if ("BarcodeDetector" in window) {
-              try {
-                const detector = new window.BarcodeDetector({
-                  formats: ["code_128", "code_39", "code_93", "data_matrix", "qr_code", "ean_13"]
-                });
-                const codes = await detector.detect(canvas);
-                if (codes && codes.length > 0 && codes[0].rawValue && isSubscribed) {
-                  const val = codes[0].rawValue.trim();
-                  if (val.length >= 3) {
-                    triggerScanFeedback();
-                    setOcrCandidate(val);
-                    video.pause();
-                    disposeCanvas(canvas);
-                    isAnalyzing = false;
-                    return;
-                  }
-                }
-              } catch (e) {}
-            }
-            disposeCanvas(canvas);
-          } catch (e) {
-          } finally {
-            isAnalyzing = false;
-          }
-        }, 300);
-
-        // ⏱️ 사용자가 버튼을 안 눌러도 1.8초 조준 시 자동 캡처 & 인식
-        const autoTimer = setTimeout(() => {
-          if (ocrModalOpen && !isOcrProcessing && !ocrCandidate) {
-            runOcr();
-          }
-        }, 1800);
-
-        return () => {
-          isSubscribed = false;
-          clearInterval(intervalId);
-          clearTimeout(autoTimer);
-        };
-      }, [ocrModalOpen, isOcrProcessing, ocrCandidate]);
-
       // 스토리지 제로 인메모리 OCR 실행
       const runOcr = async () => {
         setIsOcrProcessing(true);
@@ -3780,30 +3714,20 @@
                 <div className="relative aspect-[4/3] bg-black rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center">
                   <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                   <div className="absolute inset-0 border-2 border-dashed border-cyan-400/80 m-6 rounded-lg pointer-events-none flex flex-col items-center justify-center">
-                    <span className="bg-slate-950/90 text-cyan-300 text-[10px] font-bold px-3 py-1 rounded-full border border-cyan-400/60 shadow-glow-cyan inline-flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping"></span>
-                      <span>🎯 비추기만 하면 진동과 함께 100% 자동 인식됩니다</span>
+                    <span className="bg-slate-950/90 text-cyan-300 text-[10px] font-bold px-3 py-1 rounded-full border border-cyan-400/60 shadow-glow-cyan">
+                      [ 가이드 박스에 라벨을 맞추고 아래 [촬영] 버튼을 누르세요 ]
                     </span>
                     {isOcrProcessing && <div className="absolute inset-x-0 top-0 h-0.5 bg-cyan-400 scan-line" />}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between bg-slate-950/80 border border-cyan-500/40 rounded-xl px-3 py-2 shadow-glow-cyan">
-                  <div className="flex items-center gap-2">
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500"></span>
-                    </span>
-                    <span className="text-xs font-bold text-cyan-300">⚡ 무인 자동 감지 작동 중 (버튼 누를 필요 없음)</span>
-                  </div>
-                  <button
-                    onClick={runOcr}
-                    disabled={isOcrProcessing}
-                    className="bg-slate-800 hover:bg-slate-700 text-cyan-300 px-3 py-1 rounded-lg text-xs font-bold border border-slate-700 cursor-pointer"
-                  >
-                    {isOcrProcessing ? `분석 중 (${ocrProgress}%)...` : "수동 촬영"}
-                  </button>
-                </div>
+                <button
+                  onClick={runOcr}
+                  disabled={isOcrProcessing}
+                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 py-3 rounded-xl font-bold text-slate-950 text-xs shadow-glow-cyan cursor-pointer active:scale-98"
+                >
+                  {isOcrProcessing ? `분석 중 (${ocrProgress}%)...` : "📸 명판/라벨 촬영 & 시리얼 인식"}
+                </button>
 
                 <div>
                   <label className="text-[11px] text-slate-400 block mb-1">인식된 시리얼 번호 (수정 가능):</label>
