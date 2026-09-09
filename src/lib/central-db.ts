@@ -28,9 +28,9 @@ const STORAGE_DEVICE_ID = "VISION_PASS_DEVICE_ID";
 const STORAGE_PROJECTS_KEY = "VISION_PASS_PROJECTS_DATA_V8";
 const STORAGE_LAST_SYNC_KEY = "VISION_PASS_LAST_SYNC_TIME";
 
-// Supabase 환경변수 (옵션)
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+// Supabase 환경변수 (기본값 설정)
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://aodczkjhpejexhqwnhly.supabase.co";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_zBx2CORfSytJ-dXnnorRog_lRTv4ghw";
 
 // ============================================================================
 // 2. 디바이스 식별자 & 방 키 관리
@@ -73,18 +73,18 @@ export function getCleanTopicKey(roomKey: string = getSyncRoomKey()): string {
 
 export function getActiveDbConfig(): CentralDbConfig {
   const roomKey = getSyncRoomKey();
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    return {
+      provider: "supabase",
+      endpoint: SUPABASE_URL,
+      roomKey,
+    };
+  }
   const fbConf = getFirebaseConfig();
   if (isFirebaseConfigured()) {
     return {
       provider: "firebase",
       endpoint: `https://${fbConf.projectId}.firebaseio.com`,
-      roomKey,
-    };
-  }
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    return {
-      provider: "supabase",
-      endpoint: SUPABASE_URL,
       roomKey,
     };
   }
@@ -270,21 +270,7 @@ export async function saveCentralProjects(
 
   const cleanDocKey = getCleanTopicKey(roomKey);
 
-  // 2. [Firebase Firestore CDN 실시간 저장]
-  if (isFirebaseConfigured()) {
-    try {
-      const db = await getFirestoreDb();
-      if (db) {
-        const cleanPayload = JSON.parse(JSON.stringify(payload));
-        await db.collection("vision_pass_rooms").doc(cleanDocKey).set(cleanPayload);
-        return { success: true, message: "Firebase Firestore 실시간 저장 완료" };
-      }
-    } catch (err) {
-      console.warn("Firebase Firestore write warning", err);
-    }
-  }
-
-  // 3. [Supabase REST 저장 - 환경변수 있을 경우]
+  // 1. [Supabase REST 실시간 저장]
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync`, {
@@ -302,16 +288,35 @@ export async function saveCentralProjects(
         }),
       });
       if (res.ok) {
-        return { success: true, message: "Supabase DB 저장 완료" };
+        return { success: true, message: `Supabase 클라우드 실시간 저장 완료 (${projects.length}개 프로젝트)` };
+      } else {
+        const errBody = await res.text();
+        console.warn("Supabase save error response:", res.status, errBody);
       }
-    } catch {}
+    } catch (err) {
+      console.warn("Supabase write warning", err);
+    }
+  }
+
+  // 2. [Firebase Firestore CDN 실시간 저장 (폴백)]
+  if (isFirebaseConfigured()) {
+    try {
+      const db = await getFirestoreDb();
+      if (db) {
+        const cleanPayload = JSON.parse(JSON.stringify(payload));
+        await db.collection("vision_pass_rooms").doc(cleanDocKey).set(cleanPayload);
+        return { success: true, message: "Firebase Firestore 실시간 저장 완료" };
+      }
+    } catch (err) {
+      console.warn("Firebase Firestore write warning", err);
+    }
   }
 
   return { success: true, message: "로컬 스토리지에 안전하게 저장되었습니다." };
 }
 
 /**
- * 📥 프로젝트 데이터 로드 (메모리 / 로컬 스토리지 / Firestore)
+ * 📥 프로젝트 데이터 로드 (메모리 / Supabase / Firestore / 로컬 스토리지)
  */
 export async function fetchCentralProjects(
   roomKey: string = getSyncRoomKey()
@@ -331,9 +336,49 @@ export async function fetchCentralProjects(
     };
   }
 
+  const cleanRoom = (roomKey || DEFAULT_ROOM_KEY).toUpperCase();
+
+  // 2. [Supabase REST 조회]
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(cleanRoom)}&select=*`,
+        {
+          headers: {
+            "apikey": SUPABASE_ANON_KEY,
+            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+        }
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length > 0 && rows[0].data?.projects) {
+          const payload = rows[0].data;
+          memoryCacheProjects = payload.projects;
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(payload.projects));
+              if (payload.updatedAt) {
+                localStorage.setItem(STORAGE_LAST_SYNC_KEY, payload.updatedAt);
+              }
+            } catch {}
+          }
+          return {
+            success: true,
+            projects: payload.projects,
+            updatedAt: payload.updatedAt || rows[0].updated_at,
+            message: "Supabase 클라우드 데이터 동기화 완료",
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("Supabase fetch warning", err);
+    }
+  }
+
   const cleanDocKey = getCleanTopicKey(roomKey);
 
-  // 2. [Firebase Firestore 조회]
+  // 3. [Firebase Firestore 조회]
   if (isFirebaseConfigured()) {
     try {
       const db = await getFirestoreDb();
@@ -360,7 +405,7 @@ export async function fetchCentralProjects(
     }
   }
 
-  // 3. [로컬 스토리지 캐시 로드]
+  // 4. [로컬 스토리지 캐시 로드]
   if (typeof window !== "undefined") {
     try {
       const raw = localStorage.getItem(STORAGE_PROJECTS_KEY);
@@ -383,7 +428,7 @@ export async function fetchCentralProjects(
 }
 
 // ============================================================================
-// 7. 실시간 동기화 리스너 (Firebase Firestore onSnapshot 전용)
+// 7. 실시간 동기화 리스너 (Supabase 스마트 폴링 & Firebase Firestore onSnapshot)
 // ============================================================================
 export function subscribeCentralRealtime(
   onUpdate: (projects: ProjectMaster[]) => void,
@@ -391,11 +436,55 @@ export function subscribeCentralRealtime(
 ): () => void {
   if (typeof window === "undefined") return () => {};
 
+  const cleanRoom = (roomKey || DEFAULT_ROOM_KEY).toUpperCase();
   const cleanDocKey = getCleanTopicKey(roomKey);
   let isUnsubscribed = false;
   let unsubscribeFirestore: (() => void) | null = null;
+  let supabasePollTimer: any = null;
 
-  // Firebase Firestore가 설정되어 있을 때만 Firestore 실시간 onSnapshot 리스너 실행
+  // 1. Supabase 실시간 동기화 (3.5초 주기 스마트 폴링)
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    let lastKnownTimestamp = "";
+    supabasePollTimer = setInterval(async () => {
+      if (isUnsubscribed) return;
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(cleanRoom)}&select=data,updated_at`,
+          {
+            headers: {
+              "apikey": SUPABASE_ANON_KEY,
+              "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+            },
+          }
+        );
+        if (res.ok) {
+          const rows = await res.json();
+          if (Array.isArray(rows) && rows.length > 0 && rows[0].data) {
+            const payload = rows[0].data;
+            const updatedTime = payload.updatedAt || rows[0].updated_at || "";
+            if (
+              updatedTime &&
+              updatedTime !== lastKnownTimestamp &&
+              payload.senderDeviceId !== getDeviceId() &&
+              Array.isArray(payload.projects)
+            ) {
+              lastKnownTimestamp = updatedTime;
+              memoryCacheProjects = payload.projects;
+              if (typeof window !== "undefined") {
+                try {
+                  localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(payload.projects));
+                  localStorage.setItem(STORAGE_LAST_SYNC_KEY, updatedTime);
+                } catch {}
+              }
+              onUpdate(payload.projects);
+            }
+          }
+        }
+      } catch {}
+    }, 3500);
+  }
+
+  // 2. Firebase Firestore가 설정되어 있을 때 Firestore 실시간 리스너 실행
   if (isFirebaseConfigured()) {
     getFirestoreDb().then((db) => {
       if (isUnsubscribed || !db) return;
@@ -438,6 +527,9 @@ export function subscribeCentralRealtime(
 
   return () => {
     isUnsubscribed = true;
+    if (supabasePollTimer) {
+      clearInterval(supabasePollTimer);
+    }
     if (unsubscribeFirestore) {
       try {
         unsubscribeFirestore();
@@ -445,3 +537,4 @@ export function subscribeCentralRealtime(
     }
   };
 }
+
