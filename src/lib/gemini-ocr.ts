@@ -29,27 +29,31 @@ export function setGeminiApiKey(key: string): void {
   localStorage.setItem(GEMINI_API_KEY_STORAGE, key.trim());
 }
 
-const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 정밀 계측기(LabJack, DAQ, PLC, 컨트롤러 등) 및 산업용 PC(IPC), 서버 본체에 부착된 [노란색 라벨 스티커(Yellow Label Tape)]와 금속 명판의 시리얼 번호를 판독하는 최고 등급의 산업용 초정밀 광학 판독 AI입니다.
+const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 정밀 계측기(LabJack, DAQ, PLC, 컨트롤러, I/O 모듈 등) 및 산업용 PC(IPC), 서버 본체에 부착된 [노란색 라벨 스티커(Yellow Label Tape)]와 금속 명판의 시리얼 번호를 판독하는 최고 등급의 산업용 초정밀 광학 판독 AI입니다.
 
 [1. 노란색 라벨 스티커 최우선 탐색 원칙 (Yellow Label Tape Priority)]
-- 이미지 전체(중앙, 상단, 하단, 모서리 등 위치 불문)에서 [노란색 바탕의 라벨 스티커]를 최우선으로 찾으십시오.
-- 회색 금속 케이스나 주변 배경의 요철/모델명에 현혹되지 마시고, 노란색 테이프 위에 인쇄된 텍스트("WIN11 S/N", "PC S/N" 등)를 정밀 분석하십시오.
+- 이미지 전체에서 [노란색 바탕의 라벨 스티커(Yellow Tape)]를 최우선으로 찾으십시오.
+- 주변 단자대 기호("CHANNEL", "OUTPUT", "FAULT", "01~20", "CON1", "AiN 1-6" 등)나 케이블 번호("SMP-24" 등), 모델명("LabJack U6-PRO" 등)은 시리얼 번호가 아닙니다.
+- 오직 노란색 라벨 위에 인쇄된 고유 시리얼 번호를 1순위로 추출하십시오.
 
-[2. 윈도우 25자리 정품 키(5x5 블록) 1순위 전사 & PC S/N 2순위 배치 필수 원칙]
-- 노란색 라벨에 인쇄된 텍스트 예시:
-    WIN11 S/N : 2398N-XY7BW-W962X-WDDVV-T3FC3
-    PC S/N : KSA7706705
-- 판독 및 우선순위 규칙:
-  1) ★ 1순위 최우선 추천 (raw_serial):
-     반드시 25자리 윈도우 정품 키("XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" 5x5 형식, 총 25자리 문자 + 4개 하이픈)를 단 1글자의 누락이나 중도 절단 없이 끝까지 100% 원문 그대로 전사하십시오!
-     절대로 앞의 10자리(2블록)만 읽고 멈추지 마십시오. "2398N-XY7BW-W962X-WDDVV-T3FC3"와 같이 5개 블록 전체를 완벽히 출력하십시오.
-  2) ★ 2순위 추천 (PC S/N):
-     PC 하드웨어 시리얼 번호("KSA7706705", "KSA7965797" 등)를 2순위로 정확히 전사하십시오.
-  3) serial_candidates 다중 후보 목록에 반드시 [1순위 윈도우 키, 2순위 PC S/N] 순서로 등록하십시오:
-     [
-       { "label": "WIN11 S/N (25자리)", "value": "2398N-XY7BW-W962X-WDDVV-T3FC3" },
-       { "label": "PC S/N", "value": "KSA7706705" }
-     ]
+[2. 노란색 라벨 유형별 정밀 판독 및 다중 후보 우선순위 규칙]
+◆ 유형 1: 산업용 컨트롤러 / PLC / I/O 모듈 라벨 (예: 'CON-B2' 및 'SN:210708-28')
+  - 'SN:210708-28', 'SN:260225-40', 'S/N: 360025446'과 같이 SN/일련번호가 표기된 경우:
+    1) ★ 1순위 (raw_serial): 접두사 'SN:'을 제외한 순수 고유 일련번호("210708-28")를 1순위로 출력하십시오.
+    2) ★ 2순위 (serial_candidates): 모듈/채널 식별 태그("CON-B2")가 함께 있다면 2순위 후보로 등록하십시오.
+    3) 예시 JSON:
+       {
+         "raw_serial": "210708-28",
+         "serial_candidates": [
+           { "label": "SN (고유시리얼)", "value": "210708-28" },
+           { "label": "모듈 태그", "value": "CON-B2" }
+         ]
+       }
+
+◆ 유형 2: 산업용 PC 본체 윈도우 키 & PC 시리얼 라벨 (예: 'WIN11 S/N' 및 'PC S/N')
+  - 'WIN11 S/N' 25자리 정품 키와 'PC S/N'이 있는 경우:
+    1) ★ 1순위: 25자리 윈도우 키("2398N-XY7BW-W962X-WDDVV-T3FC3")를 단 1글자도 자르지 말고 끝까지 100% 전사하십시오.
+    2) ★ 2순위: PC 하드웨어 시리얼("KSA7706705")을 2순위로 등록하십시오.
 
 [3. 엄격한 원문 복사 모드 (Strict Literal Transcribe Mode)]
 - 임의 추론, 사전 단어 완성, 문맥적 철자 교정, 임의 문자 스왑을 완전히 차단하십시오.
@@ -62,13 +66,13 @@ const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 정밀 계�
 [5. Strict JSON 출력 스키마]
 반드시 아래 JSON 형식으로만 응답하십시오:
 {
-  "raw_serial": "2398N-XY7BW-W962X-WDDVV-T3FC3",
+  "raw_serial": "210708-28",
   "serial_candidates": [
-    { "label": "WIN11 S/N (25자리)", "value": "2398N-XY7BW-W962X-WDDVV-T3FC3" },
-    { "label": "PC S/N", "value": "KSA7706705" }
+    { "label": "SN (고유시리얼)", "value": "210708-28" },
+    { "label": "모듈 태그", "value": "CON-B2" }
   ],
   "source_type": "yellow_label",
-  "model_name": "IPC",
+  "model_name": "MODULE",
   "notes": null,
   "low_confidence_chars": []
 }`;
@@ -165,9 +169,9 @@ export async function performGeminiDeepOcr(
 - 세부사양: ${context?.subSpec || "-"}
 
 [판독 필수 지침]
-제공된 이미지에서 제품 브랜드/모델명이나 전원규격이 아닌, 노란색 라벨 스티커나 명판의 [고유 시리얼 번호]를 정확히 찾아내십시오.
-★ 중요: 윈도우 정품 키(WIN11 S/N)가 있을 경우, 절대로 앞의 10자리만 읽고 멈추지 마시고 반드시 5개 블록 총 25자리("XXXXX-XXXXX-XXXXX-XXXXX-XXXXX") 전체를 끝까지 누락 없이 1순위로 전사하십시오!
-★ PC S/N(예: KSA7706705 등 10자리)과 윈도우 25자리 키가 둘 다 인쇄되어 있다면, serial_candidates에 1순위 윈도우 키, 2순위 PC S/N으로 둘 다 포함하십시오.`;
+제공된 이미지에서 단자대 핀 기호(CHANNEL, FAULT, CON1, 01~20 등)나 케이블 번호가 아닌, 노란색 라벨 스티커 위의 [고유 시리얼 번호]를 정확히 찾아내십시오.
+★ 1. 'SN:210708-28' 등 SN 표기가 있는 경우: 'SN:' 접두사를 제외한 순수 고유 일련번호('210708-28')를 1순위로 출력하고, 함께 붙은 'CON-B2' 태그는 2순위 후보로 포함하십시오.
+★ 2. 윈도우 키(WIN11 S/N)가 있을 경우: 5개 블록 총 25자리('XXXXX-XXXXX-XXXXX-XXXXX-XXXXX') 전체를 1순위, PC S/N('KSA7706705')을 2순위로 등록하십시오.`;
 
     for (const model of modelCandidates) {
       try {
@@ -253,7 +257,7 @@ export async function performGeminiDeepOcr(
       }
     }
 
-    // 전체 JSON 응답에서 25자리 5x5 윈도우 키 및 KSA PC S/N 정밀 스캔
+    // 전체 JSON 응답에서 25자리 윈도우 키, KSA PC S/N, 및 산업용 날짜-순번 시리얼(예: 210708-28) 정밀 스캔
     const fullJsonStr = JSON.stringify(parsed);
     let winMatch = fullJsonStr.match(/\b([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5})\b/i);
     if (!winMatch) {
@@ -263,11 +267,23 @@ export async function performGeminiDeepOcr(
       }
     }
     const pcMatch = fullJsonStr.match(/\b(KSA[0-9]{6,10})\b/i);
+    const dateSerialMatch = fullJsonStr.match(/\b([0-9]{6}-[0-9]{1,4})\b/);
+    const conTagMatch = fullJsonStr.match(/\b(CON-[A-Z0-9]+)\b/i);
 
     const winKey = winMatch ? winMatch[1].toUpperCase() : candidatesList.find((c) => /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(c));
     const pcSerial = pcMatch ? pcMatch[1].toUpperCase() : candidatesList.find((c) => /^KSA[0-9]{6,10}$/i.test(c) || (/^[A-Za-z0-9\-_]{6,18}$/i.test(c) && !c.includes("-")));
+    const dateSerial = dateSerialMatch ? dateSerialMatch[1] : candidatesList.find((c) => /^[0-9]{6}-[0-9]{1,4}$/.test(c));
+    const conTag = conTagMatch ? conTagMatch[1].toUpperCase() : candidatesList.find((c) => /^CON-[A-Z0-9]+$/i.test(c));
 
-    if (winKey && pcSerial) {
+    if (dateSerial) {
+      // ★ 산업용 모듈 시리얼(210708-28) 우선 배치: 1순위 = 210708-28, 2순위 = CON-B2 모듈태그
+      literalSerial = dateSerial;
+      const otherCands = candidatesList.filter((c) => c !== dateSerial && c !== conTag);
+      candidatesList.length = 0;
+      candidatesList.push(dateSerial);
+      if (conTag) candidatesList.push(conTag);
+      candidatesList.push(...otherCands);
+    } else if (winKey && pcSerial) {
       // 윈도우 25자 키와 PC 시리얼이 둘 다 검출된 경우: 1순위 = 윈도우 키(추천 1), 2순위 = PC S/N(추천 2) 고정 정렬!
       literalSerial = winKey;
       const otherCands = candidatesList.filter((c) => c !== winKey && c !== pcSerial);

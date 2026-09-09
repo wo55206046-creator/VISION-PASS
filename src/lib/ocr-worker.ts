@@ -436,6 +436,18 @@ export function extractSerialCandidates(
     scoredMap.set(fullPcMatch[1].toUpperCase(), 4500);
   }
 
+  // 3) 산업용 날짜-순번 고유 시리얼 (예: 210708-28, 260225-40, SN:210708-28) (4800점 최우선)
+  const fullDateSerialMatch = rawText.match(/(?:SN\s*[:.\-|=;#\s]*)?([0-9]{6}-[0-9]{1,4})\b/i);
+  if (fullDateSerialMatch && fullDateSerialMatch[1]) {
+    scoredMap.set(fullDateSerialMatch[1], 4800);
+  }
+
+  // 4) 산업용 모듈 식별 태그 (예: CON-B2, CON-B1) (3500점)
+  const fullConTagMatch = rawText.match(/\b(CON-[A-Z0-9]+)\b/i);
+  if (fullConTagMatch && fullConTagMatch[1]) {
+    scoredMap.set(fullConTagMatch[1].toUpperCase(), 3500);
+  }
+
   const addCandidate = (token: string, baseScore: number, lineIndex: number = 0) => {
     const cleaned = sanitizeSerialToken(token);
     if (!cleaned) return;
@@ -696,8 +708,17 @@ export function extractSerialCandidates(
   const winKey = rawCandidates.find((c) => /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(c));
   const pcSerial = rawCandidates.find((c) => /^KSA[0-9]{6,10}$/i.test(c) || (/^[A-Za-z0-9\-_]{6,18}$/i.test(c) && !c.includes("-")));
 
+  const dateSerial = rawCandidates.find((c) => /^[0-9]{6}-[0-9]{1,4}$/.test(c));
+  const conTag = rawCandidates.find((c) => /^CON-[A-Z0-9]+$/i.test(c));
+
   let finalCands: string[] = [];
-  if (winKey && pcSerial) {
+  if (dateSerial) {
+    // 1순위 = 날짜-순번 고유 시리얼(예: 210708-28), 2순위 = CON 모듈 태그(예: CON-B2)
+    const others = rawCandidates.filter((c) => c !== dateSerial && c !== conTag);
+    finalCands = [dateSerial];
+    if (conTag) finalCands.push(conTag);
+    finalCands.push(...others);
+  } else if (winKey && pcSerial) {
     const others = rawCandidates.filter((c) => c !== winKey && c !== pcSerial);
     finalCands = [winKey, pcSerial, ...others];
   } else if (winKey) {

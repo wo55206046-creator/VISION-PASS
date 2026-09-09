@@ -705,18 +705,27 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                   {ocrResult.candidates.map((cand, idx) => {
                     const isWinKey = /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cand);
                     const isPcSsn = /^KSA[0-9]{6,10}$/i.test(cand);
+                    const isDateSerial = /^[0-9]{6}-[0-9]{1,4}$/.test(cand);
+                    const isConTag = /^CON-[A-Z0-9]+$/i.test(cand);
+
                     const labelBadge = idx === 0
                       ? isWinKey
-                        ? "★ 1순위 우선 추천 (WIN11 25자리)"
+                        ? "★ 1순위 (WIN11 25자리)"
+                        : isDateSerial
+                        ? "★ 1순위 (모듈 시리얼)"
                         : "★ 1순위 우선 추천"
                       : idx === 1
                       ? isPcSsn
                         ? "추천 2 (PC S/N)"
+                        : isConTag
+                        ? "모듈 식별 태그"
                         : "추천 2"
                       : isWinKey
                       ? "WIN11 25자리 키"
                       : isPcSsn
                       ? "PC S/N"
+                      : isConTag
+                      ? "모듈 태그"
                       : `후보 ${idx + 1}`;
 
                     return (

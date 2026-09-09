@@ -323,30 +323,84 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
   const imgData = ctx.getImageData(0, 0, width, height);
   const data = imgData.data;
 
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
+  // 1단계: 노란색 라벨 스티커 픽셀 탐색 및 바운딩 박스(Bounding Box) 추출
+  let minX = width, maxX = 0, minY = height, maxY = 0;
+  let yellowPixelCount = 0;
 
-    // 노란색 색상 지수: Yellow index = (R + G)/2 - B
-    const yellowIndex = (r + g) / 2 - b;
-    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
 
-    let enhanced: number;
-    if (yellowIndex > 20 && brightness > 70) {
-      // 노란색 배경 영역 -> 순백색(255)
-      enhanced = 255;
-    } else if (brightness < 110) {
-      // 검은색/짙은 글자 영역 -> 순흑색(0)
-      enhanced = 0;
-    } else {
-      // 완만한 대비 스트레칭
-      enhanced = brightness > 135 ? 255 : Math.max(0, Math.min(255, (brightness - 55) * (255 / 95)));
+      // 노란색 테이프 판정: R과 G가 높고 B가 현저히 낮음 (Yellow Hue)
+      const yellowIndex = (r + g) / 2 - b;
+      const isYellow = yellowIndex > 25 && r > 90 && g > 75 && (r + g) > (b * 2.2);
+
+      if (isYellow) {
+        yellowPixelCount++;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
     }
+  }
 
-    data[i] = enhanced;
-    data[i + 1] = enhanced;
-    data[i + 2] = enhanced;
+  // 2단계: 노란색 라벨이 감지된 경우 (150픽셀 이상)
+  // 라벨 영역만 정밀 보존하고, 주변의 검은 플라스틱 케이스/단자대/FAULT/CHANNEL 등 잡음 글자는 100% 순백색(255)으로 소거
+  if (yellowPixelCount > 150 && maxX > minX && maxY > minY) {
+    const padX = Math.round(width * 0.04);
+    const padY = Math.round(height * 0.04);
+    const boxMinX = Math.max(0, minX - padX);
+    const boxMaxX = Math.min(width - 1, maxX + padX);
+    const boxMinY = Math.max(0, minY - padY);
+    const boxMaxY = Math.min(height - 1, maxY + padY);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+
+        if (x < boxMinX || x > boxMaxX || y < boxMinY || y > boxMaxY) {
+          // 라벨 외부의 모든 배경(검은 섀시, 단자대 기호 등)은 순백색으로 소거!
+          data[idx] = 255;
+          data[idx + 1] = 255;
+          data[idx + 2] = 255;
+        } else {
+          // 라벨 내부: 노란색 바탕은 백색(255), 인쇄된 글자(SN:210708-28 등)는 극선명 순흑색(0)으로 분리
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+          const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+          const yellowIndex = (r + g) / 2 - b;
+
+          // 노란색 배경 영역
+          if (yellowIndex > 20 || brightness > 135) {
+            data[idx] = 255;
+            data[idx + 1] = 255;
+            data[idx + 2] = 255;
+          } else {
+            // 라벨 위 인쇄 글자(검은색 텍스트)
+            data[idx] = 0;
+            data[idx + 1] = 0;
+            data[idx + 2] = 0;
+          }
+        }
+      }
+    }
+  } else {
+    // 노란색 라벨이 특정되지 않은 경우: 적응형 대비 스트레칭
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+      const enhanced = brightness < 115 ? 0 : 255;
+      data[i] = enhanced;
+      data[i + 1] = enhanced;
+      data[i + 2] = enhanced;
+    }
   }
 
   ctx.putImageData(imgData, 0, 0);
