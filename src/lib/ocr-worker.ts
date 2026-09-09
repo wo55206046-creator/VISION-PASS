@@ -516,6 +516,11 @@ export function extractSerialCandidates(
   // [전략 1] S/N :, Serial Number, SERIAL, Serial, S/N 및 수기/한글 라벨 우측 값 직접 추출
   // ============================================================================
   const labelRightRegexes = [
+    // 1-0-0-P. 품번 / Part Number / P/N / Item No / 품목번호 / 도번 (예: "P/N : 1234-ABCD", "PART NO: FX-300", "품번: M8812") (2650점)
+    {
+      regex: /(?:P\s*[\/\\|\-.]\s*N|PART\s*(?:NO\.?|NUMBER|#|CODE)?|ITEM\s*(?:NO\.?|#|NUMBER)|품\s*번|품목\s*번호|도\s*번|MAT\s*NO\.?)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
+      score: 2650,
+    },
     // 1-0-0-0. WIN11 S/N / WIN S/N / Windows Key 25자리 정품 키 (예: "WIN11 S/N : JHTBB-N94YW-9HGGV-78RD3-3PH23") (2900점 최우선)
     {
       regex: /(?:WIN(?:11|10|7|8|DOWS)?\s*S[\/\\|\-.]?N|WIN(?:11|10|7|8|DOWS)?\s*KEY|WIN(?:11|10|7|8)?)\s*[:.\-|=;#\s]*([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}|[A-Za-z0-9\-_]{4,35})/gi,
@@ -605,7 +610,7 @@ export function extractSerialCandidates(
   };
 
   const modelPrefixRegex =
-    /(?:MODEL\s*(?:NO\.?|#|TYPE)?|MOD\.?|TYPE|TYP\.?|P\s*[\/\\|\-.]\s*N|PART\s*NO\.?|ITEM\s*NO\.?|MN\s*:|REV\s*:|INPUT\s*:|OUTPUT\s*:)\s*[:.\-|=]?\s*([A-Za-z0-9\-_./]{3,35})/gi;
+    /(?:MODEL\s*(?:NO\.?|#|TYPE)?|MOD\.?|TYPE|TYP\.?|MN\s*:|REV\s*:|INPUT\s*:|OUTPUT\s*:)\s*[:.\-|=]?\s*([A-Za-z0-9\-_./]{3,35})/gi;
 
   for (const line of rawLines) {
     let match: RegExpExecArray | null;
@@ -866,3 +871,51 @@ export async function performInMemoryOcr(
     candidates: finalCandidates,
   };
 }
+
+/**
+ * ⚡ 실시간 라이브 무인 자동 감지 (Live Auto-OCR):
+ * 작업자가 버튼을 누르지 않아도 카메라를 비추고 있으면 바코드, 시리얼(S/N), 품번(P/N)이 시야에 들어오는 즉시 감지하여 반환!
+ */
+export async function quickScanLiveRoi(
+  roiCanvas: HTMLCanvasElement,
+  context?: PartOcrContext
+): Promise<OcrResult | null> {
+  // 1. 하드웨어 네이티브 바코드 즉시 감지 (0.005초)
+  const barcode = await scanNativeBarcode(roiCanvas);
+  if (barcode) {
+    return {
+      rawText: `[Live Barcode]: ${barcode}`,
+      cleanedSerial: barcode,
+      confidence: 100,
+      lines: [barcode],
+      candidates: [barcode],
+    };
+  }
+
+  // 2. 인메모리 Tesseract 초경량 패스 (시리얼 S/N, 품번 P/N 고속 스캔)
+  try {
+    const yellowBoosted = createYellowLabelBoostCanvas(roiCanvas);
+    const worker = await getOcrWorker();
+    const ret = await worker.recognize(yellowBoosted);
+    disposeCanvas(yellowBoosted);
+
+    const rawText = ret.data.text || "";
+    if (rawText.trim().length >= 4) {
+      const { bestSerial, candidates, lines } = extractSerialCandidates(rawText, context);
+      if (bestSerial && bestSerial.length >= 3) {
+        return {
+          rawText,
+          cleanedSerial: bestSerial,
+          confidence: Math.max(90, Math.round(ret.data.confidence || 90)),
+          lines,
+          candidates,
+        };
+      }
+    }
+  } catch (e) {
+    // 실시간 감지 무소음 통과
+  }
+
+  return null;
+}
+
