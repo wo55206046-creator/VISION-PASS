@@ -263,8 +263,17 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
           const r = data[idx];
           const g = data[idx + 1];
           const b = data[idx + 2];
-          const yIdx = (r + g) / 2 - b;
-          if (yIdx > 25 && r > 90 && g > 75 && (r + g) > (b * 2.1)) {
+          
+          // 노란색 스티커 판정 (붉은색 아크릴 및 주변 노이즈 배제)
+          const isYellow =
+            r > 90 &&
+            g > 75 &&
+            Math.abs(r - g) < 70 &&
+            r - b > 30 &&
+            g - b > 20 &&
+            r + g > b * 2.1;
+
+          if (isYellow) {
             yellowCount++;
             if (x < minX) minX = x;
             if (x > maxX) maxX = x;
@@ -275,8 +284,8 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       }
 
       // 노란색 라벨이 선명하게 포착된 경우 (50샘플 이상 & 유효 크기)
-      if (yellowCount >= 50 && maxX > minX + 40 && maxY > minY + 15) {
-        const padX = Math.round((maxX - minX) * 0.35);
+      if (yellowCount >= 45 && maxX > minX + 35 && maxY > minY + 12) {
+        const padX = Math.round((maxX - minX) * 0.4);
         const padY = Math.round((maxY - minY) * 0.6);
         const x1 = Math.max(0, minX - padX);
         const y1 = Math.max(0, minY - padY);
@@ -284,7 +293,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         const h = Math.min(rawCanvas.height - y1, (maxY - minY) + padY * 2);
 
         const target = document.createElement("canvas");
-        target.width = Math.max(960, Math.round(w * 1.8));
+        target.width = Math.max(1024, Math.round(w * 2.2));
         target.height = Math.round(target.width * (h / w));
         const tCtx = target.getContext("2d");
         if (tCtx) {

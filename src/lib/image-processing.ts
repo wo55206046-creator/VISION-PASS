@@ -323,84 +323,136 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
   const imgData = ctx.getImageData(0, 0, width, height);
   const data = imgData.data;
 
-  // 1단계: 노란색 라벨 스티커 픽셀 탐색 및 바운딩 박스(Bounding Box) 추출
-  let minX = width, maxX = 0, minY = height, maxY = 0;
-  let yellowPixelCount = 0;
+  // 1단계: 노란색 라벨 스티커 픽셀 탐색 (붉은색 본체 및 주변 노이즈 엄격 필터링)
+  // 노란색 스티커 특징: R과 G가 모두 높고(|R - G| <= 65), B가 현저히 낮음((R+G) > B*2.1)
+  const yellowCols = new Int32Array(width);
+  const yellowRows = new Int32Array(height);
+  let totalYellowPixels = 0;
 
   for (let y = 0; y < height; y++) {
+    const rowOffset = y * width;
     for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
+      const idx = (rowOffset + x) * 4;
       const r = data[idx];
       const g = data[idx + 1];
       const b = data[idx + 2];
 
-      // 노란색 테이프 판정: R과 G가 높고 B가 현저히 낮음 (Yellow Hue)
-      const yellowIndex = (r + g) / 2 - b;
-      const isYellow = yellowIndex > 25 && r > 90 && g > 75 && (r + g) > (b * 2.2);
+      const isYellow =
+        r > 95 &&
+        g > 80 &&
+        Math.abs(r - g) < 70 &&
+        r - b > 30 &&
+        g - b > 20 &&
+        r + g > b * 2.1;
 
       if (isYellow) {
-        yellowPixelCount++;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
+        yellowCols[x]++;
+        yellowRows[y]++;
+        totalYellowPixels++;
       }
     }
   }
 
-  // 2단계: 노란색 라벨이 감지된 경우 (150픽셀 이상)
-  // 라벨 영역만 정밀 보존하고, 주변의 검은 플라스틱 케이스/단자대/FAULT/CHANNEL 등 잡음 글자는 100% 순백색(255)으로 소거
-  if (yellowPixelCount > 150 && maxX > minX && maxY > minY) {
-    const padX = Math.round(width * 0.04);
-    const padY = Math.round(height * 0.04);
-    const boxMinX = Math.max(0, minX - padX);
-    const boxMaxX = Math.min(width - 1, maxX + padX);
-    const boxMinY = Math.max(0, minY - padY);
-    const boxMaxY = Math.min(height - 1, maxY + padY);
+  // 2단계: 노란색 라벨 군집(Clustering) 바운딩 박스 정밀 추출 (단일 픽셀 노이즈 제거)
+  if (totalYellowPixels >= 60) {
+    let minX = 0;
+    while (minX < width && yellowCols[minX] < 3) minX++;
 
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = (y * width + x) * 4;
+    let maxX = width - 1;
+    while (maxX > minX && yellowCols[maxX] < 3) maxX--;
 
-        if (x < boxMinX || x > boxMaxX || y < boxMinY || y > boxMaxY) {
-          // 라벨 외부의 모든 배경(검은 섀시, 단자대 기호 등)은 순백색으로 소거!
-          data[idx] = 255;
-          data[idx + 1] = 255;
-          data[idx + 2] = 255;
-        } else {
-          // 라벨 내부: 노란색 바탕은 백색(255), 인쇄된 글자(SN:210708-28 등)는 극선명 순흑색(0)으로 분리
-          const r = data[idx];
-          const g = data[idx + 1];
-          const b = data[idx + 2];
-          const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-          const yellowIndex = (r + g) / 2 - b;
+    let minY = 0;
+    while (minY < height && yellowRows[minY] < 3) minY++;
 
-          // 노란색 배경 영역
-          if (yellowIndex > 20 || brightness > 135) {
-            data[idx] = 255;
-            data[idx + 1] = 255;
-            data[idx + 2] = 255;
+    let maxY = height - 1;
+    while (maxY > minY && yellowRows[maxY] < 3) maxY--;
+
+    const detectedW = maxX - minX;
+    const detectedH = maxY - minY;
+
+    if (detectedW >= 25 && detectedH >= 8) {
+      // 키워드('SN:', 'SERIAL') 및 테두리가 잘리지 않도록 상하좌우 40% 안전 마진 확보
+      const padX = Math.round(detectedW * 0.4);
+      const padY = Math.round(detectedH * 0.6);
+      const boxMinX = Math.max(0, minX - padX);
+      const boxMaxX = Math.min(width - 1, maxX + padX);
+      const boxMinY = Math.max(0, minY - padY);
+      const boxMaxY = Math.min(height - 1, maxY + padY);
+
+      const cropW = boxMaxX - boxMinX;
+      const cropH = boxMaxY - boxMinY;
+
+      // 🎯 라벨 영역만 2.5배 고해상도로 확대하는 전용 캔버스 생성 (작은 글씨 가독성 극대화)
+      const zoomCanvas = document.createElement("canvas");
+      zoomCanvas.width = Math.max(1000, Math.round(cropW * 2.5));
+      zoomCanvas.height = Math.round(zoomCanvas.width * (cropH / cropW));
+      const zCtx = zoomCanvas.getContext("2d", { willReadFrequently: true });
+
+      if (zCtx) {
+        zCtx.imageSmoothingEnabled = true;
+        zCtx.imageSmoothingQuality = "high";
+        zCtx.drawImage(
+          sourceCanvas,
+          boxMinX,
+          boxMinY,
+          cropW,
+          cropH,
+          0,
+          0,
+          zoomCanvas.width,
+          zoomCanvas.height
+        );
+
+        const zImgData = zCtx.getImageData(0, 0, zoomCanvas.width, zoomCanvas.height);
+        const zData = zImgData.data;
+        const totalZ = zData.length;
+
+        // 글자 획 보존형 스마트 그레이스케일 & 적응형 대비 스트레칭
+        // 검은 글씨의 안티앨리어싱된 획(숫자 0, 1, 3 및 콜론 ':')이 날아가지 않도록
+        // 하드 컷오프를 배제하고 글씨와 배경 사이의 계조를 온전히 보존
+        for (let i = 0; i < totalZ; i += 4) {
+          const r = zData[i];
+          const g = zData[i + 1];
+          const b = zData[i + 2];
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+
+          // 노란색 배경 계열(R, G 높고 B 낮음)인 경우 배경을 순백색에 가깝게 밝힘
+          const isYellowish = r > 110 && g > 95 && r + g > b * 1.8;
+          let val: number;
+
+          if (isYellowish && gray > 110) {
+            // 노란색 바탕: 부드럽게 밝은 흰색으로 밀어올림
+            val = Math.min(255, Math.round(gray * 1.35 + 20));
+          } else if (gray < 85) {
+            // 검은색 글자 획: 진한 흑색으로 또렷하게 강화
+            val = Math.max(0, Math.round(gray * 0.7));
           } else {
-            // 라벨 위 인쇄 글자(검은색 텍스트)
-            data[idx] = 0;
-            data[idx + 1] = 0;
-            data[idx + 2] = 0;
+            // 중간 계조(글자 경계선): 글자 획이 얇아져 끊기지 않도록 부드러운 S-커브 적용
+            const normalized = (gray - 85) / (185 - 85);
+            val = Math.max(0, Math.min(255, Math.round(normalized * 255)));
           }
+
+          zData[i] = val;
+          zData[i + 1] = val;
+          zData[i + 2] = val;
         }
+
+        zCtx.putImageData(zImgData, 0, 0);
+        return zoomCanvas;
       }
     }
-  } else {
-    // 노란색 라벨이 특정되지 않은 경우: 적응형 대비 스트레칭
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-      const enhanced = brightness < 115 ? 0 : 255;
-      data[i] = enhanced;
-      data[i + 1] = enhanced;
-      data[i + 2] = enhanced;
-    }
+  }
+
+  // 노란 라벨이 특정되지 않은 경우: 전체 프레임 적응형 대비 그레이스케일 적용
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+    const val = gray < 80 ? 0 : gray > 190 ? 255 : Math.round(((gray - 80) / 110) * 255);
+    data[i] = val;
+    data[i + 1] = val;
+    data[i + 2] = val;
   }
 
   ctx.putImageData(imgData, 0, 0);

@@ -1845,19 +1845,31 @@
         setOcrProgress(50);
         try {
           const worker = await Tesseract.createWorker("eng");
-          await worker.setParameters({ tessedit_char_whitelist: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_./:" });
+          await worker.setParameters({
+            tessedit_char_whitelist: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_./:#()=*|! +~",
+            tessedit_pageseg_mode: "6",
+          });
           setOcrProgress(75);
           const ret = await worker.recognize(processed);
           await worker.terminate();
 
           const raw = ret.data.text || "";
-          // 품번(P/N) 및 시리얼(S/N) 정밀 추출
-          const pnMatch = raw.match(/(?:P\s*[\/\\|\-.]\s*N|PART\s*(?:NO\.?|NUMBER)?|품번|ITEM\s*NO\.?|S\s*[\/\\|\-.]\s*N|SN|SERIAL)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/i);
+          // 1순위: S/N, SN, SERIAL, SER 직후 고유 일련번호 (노란 라벨 스티커 최우선)
+          const snMatch = raw.match(/(?:S[\/\\|\-.;:]?\s*N|SN|5N|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*(?:NO\.?|#)?|S#|S\.N\.|S\/NO)\s*[:.\-|=;#~_*\s]*([0-9A-Za-z\-_./]{4,25})/i);
+          // 2순위: 6~14자리 순수 숫자 시리얼 (예: 360025446)
+          const numMatch = raw.match(/\b([0-9]{6,14})\b/);
+          // 3순위: 품번(P/N)
+          const pnMatch = raw.match(/(?:P\s*[\/\\|\-.]\s*N|PART\s*(?:NO\.?|NUMBER)?|품번|ITEM\s*NO\.?)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/i);
+          // 4순위: 25자리 윈도우 키
           const winMatch = raw.match(/\b([A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5})\b/);
           const genMatch = raw.match(/[A-Z0-9\-_]{4,25}/g);
 
           let best = "";
-          if (pnMatch && pnMatch[1]) {
+          if (snMatch && snMatch[1]) {
+            best = snMatch[1].trim().toUpperCase();
+          } else if (numMatch && numMatch[1]) {
+            best = numMatch[1];
+          } else if (pnMatch && pnMatch[1]) {
             best = pnMatch[1].trim().toUpperCase();
           } else if (winMatch && winMatch[1]) {
             best = winMatch[1].toUpperCase();
@@ -1865,6 +1877,13 @@
             best = genMatch[0].toUpperCase();
           } else {
             best = raw.trim().toUpperCase();
+          }
+
+          // 접두사 및 기호 정제
+          best = best.replace(/^[ :;=|\-#/\\_.,<>()[\]{}]+|[ :;=|\-#/\\_.,<>()[\]{}]+$/g, "").trim();
+          // 숫자 시리얼 오인식 자동 보정 (O->0, I->1, S->5)
+          if (/^[0-9OoIlSs]{6,14}$/.test(best)) {
+            best = best.replace(/[Oo]/g, "0").replace(/[Il]/g, "1").replace(/[Ss]/g, "5");
           }
 
           setOcrCandidate(best);

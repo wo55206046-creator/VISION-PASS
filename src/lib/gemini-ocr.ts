@@ -157,9 +157,9 @@ export async function performGeminiDeepOcr(
 - 세부사양: ${context?.subSpec || "-"}
 
 [판독 필수 지침]
-제공된 이미지에서 단자대 핀 기호(CHANNEL, FAULT, CON1, 01~20 등)나 케이블 번호가 아닌, 노란색 라벨 스티커 위의 [고유 시리얼 번호]를 정확히 찾아내십시오.
-★ 1. 'SN:210708-28' 등 SN 표기가 있는 경우: 'SN:' 접두사를 제외한 순수 고유 일련번호('210708-28')를 1순위로 출력하고, 함께 붙은 'CON-B2' 태그는 2순위 후보로 포함하십시오.
-★ 2. 윈도우 키(WIN11 S/N)가 있을 경우: 5개 블록 총 25자리('XXXXX-XXXXX-XXXXX-XXXXX-XXXXX') 전체를 1순위, PC S/N('KSA7706705')을 2순위로 등록하십시오.`;
+제공된 이미지에서 단자대 핀 기호(10UA, SGND, SPC, AIN0~3, FIO0~3, DAC0~1, CHANNEL, FAULT, CON1 등)나 케이블 번호, 제품 모델명(LabJack, U6-PRO, PRO 등)이 아닌, 노란색 라벨 스티커 위의 [고유 시리얼 번호]를 최우선으로 찾아내십시오.
+★ 1. 'SN: 360025446', 'SN:360025446', 'S/N: 210708-28' 등 SN, S/N, SERIAL, SER 표기가 있는 경우: 접두사를 제외한 순수 고유 일련번호('360025446', '210708-28')를 무조건 압도적 1순위로 출력하십시오.
+★ 2. 윈도우 키(WIN11 S/N)가 있을 경우: 5개 블록 총 25자리('XXXXX-XXXXX-XXXXX-XXXXX-XXXXX')를 1순위, PC S/N('KSA7706705')을 2순위로 등록하십시오.`;
 
     for (const model of modelCandidates) {
       try {
