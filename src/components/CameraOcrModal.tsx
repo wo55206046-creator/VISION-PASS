@@ -699,7 +699,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             {ocrResult && ocrResult.candidates && ocrResult.candidates.length > 0 && (
               <div className="space-y-1.5 pt-0.5">
                 <span className="text-[10px] font-semibold text-slate-400">
-                  인식된 시리얼 번호 후보 (터치하여 즉시 선택):
+                  인식된 시리얼 번호 목록 (터치하여 원하는 번호 즉시 선택):
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {ocrResult.candidates.map((cand, idx) => {
@@ -708,25 +708,15 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                     const isDateSerial = /^[0-9]{6}-[0-9]{1,4}$/.test(cand);
                     const isConTag = /^CON-[A-Z0-9]+$/i.test(cand);
 
-                    const labelBadge = idx === 0
-                      ? isWinKey
-                        ? "★ 1순위 (WIN11 25자리)"
-                        : isDateSerial
-                        ? "★ 1순위 (모듈 시리얼)"
-                        : "★ 1순위 우선 추천"
-                      : idx === 1
-                      ? isPcSsn
-                        ? "추천 2 (PC S/N)"
-                        : isConTag
-                        ? "모듈 식별 태그"
-                        : "추천 2"
-                      : isWinKey
+                    const labelBadge = isWinKey
                       ? "WIN11 25자리 키"
                       : isPcSsn
                       ? "PC S/N"
+                      : isDateSerial
+                      ? "S/N 일련번호"
                       : isConTag
                       ? "모듈 태그"
-                      : `후보 ${idx + 1}`;
+                      : `번호 ${idx + 1}`;
 
                     return (
                       <button

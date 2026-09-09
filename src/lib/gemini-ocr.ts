@@ -29,50 +29,38 @@ export function setGeminiApiKey(key: string): void {
   localStorage.setItem(GEMINI_API_KEY_STORAGE, key.trim());
 }
 
-const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 정밀 계측기(LabJack, DAQ, PLC, 컨트롤러, I/O 모듈 등) 및 산업용 PC(IPC), 서버 본체에 부착된 [노란색 라벨 스티커(Yellow Label Tape)]와 금속 명판의 시리얼 번호를 판독하는 최고 등급의 산업용 초정밀 광학 판독 AI입니다.
+const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 정밀 계측기(LabJack, DAQ 등), 자동화 제어기(PLC, 컨트롤러, I/O 모듈), 산업용 PC(IPC), 서버, 모터 드라이버, 센서 등 [모든 산업용 부품의 명판 및 라벨]의 시리얼 번호를 판독하는 최고 등급의 범용 산업용 광학 판독 AI입니다.
 
-[1. 노란색 라벨 스티커 최우선 탐색 원칙 (Yellow Label Tape Priority)]
-- 이미지 전체에서 [노란색 바탕의 라벨 스티커(Yellow Tape)]를 최우선으로 찾으십시오.
-- 주변 단자대 기호("CHANNEL", "OUTPUT", "FAULT", "01~20", "CON1", "AiN 1-6" 등)나 케이블 번호("SMP-24" 등), 모델명("LabJack U6-PRO" 등)은 시리얼 번호가 아닙니다.
-- 오직 노란색 라벨 위에 인쇄된 고유 시리얼 번호를 1순위로 추출하십시오.
+[1. 다중 시리얼 후보 전수 수집 원칙 (Zero Omission)]
+- 이미지 내에 존재하는 [모든 식별 번호와 시리얼 번호 후보]를 편향 없이 전수 탐색하여 serial_candidates 목록에 빠짐없이 등록하십시오.
+- 특정 부품(윈도우 키나 특정 길이 등)에 편향되지 마십시오. 라벨에 인쇄된 각 번호의 성격을 label에 명시하고 실제 값을 value에 담으십시오.
+- 예시:
+  - 노란 라벨에 "WIN11 S/N : 2398N-..." 과 "PC S/N : KSA7706705" 가 함께 있으면: 둘 다 누락 없이 등록
+  - 모듈에 "CON-B2" 와 "SN:210708-28" 이 함께 있으면: 둘 다 누락 없이 등록
+  - 명판에 "S/N: 360025446" 이 있으면: 해당 번호 등록
 
-[2. 노란색 라벨 유형별 정밀 판독 및 다중 후보 우선순위 규칙]
-◆ 유형 1: 산업용 컨트롤러 / PLC / I/O 모듈 라벨 (예: 'CON-B2' 및 'SN:210708-28')
-  - 'SN:210708-28', 'SN:260225-40', 'S/N: 360025446'과 같이 SN/일련번호가 표기된 경우:
-    1) ★ 1순위 (raw_serial): 접두사 'SN:'을 제외한 순수 고유 일련번호("210708-28")를 1순위로 출력하십시오.
-    2) ★ 2순위 (serial_candidates): 모듈/채널 식별 태그("CON-B2")가 함께 있다면 2순위 후보로 등록하십시오.
-    3) 예시 JSON:
-       {
-         "raw_serial": "210708-28",
-         "serial_candidates": [
-           { "label": "SN (고유시리얼)", "value": "210708-28" },
-           { "label": "모듈 태그", "value": "CON-B2" }
-         ]
-       }
-
-◆ 유형 2: 산업용 PC 본체 윈도우 키 & PC 시리얼 라벨 (예: 'WIN11 S/N' 및 'PC S/N')
-  - 'WIN11 S/N' 25자리 정품 키와 'PC S/N'이 있는 경우:
-    1) ★ 1순위: 25자리 윈도우 키("2398N-XY7BW-W962X-WDDVV-T3FC3")를 단 1글자도 자르지 말고 끝까지 100% 전사하십시오.
-    2) ★ 2순위: PC 하드웨어 시리얼("KSA7706705")을 2순위로 등록하십시오.
+[2. 비시리얼 하드웨어 기호 엄격 제외]
+- 단자대 핀 배열 기호("CHANNEL", "OUTPUT", "FAULT", "01~20", "CON1", "AiN 1-6", "GND", "VS", "PWR", "CAN" 등)나 케이블 번호("SMP-24" 등), 전원 사양("24VDC", "5A" 등)은 시리얼 번호가 아니므로 절대 추출하지 마십시오.
 
 [3. 엄격한 원문 복사 모드 (Strict Literal Transcribe Mode)]
-- 임의 추론, 사전 단어 완성, 문맥적 철자 교정, 임의 문자 스왑을 완전히 차단하십시오.
-- 오직 이미지 픽셀에 물리적으로 존재하는 획(Stroke)과 텍스트만을 있는 그대로 전사(Raw Transcribe)하십시오.
-- 하이픈(-), 콜론(:)은 이미지에 인쇄된 형태 그대로 정확히 분별하십시오.
+- 임의 추론, 사전 단어 완성, 문맥적 철자 교정을 절대 하지 마십시오.
+- 오직 이미지에 물리적으로 존재하는 획(Stroke)과 텍스트만을 100% 있는 그대로 전사하십시오.
+- 하이픈(-), 콜론(:) 등의 구분 기호는 원본 형태를 정확히 보존하십시오.
+- 'SN:', 'S/N:', 'WIN11 S/N:', 'PC S/N:' 등의 접두사는 value에서 제외하고 순수 번호만 담되, 라벨 정보는 label 필드에 기록하십시오.
 
-[4. 라벨 회전 및 세로 방향 자동 보정 (Orientation Invariance)]
-- 이미지가 회전(90°/180°/270°)되었거나 비스듬히 기울어져 있어도 글자 방향을 스스로 감지하여 정상 순서대로 판독하십시오.
+[4. 회전 및 각도 자동 보정 (Orientation Invariance)]
+- 이미지가 회전(90°/180°/270°)되었거나 비스듬히 기울어져 있어도 문자의 올바른 정방향을 스스로 감지하여 정상 순서대로 판독하십시오.
 
 [5. Strict JSON 출력 스키마]
 반드시 아래 JSON 형식으로만 응답하십시오:
 {
-  "raw_serial": "210708-28",
+  "raw_serial": "가장 대표적인 고유 일련번호(접두사 제외)",
   "serial_candidates": [
-    { "label": "SN (고유시리얼)", "value": "210708-28" },
-    { "label": "모듈 태그", "value": "CON-B2" }
+    { "label": "라벨 명칭(예: WIN11 S/N, PC S/N, SN, 모듈태그, 일련번호 등)", "value": "순수 번호" },
+    { "label": "두 번째 라벨 명칭", "value": "두 번째 순수 번호" }
   ],
-  "source_type": "yellow_label",
-  "model_name": "MODULE",
+  "source_type": "label_or_plate",
+  "model_name": "식별된 제품 모델명(예: IPC, CON, LabJack 등, 없으면 null)",
   "notes": null,
   "low_confidence_chars": []
 }`;
@@ -242,9 +230,9 @@ export async function performGeminiDeepOcr(
     const rawPrimary = parsed.raw_serial || parsed.serial_number_primary || parsed.best_serial || "";
     let literalSerial = cleanPrefixOnly(rawPrimary);
 
+    // 1. 다중 후보(serial_candidates) 및 원문 정밀 수집
     const candidatesList: string[] = [];
 
-    // 다중 후보(serial_candidates) 파싱
     if (parsed.serial_candidates && Array.isArray(parsed.serial_candidates)) {
       for (const cand of parsed.serial_candidates) {
         const val = typeof cand === "string" ? cand : cand?.value;
@@ -257,65 +245,45 @@ export async function performGeminiDeepOcr(
       }
     }
 
-    // 전체 JSON 응답에서 25자리 윈도우 키, KSA PC S/N, 및 산업용 날짜-순번 시리얼(예: 210708-28) 정밀 스캔
+    // 전체 JSON 응답에서 발견되는 유효 패턴들(윈도우키, 날짜-순번시리얼, PC시리얼, 모듈태그) 누락 방지 수집
     const fullJsonStr = JSON.stringify(parsed);
-    let winMatch = fullJsonStr.match(/\b([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5})\b/i);
-    if (!winMatch) {
-      const spaceWin = fullJsonStr.match(/\b([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})\b/i);
-      if (spaceWin) {
-        winMatch = [spaceWin[0], `${spaceWin[1]}-${spaceWin[2]}-${spaceWin[3]}-${spaceWin[4]}-${spaceWin[5]}`.toUpperCase()] as any;
-      }
+    const winMatch = fullJsonStr.match(/\b([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5})\b/i);
+    if (winMatch && !candidatesList.includes(winMatch[1].toUpperCase())) {
+      candidatesList.push(winMatch[1].toUpperCase());
+    }
+    const dateMatch = fullJsonStr.match(/\b([0-9]{6}-[0-9]{1,4})\b/);
+    if (dateMatch && !candidatesList.includes(dateMatch[1])) {
+      candidatesList.push(dateMatch[1]);
     }
     const pcMatch = fullJsonStr.match(/\b(KSA[0-9]{6,10})\b/i);
-    const dateSerialMatch = fullJsonStr.match(/\b([0-9]{6}-[0-9]{1,4})\b/);
-    const conTagMatch = fullJsonStr.match(/\b(CON-[A-Z0-9]+)\b/i);
+    if (pcMatch && !candidatesList.includes(pcMatch[1].toUpperCase())) {
+      candidatesList.push(pcMatch[1].toUpperCase());
+    }
+    const conMatch = fullJsonStr.match(/\b(CON-[A-Z0-9]+)\b/i);
+    if (conMatch && !candidatesList.includes(conMatch[1].toUpperCase())) {
+      candidatesList.push(conMatch[1].toUpperCase());
+    }
 
-    const winKey = winMatch ? winMatch[1].toUpperCase() : candidatesList.find((c) => /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(c));
-    const pcSerial = pcMatch ? pcMatch[1].toUpperCase() : candidatesList.find((c) => /^KSA[0-9]{6,10}$/i.test(c) || (/^[A-Za-z0-9\-_]{6,18}$/i.test(c) && !c.includes("-")));
-    const dateSerial = dateSerialMatch ? dateSerialMatch[1] : candidatesList.find((c) => /^[0-9]{6}-[0-9]{1,4}$/.test(c));
-    const conTag = conTagMatch ? conTagMatch[1].toUpperCase() : candidatesList.find((c) => /^CON-[A-Z0-9]+$/i.test(c));
+    // 2. 특정 포맷을 편애하지 않고, 현재 작업자가 점검 중인 부품(targetPart) 컨텍스트에 맞게 자연스럽게 기본 선택
+    const targetText = `${context?.partName || ""} ${context?.spec || ""} ${context?.subSpec || ""}`.toUpperCase();
+    const isWindowsTarget = /WIN|WINDOWS|OS|라이선스|라이센스|SW|소프트웨어|KEY/i.test(targetText);
+    const isPcTarget = /PC|IPC|본체|컴퓨터|산업용|HW|메인/i.test(targetText);
 
-    if (dateSerial) {
-      // ★ 산업용 모듈 시리얼(210708-28) 우선 배치: 1순위 = 210708-28, 2순위 = CON-B2 모듈태그
-      literalSerial = dateSerial;
-      const otherCands = candidatesList.filter((c) => c !== dateSerial && c !== conTag);
+    if (isWindowsTarget) {
+      const winKey = candidatesList.find((c) => /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(c));
+      if (winKey) literalSerial = winKey;
+    } else if (isPcTarget) {
+      const pcSerial = candidatesList.find((c) => /^KSA[0-9]{6,10}$/i.test(c));
+      if (pcSerial) literalSerial = pcSerial;
+    }
+
+    // 기본 시리얼을 맨 앞으로 정렬하되, 감지된 모든 후보 번호를 빠짐없이 보존
+    if (literalSerial) {
+      const others = candidatesList.filter((c) => c !== literalSerial);
       candidatesList.length = 0;
-      candidatesList.push(dateSerial);
-      if (conTag) candidatesList.push(conTag);
-      candidatesList.push(...otherCands);
-    } else if (winKey && pcSerial) {
-      // 윈도우 25자 키와 PC 시리얼이 둘 다 검출된 경우: 1순위 = 윈도우 키(추천 1), 2순위 = PC S/N(추천 2) 고정 정렬!
-      literalSerial = winKey;
-      const otherCands = candidatesList.filter((c) => c !== winKey && c !== pcSerial);
-      candidatesList.length = 0;
-      candidatesList.push(winKey, pcSerial, ...otherCands);
-    } else if (winKey) {
-      literalSerial = winKey;
-      if (!candidatesList.includes(winKey)) candidatesList.unshift(winKey);
-    } else if (pcSerial) {
-      literalSerial = pcSerial;
-      if (!candidatesList.includes(pcSerial)) candidatesList.unshift(pcSerial);
-    } else {
-      // 대상 부품 컨텍스트에 따른 1순위 시리얼 정렬
-      const targetText = `${context?.partName || ""} ${context?.spec || ""} ${context?.subSpec || ""}`.toUpperCase();
-      const isWindowsTarget = /WIN|WINDOWS|OS|라이선스|라이센스|SW|소프트웨어|KEY/i.test(targetText);
-      const isPcTarget = /PC|IPC|본체|컴퓨터|산업용|HW|메인/i.test(targetText);
-
-      if (isWindowsTarget && winKey) {
-        literalSerial = winKey;
-      } else if (isPcTarget && pcSerial) {
-        literalSerial = pcSerial;
-      }
-
-      if (literalSerial && !candidatesList.includes(literalSerial)) {
-        candidatesList.unshift(literalSerial);
-      } else if (literalSerial && candidatesList.includes(literalSerial)) {
-        const remaining = candidatesList.filter((c) => c !== literalSerial);
-        candidatesList.length = 0;
-        candidatesList.push(literalSerial, ...remaining);
-      } else if (!literalSerial && candidatesList.length > 0) {
-        literalSerial = candidatesList[0];
-      }
+      candidatesList.push(literalSerial, ...others);
+    } else if (candidatesList.length > 0) {
+      literalSerial = candidatesList[0];
     }
 
     let confidenceNumeric = 99;
