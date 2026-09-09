@@ -42,18 +42,10 @@ export const FIREBASE_CONFIG = DEFAULT_FIREBASE_CONFIG;
 
 /**
  * Firebase 설정이 실제 유효한 사용자 키로 입력되어 있는지 검증하는 함수
+ * (현재 Supabase PostgreSQL 중앙 DB로 완전히 전환되었으므로 비활성화)
  */
 export function isFirebaseConfigured(): boolean {
-  const config = getFirebaseConfig();
-  if (!config.apiKey || !config.projectId) return false;
-  if (
-    config.apiKey.includes("YOUR_FIREBASE_API_KEY") ||
-    config.apiKey.includes("PLACEHOLDER") ||
-    config.projectId === "vision-pass-withtech" // 기본 플레이스홀더일 경우 로컬 단독 동작
-  ) {
-    return false;
-  }
-  return true;
+  return false;
 }
 
 /**

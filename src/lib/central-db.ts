@@ -30,7 +30,7 @@ const STORAGE_LAST_SYNC_KEY = "VISION_PASS_LAST_SYNC_TIME";
 
 // Supabase 환경변수 (기본값 설정)
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://aodczkjhpejexhqwnhly.supabase.co";
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_zBx2CORfSytJ-dXnnorRog_lRTv4ghw";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvZGN6a2pocGVqZXhocXduaGx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4ODk5MzQsImV4cCI6MjEwNDQ2NTkzNH0.PzHD510QZ_dVCJC60eP1eGgKjX3Nn6dIJd3JozLSdjg";
 
 // ============================================================================
 // 2. 디바이스 식별자 & 방 키 관리
@@ -273,28 +273,33 @@ export async function saveCentralProjects(
   // 1. [Supabase REST 실시간 저장]
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync`, {
+      const headers: Record<string, string> = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates",
+      };
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?on_conflict=room_key`, {
         method: "POST",
-        headers: {
-          "apikey": SUPABASE_ANON_KEY,
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-          "Content-Type": "application/json",
-          "Prefer": "resolution=merge-duplicates",
-        },
+        headers,
         body: JSON.stringify({
           room_key: payload.roomKey,
           data: payload,
           updated_at: nowStr,
         }),
       });
+
       if (res.ok) {
         return { success: true, message: `Supabase 클라우드 실시간 저장 완료 (${projects.length}개 프로젝트)` };
       } else {
         const errBody = await res.text();
-        console.warn("Supabase save error response:", res.status, errBody);
+        console.error("Supabase save error response:", res.status, errBody);
+        return { success: false, message: `Supabase 저장 실패 (${res.status}): ${errBody}` };
       }
-    } catch (err) {
-      console.warn("Supabase write warning", err);
+    } catch (err: any) {
+      console.error("Supabase write warning", err);
+      return { success: false, message: `Supabase 네트워크 통신 오류: ${err?.message || err}` };
     }
   }
 
@@ -369,10 +374,26 @@ export async function fetchCentralProjects(
             updatedAt: payload.updatedAt || rows[0].updated_at,
             message: "Supabase 클라우드 데이터 동기화 완료",
           };
+        } else {
+          return {
+            success: false,
+            message: `[${cleanRoom}] 방에 저장된 데이터가 없습니다. 먼저 PC에서 [클라우드 저장]을 실행해주세요.`,
+          };
         }
+      } else {
+        const errBody = await res.text();
+        console.error("Supabase fetch error response:", res.status, errBody);
+        return {
+          success: false,
+          message: `Supabase 조회 실패 (${res.status}): ${errBody}`,
+        };
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Supabase fetch warning", err);
+      return {
+        success: false,
+        message: `Supabase 조회 네트워크 오류: ${err?.message || err}`,
+      };
     }
   }
 
