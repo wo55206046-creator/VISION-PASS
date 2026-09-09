@@ -146,22 +146,30 @@ export async function performGeminiDeepOcr(
     };
   }
 
-  // 2. Gemini API 호출 (순수 클라이언트 웹앱 직통 호출 - 80KB 초경량 JPEG 압축)
-  const streamABase64 = canvas.toDataURL("image/jpeg", 0.82).split(",")[1];
+  // 2. Gemini API 호출 (고화질 94% 무손실급 JPEG 직통 호출)
+  const streamABase64 = canvas.toDataURL("image/jpeg", 0.94).split(",")[1];
 
   let parsed: any = null;
 
   if (apiKey) {
     onProgress?.(35, "🤖 Gemini 2.0 Flash AI 정밀 시리얼 판독 중...");
     const modelCandidates = ["gemini-2.0-flash", "gemini-1.5-flash"];
-    const userText = `[대상 부품 정보]\n- 품명: ${context?.partName || "-"}\n- 규격: ${context?.spec || "-"}\n- 세부사양: ${context?.subSpec || "-"}\n\n제공된 이미지에서 제품 브랜드/모델명(예: LabJack U6-PRO 등)이나 단자대/웹주소가 아닌, 'SN:', 'S/N:', 'PC S/N:', 'WIN11 S/N:' 등 노란색 라벨에 기재된 [순수 시리얼 번호](예: KSA7965797, JHTBB-N94YW-9HGGV-78RD3-3PH23, 360025446, 260225-40 등)를 정확하게 찾아내어 raw_serial 및 serial_candidates로 전사하고 접두사를 제외한 번호를 반환하십시오. 윈도우 키와 PC 시리얼이 둘 다 있으면 serial_candidates에 둘 다 포함하십시오.`;
+    const userText = `[대상 부품 정보]
+- 품명: ${context?.partName || "-"}
+- 규격: ${context?.spec || "-"}
+- 세부사양: ${context?.subSpec || "-"}
+
+[판독 필수 지침]
+제공된 이미지에서 제품 브랜드/모델명이나 전원규격이 아닌, 노란색 라벨 스티커나 명판의 [고유 시리얼 번호]를 정확히 찾아내십시오.
+★ 중요: 윈도우 정품 키(WIN11 S/N)가 있을 경우, 절대로 앞의 10자리만 읽고 멈추지 마시고 반드시 5개 블록 총 25자리("XXXXX-XXXXX-XXXXX-XXXXX-XXXXX") 전체를 끝까지 누락 없이 1순위로 전사하십시오!
+★ PC S/N(예: KSA7706705 등 10자리)과 윈도우 25자리 키가 둘 다 인쇄되어 있다면, serial_candidates에 1순위 윈도우 키, 2순위 PC S/N으로 둘 다 포함하십시오.`;
 
     for (const model of modelCandidates) {
       try {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
 
         const requestBody = {
           system_instruction: {
@@ -191,7 +199,6 @@ export async function performGeminiDeepOcr(
           headers: {
             "Content-Type": "application/json",
             "x-goog-api-key": apiKey,
-            "Authorization": `Bearer ${apiKey}`,
           },
           body: JSON.stringify(requestBody),
           signal: controller.signal,
@@ -204,12 +211,12 @@ export async function performGeminiDeepOcr(
           if (rawContent) {
             rawContent = rawContent.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
             parsed = JSON.parse(rawContent);
+            console.log("✨ Gemini AI OCR 판독 성공:", parsed);
             break;
           }
         } else {
           const errText = await res.text();
           console.warn(`Gemini API [${model}] status ${res.status}:`, errText);
-          // API 키 형식 오류(400) 또는 권한 오류(403)인 경우 다른 모델 재시도 없이 즉시 로컬 OCR로 페일오버
           if (res.status === 400 || res.status === 403) {
             break;
           }
