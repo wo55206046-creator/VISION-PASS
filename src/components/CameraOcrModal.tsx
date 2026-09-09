@@ -287,8 +287,8 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
       // 노란색 라벨이 선명하게 포착된 경우 (50샘플 이상 & 유효 크기)
       if (yellowCount >= 45 && maxX > minX + 35 && maxY > minY + 12) {
-        const padX = Math.round((maxX - minX) * 0.4);
-        const padY = Math.round((maxY - minY) * 0.6);
+        const padX = Math.round((maxX - minX) * 0.6);
+        const padY = Math.round((maxY - minY) * 0.7);
         const x1 = Math.max(0, minX - padX);
         const y1 = Math.max(0, minY - padY);
         const w = Math.min(rawCanvas.width - x1, (maxX - minX) + padX * 2);
@@ -342,27 +342,27 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     }
     ctx.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
 
-    // ROI 타겟팅 정밀 크롭 (프리뷰 및 로컬 Tesseract 보조용)
+    // ROI 타겟팅 정밀 크롭 (25자리 긴 윈도우 키 끝 글자가 잘리지 않도록 98% 넓은 화각 확보)
     let baseRoiW: number;
     let baseRoiH: number;
 
     if (guideMode === "vertical") {
-      baseRoiW = rawCanvas.width * 0.58;
-      baseRoiH = rawCanvas.height * 0.88;
+      baseRoiW = rawCanvas.width * 0.60;
+      baseRoiH = rawCanvas.height * 0.90;
     } else if (guideMode === "full") {
-      baseRoiW = rawCanvas.width * 0.96;
-      baseRoiH = rawCanvas.height * 0.94;
+      baseRoiW = rawCanvas.width * 0.98;
+      baseRoiH = rawCanvas.height * 0.96;
     } else {
-      baseRoiW = rawCanvas.width * 0.92;
-      baseRoiH = rawCanvas.height * 0.52;
+      baseRoiW = rawCanvas.width * 0.98;
+      baseRoiH = rawCanvas.height * 0.58;
     }
 
     const roiWidth = hardwareZoomSupported
       ? baseRoiW
-      : Math.max(baseRoiW / zoomLevel, rawCanvas.width * 0.85);
+      : Math.max(baseRoiW / zoomLevel, rawCanvas.width * 0.90);
     const roiHeight = hardwareZoomSupported
       ? baseRoiH
-      : Math.max(baseRoiH / zoomLevel, rawCanvas.height * 0.38);
+      : Math.max(baseRoiH / zoomLevel, rawCanvas.height * 0.40);
 
     const roiX = (rawCanvas.width - roiWidth) / 2;
     const roiY = (rawCanvas.height - roiHeight) / 2;
@@ -522,10 +522,10 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               <div
                 className={`relative border-2 border-cyan-400/90 rounded-xl shadow-glow-cyan transition-all duration-300 ${
                   guideMode === "vertical"
-                    ? "w-[50%] h-[82%]"
+                    ? "w-[58%] h-[84%]"
                     : guideMode === "full"
-                    ? "w-[94%] h-[90%]"
-                    : "w-[86%] h-[44%]"
+                    ? "w-[96%] h-[92%]"
+                    : "w-[94%] h-[48%]"
                 }`}
               >
                 {/* 4 Corner Markers */}

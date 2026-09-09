@@ -436,10 +436,55 @@ export function extractSerialCandidates(
   };
 
   // ============================================================================
-  // [전역 최고 0순위 ★★★★★] S/N, SN, SERIAL, SER, S# 라벨 옆에 위치한 고유 일련번호 (15,000점 압도적 1순위!)
-  // 예: "SN: 360025446", "SN:360025446", "S/N: 210708-28", "SERIAL NO. 883912", "SN : KSA7706705"
+  // [전역 절대 0순위 ★★★★★★] WIN11 S/N / Windows Key 25자리 5x5 정품 라이선스 키 완벽 복원 (20,000점 절대 1순위!)
+  // 예: "2398N-XY7BW-W962X-WDDVV-T3FC3", "WIN11 S/N : 2398N XY7BW W962X WDDVV T3FC3"
   // ============================================================================
-  const snKeywordsRegex = /(?:S[\/\\|\-.;:]?\s*N|SN|5N|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*(?:NO\.?|#)?|S#|S\.N\.|S\/NO|일련\s*번호|시리얼\s*번호|시리얼)\s*[:.\-|=;#~_*\s]*([0-9A-Za-z\-_./]{4,25})/gi;
+  let detectedFullWinKey: string | null = null;
+
+  // 1) 25자리 5x5 하이픈 형태 (예: 2398N-XY7BW-W962X-WDDVV-T3FC3)
+  const fullWinMatch = rawText.match(/\b([A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5})\b/);
+  if (fullWinMatch && fullWinMatch[1]) {
+    detectedFullWinKey = fullWinMatch[1].toUpperCase();
+  } else {
+    // 2) 공백, 줄바꿈, 점, 언더바, 슬래시 등으로 쪼개진 5개 블록 결합 (예: 2398N XY7BW W962X WDDVV T3FC3)
+    const spacedWinMatch = rawText.match(/\b([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})\b/);
+    if (spacedWinMatch) {
+      detectedFullWinKey = `${spacedWinMatch[1]}-${spacedWinMatch[2]}-${spacedWinMatch[3]}-${spacedWinMatch[4]}-${spacedWinMatch[5]}`.toUpperCase();
+    } else {
+      // 3) WIN11 S/N 키워드 직후에 오는 5개 블록 결합
+      const winPrefixMatch = rawText.match(/(?:WIN(?:11|10|7|8|DOWS)?\s*S[\/\\|\-.;:]?\s*N|WIN(?:11|10|7|8|DOWS)?\s*KEY|WIN11|WIN10)\s*[:.\-|=;#~_*\s]*([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})/i);
+      if (winPrefixMatch) {
+        detectedFullWinKey = `${winPrefixMatch[1]}-${winPrefixMatch[2]}-${winPrefixMatch[3]}-${winPrefixMatch[4]}-${winPrefixMatch[5]}`.toUpperCase();
+      } else {
+        // 4) 하이픈 누락으로 연속 25자리가 읽힌 경우 (예: 2398NXY7BWW962XWDDVVT3FC3)
+        const solidWinMatch = rawText.match(/\b([A-Za-z0-9]{25})\b/);
+        if (solidWinMatch && /[A-Z]/.test(solidWinMatch[1].toUpperCase()) && /[0-9]/.test(solidWinMatch[1])) {
+          detectedFullWinKey = solidWinMatch[1].toUpperCase().replace(/(.{5})(?=.)/g, "$1-");
+        } else {
+          // 5) WIN11 / WIN S/N 키워드 직후의 텍스트에서 영숫자 25개를 순차 추출하여 5-5-5-5-5로 재조립
+          const winContextMatch = rawText.match(/(?:WIN(?:11|10|7|8|DOWS)?\s*S[\/\\|\-.;:]?\s*N|WIN(?:11|10|7|8|DOWS)?\s*KEY|WIN11|WIN10)\s*[:.\-|=;#~_*\s]+([A-Za-z0-9\s_\-.:/]{20,50})/i);
+          if (winContextMatch && winContextMatch[1]) {
+            const cleanChars = winContextMatch[1].replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+            if (cleanChars.length >= 25) {
+              const candidate = cleanChars.slice(0, 25);
+              detectedFullWinKey = candidate.replace(/(.{5})(?=.)/g, "$1-");
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (detectedFullWinKey) {
+    scoredMap.set(detectedFullWinKey, 20000);
+    console.log("🏆 [WIN11 25자리 키 100% 완전 조립 성공]:", detectedFullWinKey);
+  }
+
+  // ============================================================================
+  // [전역 1순위 ★★★★★] S/N, SN, SERIAL, SER, S# 라벨 옆에 위치한 고유 일련번호 (15,000점)
+  // ★ 중요: 최대 길이를 {4,35}로 확장하여 25자리 키나 긴 시리얼이 절대 잘리지 않도록 함!
+  // ============================================================================
+  const snKeywordsRegex = /(?:S[\/\\|\-.;:]?\s*N|SN|5N|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*(?:NO\.?|#)?|S#|S\.N\.|S\/NO|일련\s*번호|시리얼\s*번호|시리얼)\s*[:.\-|=;#~_*\s]*([0-9A-Za-z\-_./]{4,35})/gi;
   let snMatch: RegExpExecArray | null;
   while ((snMatch = snKeywordsRegex.exec(rawText)) !== null) {
     if (snMatch[1]) {
@@ -448,6 +493,18 @@ export function extractSerialCandidates(
       if (sanitized && isValidSerialFormat(sanitized)) {
         const disambiguated = disambiguateSerialToken(sanitized);
         const upper = disambiguated.toUpperCase();
+
+        // 25자리 5x5 윈도우 키인 경우 20,000점 부여
+        if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(upper)) {
+          scoredMap.set(upper, 20000);
+          continue;
+        }
+
+        // 이미 25자리 완전한 키가 검출되었는데 4개 블록(20자리)만 잘린 파편인 경우 등록 제외
+        if (detectedFullWinKey && detectedFullWinKey.startsWith(upper.replace(/-$/, ""))) {
+          continue;
+        }
+
         // 모델명 접미사(-PRO, U6-PRO 등)나 규격 블랙리스트가 아닌 경우 15,000점 부여!
         if (!IGNORE_WORDS.has(upper) && !/(?:-PRO|-PLUS|-MAX|-MINI|-LITE|-REV|-VER)$/i.test(upper)) {
           const score = /^[0-9]{6,14}$/.test(disambiguated) || /^[0-9]{6}-[0-9]{1,4}$/.test(disambiguated) ? 15000 : 14000;
@@ -457,21 +514,8 @@ export function extractSerialCandidates(
     }
   }
 
-  // 1) 25자리 5x5 하이픈 형태 (예: 2398N-XY7BW-W962X-WDDVV-T3FC3)
-  const fullWinMatch = rawText.match(/\b([A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5})\b/);
-  if (fullWinMatch && fullWinMatch[1]) {
-    scoredMap.set(fullWinMatch[1].toUpperCase(), 5000);
-  } else {
-    // 공백/줄바꿈/언더바로 쪼개진 5개 블록 결합 (예: 2398N XY7BW W962X WDDVV T3FC3)
-    const spacedWinMatch = rawText.match(/\b([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})[\s_\-:]([A-Za-z0-9]{5})\b/);
-    if (spacedWinMatch) {
-      const assembled = `${spacedWinMatch[1]}-${spacedWinMatch[2]}-${spacedWinMatch[3]}-${spacedWinMatch[4]}-${spacedWinMatch[5]}`.toUpperCase();
-      scoredMap.set(assembled, 4900);
-    }
-  }
-
   // 1-1) P/N / Part No / 품번 전역 매칭 (4900점)
-  const fullPnMatch = rawText.match(/(?:P\s*[\/\\|\-.]\s*N|PART\s*(?:NO\.?|NUMBER)?|품번)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{4,25})/i);
+  const fullPnMatch = rawText.match(/(?:P\s*[\/\\|\-.]\s*N|PART\s*(?:NO\.?|NUMBER)?|품번)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/i);
   if (fullPnMatch && fullPnMatch[1]) {
     scoredMap.set(fullPnMatch[1].trim().toUpperCase(), 4900);
   }
@@ -514,9 +558,9 @@ export function extractSerialCandidates(
       baseScore -= 800;
     }
 
-    // 3. 25자리 5x5 윈도우 정품 라이센스 키 (예: JHTBB-N94YW-9HGGV-78RD3-3PH23) (가산점 +3000)
+    // 3. 25자리 5x5 윈도우 정품 라이센스 키 (예: 2398N-XY7BW-W962X-WDDVV-T3FC3)
     if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cleaned)) {
-      baseScore += 3000;
+      baseScore += 5000;
     }
 
     // 4. KSA 하드웨어/PC 시리얼 (예: KSA7965797, KSA7706685) (+1600)
@@ -562,26 +606,27 @@ export function extractSerialCandidates(
   // [전략 1] S/N :, Serial Number, SERIAL, Serial, S/N 및 수기/한글 라벨 우측 값 직접 추출
   // ============================================================================
   const labelRightRegexes = [
-    // ★★★ [0순위 최고 우선순위] SN: / S/N: / SERIAL: / SER: 직후 4~25자리 고유 일련번호 (15,000점 압도적 1순위)
+    // ★★★ [절대 0순위] WIN11 S/N / WIN S/N / Windows Key 25자리 정품 키 (20,000점)
+    // 예: "WIN11 S/N : 2398N-XY7BW-W962X-WDDVV-T3FC3", "WIN11 S/N : JHTBB-N94YW-9HGGV-78RD3-3PH23"
+    {
+      regex: /(?:WIN(?:11|10|7|8|DOWS)?\s*S[\/\\|\-.;:]?\s*N|WIN(?:11|10|7|8|DOWS)?\s*KEY|WIN(?:11|10|7|8)?)\s*[:.\-|=;#~_*\s]*([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}|[A-Za-z0-9\-_]{4,35})/gi,
+      score: 20000,
+    },
+    // ★★★ [0순위] 25자리 5x5 윈도우 정품키 단독 패턴 (예: "2398N-XY7BW-W962X-WDDVV-T3FC3") (19,500점)
+    {
+      regex: /\b([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5})\b/gi,
+      score: 19500,
+    },
+    // ★★★ [0순위 최고 우선순위] SN: / S/N: / SERIAL: / SER: 직후 4~35자리 고유 일련번호 (15,000점 압도적 1순위)
     // 예: "SN: 360025446" -> 360025446, "SN:360025446", "S/N: 260225-40" -> 260225-40, "SERIAL NO: 99401"
     {
-      regex: /(?:S\s*[\/\\|\-.;:]?\s*N|5\s*[\/\\|\-.;:]?\s*N|S\s*N|SN|5N|S#|S\.N\.|S\/NO|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*(?:NO\.?|#)?)\s*[:.\-|=;#~_*\s]+([0-9A-Za-z\-_]{4,25})/gi,
+      regex: /(?:S\s*[\/\\|\-.;:]?\s*N|5\s*[\/\\|\-.;:]?\s*N|S\s*N|SN|5N|S#|S\.N\.|S\/NO|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*(?:NO\.?|#)?)\s*[:.\-|=;#~_*\s]+([0-9A-Za-z\-_]{4,35})/gi,
       score: 15000,
     },
     // 1-0-0-P. 품번 / Part Number / P/N / Item No / 품목번호 / 도번 (예: "P/N : 1234-ABCD", "PART NO: FX-300", "품번: M8812") (4900점)
     {
       regex: /(?:P\s*[\/\\|\-.]\s*N|PART\s*(?:NO\.?|NUMBER|#|CODE)?|ITEM\s*(?:NO\.?|#|NUMBER)|품\s*번|품목\s*번호|도\s*번|MAT\s*NO\.?)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/gi,
       score: 4900,
-    },
-    // 1-0-0-0. WIN11 S/N / WIN S/N / Windows Key 25자리 정품 키 (예: "WIN11 S/N : JHTBB-N94YW-9HGGV-78RD3-3PH23") (2900점)
-    {
-      regex: /(?:WIN(?:11|10|7|8|DOWS)?\s*S[\/\\|\-.]?N|WIN(?:11|10|7|8|DOWS)?\s*KEY|WIN(?:11|10|7|8)?)\s*[:.\-|=;#\s]*([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}|[A-Za-z0-9\-_]{4,35})/gi,
-      score: 2900,
-    },
-    // 1-0-0-0-1. 25자리 5x5 윈도우 정품키 단독 패턴 (예: "JHTBB-N94YW-9HGGV-78RD3-3PH23") (2850점)
-    {
-      regex: /\b([A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5})\b/gi,
-      score: 2850,
     },
     // 1-0-0-0-2. PC S/N / IPC S/N (예: "PC S/N : KSA7965797", "IPC S/N : KSA7706685") (2800점)
     {
@@ -751,25 +796,48 @@ export function extractSerialCandidates(
     }
   }
 
+  // 윈도우 25자리 키가 감지된 경우: 윈도우 키의 앞부분 파편(예: 4개 블록, 3개 블록 등)은 완벽 제거
+  let fullWinCandidate: string | null = null;
+  for (const serial of scoredMap.keys()) {
+    if (/^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(serial)) {
+      fullWinCandidate = serial;
+      break;
+    }
+  }
+
+  if (fullWinCandidate) {
+    const rawClean = fullWinCandidate.replace(/-/g, "");
+    for (const key of Array.from(scoredMap.keys())) {
+      if (key !== fullWinCandidate) {
+        const cleanK = key.replace(/[\s-]/g, "");
+        if (cleanK.length >= 8 && rawClean.includes(cleanK)) {
+          scoredMap.delete(key);
+        }
+      }
+    }
+  }
+
   const sortedCandidates: ScoredCandidate[] = Array.from(scoredMap.entries())
     .map(([serial, score]) => ({ serial, score }))
     .filter((c) => c.score >= 40)
     .sort((a, b) => b.score - a.score);
 
   const rawCandidates = sortedCandidates.map((c) => c.serial);
-  const winKey = rawCandidates.find((c) => /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(c));
+  const winKey = fullWinCandidate || rawCandidates.find((c) => /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(c));
   const pcSerial = rawCandidates.find((c) => /^KSA[0-9]{6,10}$/i.test(c) || (/^[A-Za-z0-9\-_]{6,18}$/i.test(c) && !c.includes("-")));
 
   const dateSerial = rawCandidates.find((c) => /^[0-9]{6}-[0-9]{1,4}$/.test(c));
   const conTag = rawCandidates.find((c) => /^CON-[A-Z0-9]+$/i.test(c));
 
-  // 🎯 최고 득점자가 10,000점 이상(SN:, S/N:, SERIAL: 키워드 우측 값)인 경우:
-  // 윈도우 키나 PC S/N보다도 무조건 해당 번호를 1순위로 확정!
+  // 🎯 윈도우 키가 감지된 경우: 25자리 완전 정품 키를 무조건 1순위로 즉시 확정!
   const topCandidate = sortedCandidates[0]?.serial;
   const topScore = sortedCandidates[0]?.score || 0;
 
   let finalCands: string[] = [];
-  if (topScore >= 10000 && topCandidate) {
+  if (winKey) {
+    const others = rawCandidates.filter((c) => c !== winKey);
+    finalCands = [winKey, ...others];
+  } else if (topScore >= 10000 && topCandidate) {
     const others = rawCandidates.filter((c) => c !== topCandidate);
     finalCands = [topCandidate, ...others];
   } else if (dateSerial) {
@@ -778,12 +846,9 @@ export function extractSerialCandidates(
     finalCands = [dateSerial];
     if (conTag) finalCands.push(conTag);
     finalCands.push(...others);
-  } else if (winKey && pcSerial) {
-    const others = rawCandidates.filter((c) => c !== winKey && c !== pcSerial);
-    finalCands = [winKey, pcSerial, ...others];
-  } else if (winKey) {
-    const others = rawCandidates.filter((c) => c !== winKey);
-    finalCands = [winKey, ...others];
+  } else if (pcSerial) {
+    const others = rawCandidates.filter((c) => c !== pcSerial);
+    finalCands = [pcSerial, ...others];
   } else {
     finalCands = rawCandidates;
   }

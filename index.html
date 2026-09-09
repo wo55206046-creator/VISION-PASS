@@ -1861,25 +1861,44 @@
           await worker.terminate();
 
           const raw = ret.data.text || "";
-          // 1순위: S/N, SN, SERIAL, SER 직후 고유 일련번호 (노란 라벨 스티커 최우선)
-          const snMatch = raw.match(/(?:S[\/\\|\-.;:]?\s*N|SN|5N|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*(?:NO\.?|#)?|S#|S\.N\.|S\/NO)\s*[:.\-|=;#~_*\s]*([0-9A-Za-z\-_./]{4,25})/i);
+
+          // ★ [절대 0순위] 25자리 5x5 WIN11 정품 라이선스 키 완벽 복원 & 최우선 확정
+          let detectedWinKey = null;
+          const fullWin = raw.match(/\b([A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5})\b/);
+          if (fullWin) {
+            detectedWinKey = fullWin[1].toUpperCase();
+          } else {
+            const spacedWin = raw.match(/\b([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})[\s_\-.:/]+([A-Za-z0-9]{5})\b/);
+            if (spacedWin) {
+              detectedWinKey = `${spacedWin[1]}-${spacedWin[2]}-${spacedWin[3]}-${spacedWin[4]}-${spacedWin[5]}`.toUpperCase();
+            } else {
+              const winLabelMatch = raw.match(/(?:WIN(?:11|10|7|8|DOWS)?\s*S[\/\\|\-.;:]?\s*N|WIN(?:11|10|7|8|DOWS)?\s*KEY|WIN11|WIN10)\s*[:.\-|=;#~_*\s]+([A-Za-z0-9\s_\-.:/]{20,50})/i);
+              if (winLabelMatch && winLabelMatch[1]) {
+                const cleanChars = winLabelMatch[1].replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+                if (cleanChars.length >= 25) {
+                  detectedWinKey = cleanChars.slice(0, 25).replace(/(.{5})(?=.)/g, "$1-");
+                }
+              }
+            }
+          }
+
+          // 1순위: S/N, SN, SERIAL, SER 직후 고유 일련번호 (길이 {4,35}로 절대 잘리지 않음)
+          const snMatch = raw.match(/(?:S[\/\\|\-.;:]?\s*N|SN|5N|SERIAL\s*(?:NO\.?|#|NUMBER)?|SER\.?\s*(?:NO\.?|#)?|S#|S\.N\.|S\/NO)\s*[:.\-|=;#~_*\s]*([0-9A-Za-z\-_./]{4,35})/i);
           // 2순위: 6~14자리 순수 숫자 시리얼 (예: 360025446)
           const numMatch = raw.match(/\b([0-9]{6,14})\b/);
           // 3순위: 품번(P/N)
           const pnMatch = raw.match(/(?:P\s*[\/\\|\-.]\s*N|PART\s*(?:NO\.?|NUMBER)?|품번|ITEM\s*NO\.?)\s*[:.\-|=;#\s]*([A-Za-z0-9\-_./]{3,35})/i);
-          // 4순위: 25자리 윈도우 키
-          const winMatch = raw.match(/\b([A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5}-[A-Za-z0-9]{5})\b/);
-          const genMatch = raw.match(/[A-Z0-9\-_]{4,25}/g);
+          const genMatch = raw.match(/[A-Z0-9\-_]{4,35}/g);
 
           let best = "";
-          if (snMatch && snMatch[1]) {
+          if (detectedWinKey) {
+            best = detectedWinKey;
+          } else if (snMatch && snMatch[1]) {
             best = snMatch[1].trim().toUpperCase();
           } else if (numMatch && numMatch[1]) {
             best = numMatch[1];
           } else if (pnMatch && pnMatch[1]) {
             best = pnMatch[1].trim().toUpperCase();
-          } else if (winMatch && winMatch[1]) {
-            best = winMatch[1].toUpperCase();
           } else if (genMatch && genMatch.length > 0) {
             best = genMatch[0].toUpperCase();
           } else {
