@@ -1,15 +1,10 @@
 import { ProjectMaster } from "@/types";
-import {
-  FIREBASE_CONFIG,
-  getFirebaseConfig,
-  isFirebaseConfigured,
-} from "./firebase-config";
 
 // ============================================================================
-// 1. 중앙 원격 데이터베이스 설정 및 인터페이스 정의
+// 1. 중앙 원격 데이터베이스 설정 및 인터페이스 정의 (Supabase 전용)
 // ============================================================================
 export interface CentralDbConfig {
-  provider: "firebase" | "supabase" | "local";
+  provider: "supabase" | "local";
   endpoint: string;
   roomKey: string;
 }
@@ -77,14 +72,6 @@ export function getActiveDbConfig(): CentralDbConfig {
     return {
       provider: "supabase",
       endpoint: SUPABASE_URL,
-      roomKey,
-    };
-  }
-  const fbConf = getFirebaseConfig();
-  if (isFirebaseConfigured()) {
-    return {
-      provider: "firebase",
-      endpoint: `https://${fbConf.projectId}.firebaseio.com`,
       roomKey,
     };
   }
@@ -175,71 +162,12 @@ export function subscribeLocalBroadcast(onUpdate: (projects: ProjectMaster[]) =>
 }
 
 // ============================================================================
-// 5. Google Firebase Firestore CDN 동적 로더 & 인스턴스 싱글톤
-// ============================================================================
-let firestoreDbInstance: any = null;
-let firestoreLoadingPromise: Promise<any> | null = null;
-
-async function getFirestoreDb(): Promise<any> {
-  if (firestoreDbInstance) return firestoreDbInstance;
-  if (typeof window === "undefined") return null;
-
-  if (firestoreLoadingPromise) return firestoreLoadingPromise;
-
-  firestoreLoadingPromise = new Promise((resolve) => {
-    const config = getFirebaseConfig();
-    if ((window as any).firebase?.firestore) {
-      const fb = (window as any).firebase;
-      if (!fb.apps.length) {
-        fb.initializeApp(config);
-      }
-      firestoreDbInstance = fb.firestore();
-      return resolve(firestoreDbInstance);
-    }
-
-    // 1. Firebase App CDN 스크립트 로드
-    const scriptApp = document.createElement("script");
-    scriptApp.src = "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js";
-    scriptApp.async = true;
-
-    scriptApp.onload = () => {
-      // 2. Firebase Firestore CDN 스크립트 로드
-      const scriptFirestore = document.createElement("script");
-      scriptFirestore.src = "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js";
-      scriptFirestore.async = true;
-
-      scriptFirestore.onload = () => {
-        try {
-          const fb = (window as any).firebase;
-          if (fb && !fb.apps.length) {
-            fb.initializeApp(config);
-          }
-          firestoreDbInstance = fb?.firestore ? fb.firestore() : null;
-          resolve(firestoreDbInstance);
-        } catch (e) {
-          console.warn("Firestore initialization error", e);
-          resolve(null);
-        }
-      };
-
-      scriptFirestore.onerror = () => resolve(null);
-      document.head.appendChild(scriptFirestore);
-    };
-
-    scriptApp.onerror = () => resolve(null);
-    document.head.appendChild(scriptApp);
-  });
-
-  return firestoreLoadingPromise;
-}
-
-// ============================================================================
-// 6. 데이터 저장 및 조회 (로컬 스토리지 우선 보존 + Firestore 연동)
+// 5. 데이터 저장 및 조회 (Supabase 클라우드 + 로컬 스토리지 전수 복구)
 // ============================================================================
 let memoryCacheProjects: ProjectMaster[] | null = null;
 
 /**
- * 💾 프로젝트 데이터 저장 (LocalStorage 기본 + Firebase Firestore 동기화)
+ * 💾 프로젝트 데이터 저장 (Supabase 클라우드 실시간 저장 + LocalStorage 안전 보관)
  */
 export async function saveCentralProjects(
   projects: ProjectMaster[],
@@ -268,12 +196,7 @@ export async function saveCentralProjects(
     projects,
   };
 
-  const cleanDocKey = getCleanTopicKey(roomKey);
-
-  let supabaseSaved = false;
-  let firestoreSaved = false;
-
-  // 1. [Supabase REST 실시간 저장]
+  // 2. [Supabase REST 실시간 저장]
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
       const headers: Record<string, string> = {
@@ -294,7 +217,7 @@ export async function saveCentralProjects(
       });
 
       if (res.ok) {
-        supabaseSaved = true;
+        return { success: true, message: `Supabase 클라우드 실시간 저장 완료 (${projects.length}개 프로젝트)` };
       } else {
         const errBody = await res.text();
         console.warn("Supabase save error response:", res.status, errBody);
@@ -304,33 +227,11 @@ export async function saveCentralProjects(
     }
   }
 
-  // 2. [Firebase Firestore CDN 실시간 저장 (동시 동기화)]
-  if (isFirebaseConfigured()) {
-    try {
-      const db = await getFirestoreDb();
-      if (db) {
-        const cleanPayload = JSON.parse(JSON.stringify(payload));
-        await db.collection("vision_pass_rooms").doc(cleanDocKey).set(cleanPayload);
-        firestoreSaved = true;
-      }
-    } catch (err) {
-      console.warn("Firebase Firestore write warning", err);
-    }
-  }
-
-  if (supabaseSaved && firestoreSaved) {
-    return { success: true, message: `클라우드 실시간 저장 완료 (Supabase + Firebase, ${projects.length}개 프로젝트)` };
-  } else if (supabaseSaved) {
-    return { success: true, message: `Supabase 클라우드 실시간 저장 완료 (${projects.length}개 프로젝트)` };
-  } else if (firestoreSaved) {
-    return { success: true, message: `Firebase Firestore 실시간 저장 완료 (${projects.length}개 프로젝트)` };
-  }
-
   return { success: true, message: "로컬 스토리지에 안전하게 저장되었습니다." };
 }
 
 /**
- * 📥 프로젝트 데이터 로드 (메모리 / Supabase / Firestore / 로컬 스토리지 레거시 전수 복구)
+ * 📥 프로젝트 데이터 로드 (Supabase 클라우드 / 로컬 스토리지 레거시 전수 복구)
  */
 export async function fetchCentralProjects(
   roomKey: string = getSyncRoomKey()
@@ -341,7 +242,6 @@ export async function fetchCentralProjects(
   message?: string;
 }> {
   const cleanRoom = (roomKey || DEFAULT_ROOM_KEY).toUpperCase();
-  const cleanDocKey = getCleanTopicKey(roomKey);
 
   // 1. [Supabase REST 조회 시도]
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
@@ -383,46 +283,11 @@ export async function fetchCentralProjects(
         }
       }
     } catch (err: any) {
-      console.warn("Supabase fetch warning, trying Firestore fallback", err);
+      console.warn("Supabase fetch warning, checking local storage", err);
     }
   }
 
-  // 2. [Firebase Firestore 조회 시도 (Supabase에 없거나 이전 7개 프로젝트 DB 연동 복원)]
-  if (isFirebaseConfigured()) {
-    try {
-      const db = await getFirestoreDb();
-      if (db) {
-        const docSnapshot = await db.collection("vision_pass_rooms").doc(cleanDocKey).get();
-        if (docSnapshot.exists) {
-          const data = docSnapshot.data();
-          if (data && Array.isArray(data.projects) && data.projects.length > 0) {
-            memoryCacheProjects = data.projects;
-            if (typeof window !== "undefined") {
-              try {
-                localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(data.projects));
-                if (data.updatedAt) {
-                  localStorage.setItem(STORAGE_LAST_SYNC_KEY, data.updatedAt);
-                }
-              } catch {}
-            }
-            // Supabase에도 자동 동기화(마이그레이션 백필)
-            saveCentralProjects(data.projects, roomKey).catch(() => {});
-
-            return {
-              success: true,
-              projects: data.projects,
-              updatedAt: data.updatedAt || new Date().toISOString(),
-              message: `Firebase Firestore 데이터 연동 복원 완료 (${data.projects.length}개 프로젝트)`,
-            };
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("Firestore fetch warning", err);
-    }
-  }
-
-  // 3. [로컬 스토리지 캐시 및 레거시(V7, V6, V5, V2, V1...) 전수 탐색 복구]
+  // 2. [로컬 스토리지 캐시 및 레거시(V7, V6, V5, V2, V1...) 전수 탐색 복구]
   if (typeof window !== "undefined") {
     try {
       const KNOWN_KEYS = [
@@ -448,7 +313,7 @@ export async function fetchCentralProjects(
         if (raw) {
           try {
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].pjtCode !== undefined) {
+            if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
               if (!bestProjects || parsed.length > bestProjects.length) {
                 bestProjects = parsed;
               }
@@ -470,7 +335,7 @@ export async function fetchCentralProjects(
                 : parsed?.projects && Array.isArray(parsed.projects)
                 ? parsed.projects
                 : null;
-              if (list && list.length > 0 && list[0].pjtCode) {
+              if (list && list.length > 0 && (list[0].pjtCode || list[0].site)) {
                 if (!bestProjects || list.length > bestProjects.length) {
                   bestProjects = list;
                 }
@@ -499,7 +364,7 @@ export async function fetchCentralProjects(
 }
 
 // ============================================================================
-// 7. 실시간 동기화 리스너 (Supabase 스마트 폴링 & Firebase Firestore onSnapshot)
+// 6. 실시간 동기화 리스너 (Supabase 3.5초 스마트 폴링)
 // ============================================================================
 export function subscribeCentralRealtime(
   onUpdate: (projects: ProjectMaster[]) => void,
@@ -508,12 +373,10 @@ export function subscribeCentralRealtime(
   if (typeof window === "undefined") return () => {};
 
   const cleanRoom = (roomKey || DEFAULT_ROOM_KEY).toUpperCase();
-  const cleanDocKey = getCleanTopicKey(roomKey);
   let isUnsubscribed = false;
-  let unsubscribeFirestore: (() => void) | null = null;
   let supabasePollTimer: any = null;
 
-  // 1. Supabase 실시간 동기화 (3.5초 주기 스마트 폴링)
+  // Supabase 실시간 동기화 (3.5초 주기 스마트 폴링)
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     let lastKnownTimestamp = "";
     supabasePollTimer = setInterval(async () => {
@@ -555,56 +418,10 @@ export function subscribeCentralRealtime(
     }, 3500);
   }
 
-  // 2. Firebase Firestore가 설정되어 있을 때 Firestore 실시간 리스너 실행
-  if (isFirebaseConfigured()) {
-    getFirestoreDb().then((db) => {
-      if (isUnsubscribed || !db) return;
-
-      try {
-        unsubscribeFirestore = db
-          .collection("vision_pass_rooms")
-          .doc(cleanDocKey)
-          .onSnapshot(
-            (docSnapshot: any) => {
-              if (isUnsubscribed || !docSnapshot || !docSnapshot.exists) return;
-              const data = docSnapshot.data();
-              if (
-                data &&
-                Array.isArray(data.projects) &&
-                data.projects.length > 0 &&
-                data.senderDeviceId !== getDeviceId()
-              ) {
-                memoryCacheProjects = data.projects;
-                if (typeof window !== "undefined") {
-                  try {
-                    localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(data.projects));
-                    if (data.updatedAt) {
-                      localStorage.setItem(STORAGE_LAST_SYNC_KEY, data.updatedAt);
-                    }
-                  } catch {}
-                }
-                onUpdate(data.projects);
-              }
-            },
-            (error: any) => {
-              console.warn("Firestore snapshot listener warning", error);
-            }
-          );
-      } catch (err) {
-        console.warn("Failed to attach Firestore snapshot listener", err);
-      }
-    });
-  }
-
   return () => {
     isUnsubscribed = true;
     if (supabasePollTimer) {
       clearInterval(supabasePollTimer);
-    }
-    if (unsubscribeFirestore) {
-      try {
-        unsubscribeFirestore();
-      } catch {}
     }
   };
 }
