@@ -84,20 +84,41 @@ export async function processSyncQueue(): Promise<{ success: boolean; processedC
 /**
  * 🌐 오프라인 큐 이벤트 리스너 초기화 (온라인 복구 시 자동 업로드)
  */
-export function initOfflineQueueListener(): () => void {
+export function initOfflineQueueListener(
+  onSync?: (projects: ProjectMaster[]) => Promise<void | any>
+): () => void {
   if (typeof window === "undefined") return () => {};
 
-  const handleOnline = () => {
+  const handleOnline = async () => {
+    if (onSync) {
+      const queue = getOfflineQueue();
+      if (queue.length > 0) {
+        const latestTask = queue[queue.length - 1];
+        try {
+          await onSync(latestTask.projects);
+          clearOfflineQueue();
+          return;
+        } catch {}
+      }
+    }
     processSyncQueue();
   };
 
   window.addEventListener("online", handleOnline);
 
   // 20초 주기 백그라운드 큐 정리 확인
-  const intervalId = setInterval(() => {
+  const intervalId = setInterval(async () => {
     if (typeof navigator !== "undefined" && navigator.onLine) {
       const queue = getOfflineQueue();
       if (queue.length > 0) {
+        if (onSync) {
+          const latestTask = queue[queue.length - 1];
+          try {
+            await onSync(latestTask.projects);
+            clearOfflineQueue();
+            return;
+          } catch {}
+        }
         processSyncQueue();
       }
     }

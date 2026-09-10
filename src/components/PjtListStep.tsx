@@ -246,8 +246,8 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                 }`}
             >
               <div className="space-y-2.5">
-                {/* 1. Main Info: 고객사 -> PJT CODE -> 설비명 */}
-                <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-wrap sm:flex-nowrap">
+                {/* 1. Main Info: 고객사 -> PJT CODE -> 설비명 (1줄로 쭉 이어지고 길면 ...으로 말줄임) */}
+                <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-nowrap overflow-hidden">
                   {/* 고객사 */}
                   <span
                     className={`shrink-0 whitespace-nowrap text-xs sm:text-sm font-extrabold flex items-center gap-1.5 px-3 py-1 sm:py-1.5 rounded-xl border shadow-sm ${siteStyle.bg}`}
@@ -261,9 +261,9 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                     {pjt.pjtCode}
                   </span>
 
-                  {/* 설비명 */}
+                  {/* 설비명 (밑으로 내려오지 않고 뒤에 1줄로 쭉 이어지며, 길이가 길면 ...으로 말줄임) */}
                   <h3
-                    className="min-w-0 truncate font-black text-white text-base sm:text-lg tracking-wide"
+                    className="min-w-0 flex-1 truncate whitespace-nowrap font-black text-white text-base sm:text-lg tracking-wide"
                     title={pjt.equipmentName}
                   >
                     {pjt.equipmentName}

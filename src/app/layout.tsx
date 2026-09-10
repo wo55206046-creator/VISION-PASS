@@ -26,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className="dark">
+    <html lang="ko" className="dark" suppressHydrationWarning>
       <head>
         <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
         <link rel="alternate icon" href="./favicon.ico" />
@@ -34,7 +34,7 @@ export default function RootLayout({
         <meta httpEquiv="Pragma" content="no-cache" />
         <meta httpEquiv="Expires" content="0" />
       </head>
-      <body className="antialiased selection:bg-cyan-500 selection:text-slate-950">
+      <body className="antialiased selection:bg-cyan-500 selection:text-slate-950" suppressHydrationWarning>
         {children}
       </body>
     </html>
