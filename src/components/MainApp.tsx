@@ -19,6 +19,13 @@ import {
 import { initOfflineQueueListener } from "@/lib/offline-sync-queue";
 import { mergeProjectLists, countVerifiedSerials } from "@/lib/project-merger";
 import {
+  getDeletedProjectKeys,
+  markProjectAsDeleted,
+  isProjectDeleted,
+  unmarkProjectAsDeleted,
+  cleanStorageFromDeleted,
+} from "@/lib/deleted-projects";
+import {
   ShieldCheck,
   Cpu,
   FolderKanban,
@@ -51,7 +58,10 @@ function loadSavedProjects(): ProjectMaster[] {
   if (typeof window === "undefined") return INITIAL_PROJECT_LIST;
 
   try {
-    // 1. 현재 최신 V8 또는 영구 백업에 데이터가 이미 있으면 최우선 반환 (구버전 캐시로 덮어쓰기 원천 차단)
+    const delKeys = getDeletedProjectKeys();
+    cleanStorageFromDeleted(delKeys);
+
+    // 1. 현재 최신 V8 또는 영구 백업에 데이터가 이미 있으면 최우선 반환 (삭제된 프로젝트 제외)
     const primaryKeys = [STORAGE_KEY, PERSISTENT_BACKUP_KEY];
     for (const key of primaryKeys) {
       const raw = localStorage.getItem(key);
@@ -59,7 +69,8 @@ function loadSavedProjects(): ProjectMaster[] {
         try {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
-            return parsed;
+            const filtered = parsed.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+            if (filtered.length > 0) return filtered;
           }
         } catch {}
       }
@@ -75,9 +86,10 @@ function loadSavedProjects(): ProjectMaster[] {
         try {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
-            const serialCount = countVerifiedSerials(parsed);
+            const filtered = parsed.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+            const serialCount = countVerifiedSerials(filtered);
             if (!bestCandidate || serialCount > bestSerialCount) {
-              bestCandidate = parsed;
+              bestCandidate = filtered;
               bestSerialCount = serialCount;
             }
           }
@@ -147,18 +159,23 @@ export default function MainApp() {
       isSyncingInFlight.current = true;
       const res = await pullProjectsFromCloud();
       if (res.success && res.projects && res.projects.length > 0) {
+        const delKeys = getDeletedProjectKeys();
+        cleanStorageFromDeleted(delKeys);
+        const incomingSanitized = res.projects.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+
         setProjects((prevProjects) => {
-          // ★ 클라우드의 시리얼 수가 로컬보다 적으면 무조건 로컬 데이터 우선 보호! (원격 빈 데이터로 인한 덮어쓰기 영구 차단)
-          const localSerials = countVerifiedSerials(prevProjects);
-          const cloudSerials = countVerifiedSerials(res.projects!);
+          const currentSanitized = prevProjects.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+          const localSerials = countVerifiedSerials(currentSanitized);
+          const cloudSerials = countVerifiedSerials(incomingSanitized);
+
           if (cloudSerials < localSerials) {
             // 로컬에 작업 중인 시리얼이 더 많으므로 클라우드로 즉시 역동기화(Auto-heal)
-            pushProjectsToCloud(prevProjects).catch(() => {});
-            return prevProjects;
+            pushProjectsToCloud(currentSanitized).catch(() => {});
+            return currentSanitized;
           }
 
-          // ★ 기존 로컬에 이미 입력된 시리얼 번호가 절대 사라지지 않도록 스마트 병합!
-          const merged = mergeProjectLists(prevProjects, res.projects!);
+          // ★ 기존 로컬에 이미 입력된 시리얼 번호가 절대 사라지지 않도록 스마트 병합! (삭제된 프로젝트 부활 배제)
+          const merged = mergeProjectLists(currentSanitized, incomingSanitized, delKeys);
           const mergedJson = JSON.stringify(merged);
           lastKnownCloudJson.current = mergedJson;
           try {
@@ -219,13 +236,16 @@ export default function MainApp() {
     // 1. 로컬 브로드캐스트 채널 구독 (동일 브라우저 탭 간 스마트 병합)
     const unsubscribeBroadcast = subscribeLocalBroadcast((incoming) => {
       if (incoming && incoming.length > 0) {
+        const delKeys = getDeletedProjectKeys();
+        const cleanIncoming = incoming.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
         setProjects((prev) => {
-          const localSerials = countVerifiedSerials(prev);
-          const incomingSerials = countVerifiedSerials(incoming);
+          const cleanPrev = prev.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+          const localSerials = countVerifiedSerials(cleanPrev);
+          const incomingSerials = countVerifiedSerials(cleanIncoming);
           if (incomingSerials < localSerials) {
-            return prev;
+            return cleanPrev;
           }
-          const merged = mergeProjectLists(prev, incoming);
+          const merged = mergeProjectLists(cleanPrev, cleanIncoming, delKeys);
           const mergedJson = JSON.stringify(merged);
           if (mergedJson !== lastKnownCloudJson.current) {
             lastKnownCloudJson.current = mergedJson;
@@ -242,13 +262,16 @@ export default function MainApp() {
     // 2. ⚡ 초고속 실시간 클라우드 스트림 구독 (스마트 병합)
     const unsubscribeRealtime = subscribeCloudRealtime((incoming) => {
       if (incoming && incoming.length > 0) {
+        const delKeys = getDeletedProjectKeys();
+        const cleanIncoming = incoming.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
         setProjects((prev) => {
-          const localSerials = countVerifiedSerials(prev);
-          const incomingSerials = countVerifiedSerials(incoming);
+          const cleanPrev = prev.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+          const localSerials = countVerifiedSerials(cleanPrev);
+          const incomingSerials = countVerifiedSerials(cleanIncoming);
           if (incomingSerials < localSerials) {
-            return prev;
+            return cleanPrev;
           }
-          const merged = mergeProjectLists(prev, incoming);
+          const merged = mergeProjectLists(cleanPrev, cleanIncoming, delKeys);
           const mergedJson = JSON.stringify(merged);
           if (mergedJson !== lastKnownCloudJson.current) {
             lastKnownCloudJson.current = mergedJson;
@@ -415,10 +438,12 @@ export default function MainApp() {
       })),
       updatedAt: new Date().toISOString(),
     };
+    unmarkProjectAsDeleted(dup.id, dup.pjtCode);
     const next = [dup, ...projects];
     setProjects(next);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      localStorage.setItem(PERSISTENT_BACKUP_KEY, JSON.stringify(next));
     } catch {}
     pushProjectsToCloud(next).catch(console.warn);
   };
@@ -427,8 +452,14 @@ export default function MainApp() {
     const target = projects.find((p) => p.id === projectId);
     const targetName = target ? `${target.pjtCode} (${target.equipmentName})` : "해당 프로젝트";
     if (confirm(`[${targetName}] 를 정말 삭제하시겠습니까?`)) {
-      const next = projects.filter((p) => p.id !== projectId);
+      // 1. 묘비(Tombstone) 등록 - ID 및 PJT 코드 영구 블랙리스트 등록
+      markProjectAsDeleted(projectId, target?.pjtCode);
+
+      // 2. 현재 메모리 및 프로젝트 목록에서 완전히 배제
+      const delKeys = getDeletedProjectKeys();
+      const next = projects.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
       setProjects(next);
+
       if (next.length > 0 && currentProjectId === projectId) {
         const fallbackId = next[0].id || "";
         setCurrentProjectId(fallbackId);
@@ -436,9 +467,17 @@ export default function MainApp() {
           localStorage.setItem(STORAGE_ACTIVE_PROJECT_ID, fallbackId);
         } catch {}
       }
+
+      // 3. 로컬 스토리지 모든 키에서 삭제 대상 물리적 영구 소각
+      const nextJson = JSON.stringify(next);
+      lastKnownCloudJson.current = nextJson;
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        localStorage.setItem(STORAGE_KEY, nextJson);
+        localStorage.setItem(PERSISTENT_BACKUP_KEY, nextJson);
+        cleanStorageFromDeleted(delKeys);
       } catch {}
+
+      // 4. 클라우드 및 모든 디바이스로 즉시 소각 전파 (역부활 차단)
       pushProjectsToCloud(next).catch(console.warn);
     }
   };
@@ -459,6 +498,8 @@ export default function MainApp() {
       } catch {}
     }
 
+    unmarkProjectAsDeleted(finalizedPjt.id, finalizedPjt.pjtCode);
+
     const exists = projects.some((p) => p.id === finalizedPjt.id);
     const next = exists
       ? projects.map((p) => (p.id === finalizedPjt.id ? finalizedPjt : p))
@@ -467,6 +508,7 @@ export default function MainApp() {
     setProjects(next);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      localStorage.setItem(PERSISTENT_BACKUP_KEY, JSON.stringify(next));
     } catch {}
     pushProjectsToCloud(next).catch(console.warn);
 
@@ -510,6 +552,7 @@ export default function MainApp() {
               setProjects(next);
               try {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+                localStorage.setItem(PERSISTENT_BACKUP_KEY, JSON.stringify(next));
               } catch {}
               pushProjectsToCloud(next).catch(console.warn);
             }}

@@ -1,9 +1,11 @@
 import { ProjectMaster, EquipmentUnit, PartItem } from "@/types";
+import { getDeletedProjectKeys, isProjectDeleted } from "./deleted-projects";
 
 /**
  * 🛡️ 데이터 영구 보존 스마트 병합(Smart Merge) 엔진
  * - 로컬 데이터와 원격(클라우드) 데이터를 합칠 때, 사용자가 이미 입력/스캔한 시리얼 번호가
  *   빈 값으로 덮어써져 사라지는 문제를 100% 원천 차단합니다.
+ * - 삭제(Tombstone)된 프로젝트는 원격이나 레거시 캐시에서 절대로 부활하지 않도록 보호합니다.
  */
 function getPartCompositeKey(pt: PartItem): string {
   const cat = (pt.category || "").trim().toLowerCase();
@@ -15,30 +17,39 @@ function getPartCompositeKey(pt: PartItem): string {
 
 export function mergeProjectLists(
   existingList: ProjectMaster[],
-  incomingList: ProjectMaster[]
+  incomingList: ProjectMaster[],
+  deletedKeys?: Set<string>
 ): ProjectMaster[] {
-  if (!existingList || existingList.length === 0) return incomingList || [];
-  if (!incomingList || incomingList.length === 0) return existingList;
+  const delKeys = deletedKeys || getDeletedProjectKeys();
+
+  if (!existingList || existingList.length === 0) {
+    return (incomingList || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+  }
+  if (!incomingList || incomingList.length === 0) {
+    return (existingList || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+  }
 
   const mergedMap = new Map<string, ProjectMaster>();
 
-  // 1. 기존 프로젝트 목록 적재 (key: pjtCode 또는 id)
+  // 1. 기존 프로젝트 목록 적재 (key: pjtCode 또는 id, 삭제된 프로젝트 제외)
   for (const p of existingList) {
     if (!p) continue;
+    if (isProjectDeleted(p.id, p.pjtCode, delKeys)) continue;
     const key = (p.pjtCode?.trim() || p.id || "").toUpperCase();
-    if (!key) continue;
+    if (!key || delKeys.has(key)) continue;
     mergedMap.set(key, JSON.parse(JSON.stringify(p)));
   }
 
-  // 2. Incoming 프로젝트와 스마트 병합 (기존 입력 시리얼 100% 영구 보존)
+  // 2. Incoming 프로젝트와 스마트 병합 (기존 입력 시리얼 100% 영구 보존 & 삭제 프로젝트 부활 차단)
   for (const inc of incomingList) {
     if (!inc) continue;
+    if (isProjectDeleted(inc.id, inc.pjtCode, delKeys)) continue;
     const key = (inc.pjtCode?.trim() || inc.id || "").toUpperCase();
-    if (!key) continue;
+    if (!key || delKeys.has(key)) continue;
     const existing = mergedMap.get(key);
 
     if (!existing) {
-      // 기존에 없던 새로운 프로젝트면 그대로 추가
+      // 삭제 목록에 없는 유효한 신규 프로젝트만 추가
       mergedMap.set(key, JSON.parse(JSON.stringify(inc)));
       continue;
     }

@@ -1,5 +1,11 @@
 import { ProjectMaster } from "@/types";
 import { mergeProjectLists, countVerifiedSerials } from "./project-merger";
+import {
+  getDeletedProjectKeys,
+  markProjectsAsDeletedBulk,
+  isProjectDeleted,
+  cleanStorageFromDeleted,
+} from "./deleted-projects";
 
 // ============================================================================
 // 1. 중앙 원격 데이터베이스 설정 및 인터페이스 정의 (Supabase 전용)
@@ -16,6 +22,7 @@ export interface CentralSyncPayload {
   updatedAt: string;
   senderDeviceId: string;
   projects: ProjectMaster[];
+  deletedKeys?: string[];
 }
 
 const DEFAULT_ROOM_KEY = "WITHTECH-VISIONPASS-2026";
@@ -178,7 +185,11 @@ function loadDirectLocalProjects(): ProjectMaster[] | null {
       localStorage.getItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT");
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const delKeys = getDeletedProjectKeys();
+        const filtered = parsed.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+        return filtered;
+      }
     }
   } catch {}
   return null;
@@ -191,29 +202,34 @@ export async function saveCentralProjects(
   projects: ProjectMaster[],
   roomKey: string = getSyncRoomKey()
 ): Promise<{ success: boolean; message?: string }> {
+  const delKeys = getDeletedProjectKeys();
+  const cleanProjects = (projects || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+
   // 1. 로컬 탭 즉시 전파 및 브라우저 로컬 스토리지 안전 저장 (스캔 데이터 즉시 보존)
-  broadcastLocalUpdate(projects);
+  broadcastLocalUpdate(cleanProjects);
   const nowStr = new Date().toISOString();
 
   if (typeof window !== "undefined") {
     try {
-      const pJson = JSON.stringify(projects);
+      const pJson = JSON.stringify(cleanProjects);
       localStorage.setItem(STORAGE_PROJECTS_KEY, pJson);
       localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", pJson);
       localStorage.setItem(STORAGE_LAST_SYNC_KEY, nowStr);
+      cleanStorageFromDeleted(delKeys);
     } catch (e) {
       console.warn("LocalStorage save error", e);
     }
   }
 
-  memoryCacheProjects = projects;
+  memoryCacheProjects = cleanProjects;
 
   const payload: CentralSyncPayload = {
     version: 8,
     roomKey: (roomKey || DEFAULT_ROOM_KEY).toUpperCase(),
     updatedAt: nowStr,
     senderDeviceId: getDeviceId(),
-    projects,
+    projects: cleanProjects,
+    deletedKeys: Array.from(delKeys),
   };
 
   // 2. [Supabase REST 실시간 저장 - 3단계 안전 Upsert 보장]
@@ -314,13 +330,19 @@ export async function fetchCentralProjects(
           rows[0].data.projects.length > 0
         ) {
           const payload = rows[0].data;
-          const cloudProjects = payload.projects;
-          const localProjects = loadDirectLocalProjects();
+          if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
+            markProjectsAsDeletedBulk(payload.deletedKeys);
+          }
+          const delKeys = getDeletedProjectKeys();
+          cleanStorageFromDeleted(delKeys);
+
+          const cloudProjects = (payload.projects || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+          const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
 
           // ★ 핵심: 클라우드 데이터로 로컬을 무조건 덮어쓰지 않고 스마트 병합!
-          // 로컬에 이미 입력된 시리얼 번호는 절대 지워지지 않도록 보호!
+          // 로컬에 이미 입력된 시리얼 번호는 절대 지워지지 않도록 보호하고, 삭제된 프로젝트는 배제!
           const merged = localProjects && localProjects.length > 0
-            ? mergeProjectLists(localProjects, cloudProjects)
+            ? mergeProjectLists(localProjects, cloudProjects, delKeys)
             : cloudProjects;
 
           memoryCacheProjects = merged;
@@ -379,15 +401,19 @@ export async function fetchCentralProjects(
       let bestProjects: ProjectMaster[] | null = null;
       let bestSerialCount = -1;
 
+      const delKeys = getDeletedProjectKeys();
+      cleanStorageFromDeleted(delKeys);
+
       for (const k of KNOWN_KEYS) {
         const raw = localStorage.getItem(k);
         if (raw) {
           try {
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
-              const serialCount = countVerifiedSerials(parsed);
+              const sanitized = parsed.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+              const serialCount = countVerifiedSerials(sanitized);
               if (!bestProjects || serialCount > bestSerialCount) {
-                bestProjects = parsed;
+                bestProjects = sanitized;
                 bestSerialCount = serialCount;
               }
             }
@@ -454,12 +480,19 @@ export function subscribeCentralRealtime(
               Array.isArray(payload.projects)
             ) {
               lastKnownTimestamp = updatedTime;
-              const localProjects = loadDirectLocalProjects();
+              if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
+                markProjectsAsDeletedBulk(payload.deletedKeys);
+              }
+              const delKeys = getDeletedProjectKeys();
+              cleanStorageFromDeleted(delKeys);
 
-              // ★ 스마트 병합을 적용하여 기존 로컬 시리얼 100% 보존
+              const incomingProjects = (payload.projects || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+              const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+
+              // ★ 스마트 병합을 적용하여 기존 로컬 시리얼 100% 보존 & 삭제 프로젝트 배제
               const merged = localProjects && localProjects.length > 0
-                ? mergeProjectLists(localProjects, payload.projects)
-                : payload.projects;
+                ? mergeProjectLists(localProjects, incomingProjects, delKeys)
+                : incomingProjects;
 
               memoryCacheProjects = merged;
               if (typeof window !== "undefined") {
