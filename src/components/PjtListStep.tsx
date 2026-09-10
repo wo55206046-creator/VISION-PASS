@@ -60,7 +60,7 @@ function getSiteBadgeStyle(site: string) {
   }
 }
 
-// 호기 시리얼을 단일 또는 연속 범위(예: TM1L-HK26-1007 ~ TM1L-HK26-1011)로 깔끔하게 요약 표기
+// 호기 시리얼을 단일 또는 축약 연속 범위(예: WOA-SK26-1004~1005)로 깔끔하게 요약 표기
 function formatSerialRange(units: EquipmentUnit[] = []): string {
   if (!units || units.length === 0) return "(미입력)";
   const unit1Serial = units[0]?.equipmentSerial?.trim();
@@ -76,7 +76,35 @@ function formatSerialRange(units: EquipmentUnit[] = []): string {
     return unit1Serial;
   }
 
-  return `${unit1Serial} ~ ${lastSerial}`;
+  // 공통 접두사 유지 및 끝자리 축약 표기 (예: WOA-SK26-1004 ~ WOA-SK26-1005 -> WOA-SK26-1004~1005)
+  const lastSepIdx1 = Math.max(
+    unit1Serial.lastIndexOf("-"),
+    unit1Serial.lastIndexOf("_"),
+    unit1Serial.lastIndexOf(" ")
+  );
+  const lastSepIdx2 = Math.max(
+    lastSerial.lastIndexOf("-"),
+    lastSerial.lastIndexOf("_"),
+    lastSerial.lastIndexOf(" ")
+  );
+
+  if (lastSepIdx1 !== -1 && lastSepIdx1 === lastSepIdx2) {
+    const prefix1 = unit1Serial.substring(0, lastSepIdx1);
+    const prefix2 = lastSerial.substring(0, lastSepIdx2);
+    if (prefix1 === prefix2) {
+      const tail2 = lastSerial.substring(lastSepIdx2 + 1);
+      return `${unit1Serial}~${tail2}`;
+    }
+  }
+
+  // 구분자 없이 끝부분 숫자 블록이 다른 경우 (예: SN1004 ~ SN1005 -> SN1004~1005)
+  const match1 = unit1Serial.match(/^(.*?)(\d+)$/);
+  const match2 = lastSerial.match(/^(.*?)(\d+)$/);
+  if (match1 && match2 && match1[1] === match2[1]) {
+    return `${unit1Serial}~${match2[2]}`;
+  }
+
+  return `${unit1Serial}~${lastSerial}`;
 }
 
 export const PjtListStep: React.FC<PjtListStepProps> = ({
