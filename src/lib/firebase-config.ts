@@ -42,10 +42,15 @@ export const FIREBASE_CONFIG = DEFAULT_FIREBASE_CONFIG;
 
 /**
  * Firebase 설정이 실제 유효한 사용자 키로 입력되어 있는지 검증하는 함수
- * (현재 Supabase PostgreSQL 중앙 DB로 완전히 전환되었으므로 비활성화)
  */
 export function isFirebaseConfigured(): boolean {
-  return false;
+  const config = getFirebaseConfig();
+  return Boolean(
+    config.apiKey &&
+    config.projectId &&
+    !config.apiKey.includes("YOUR_") &&
+    config.apiKey.startsWith("AIzaSy")
+  );
 }
 
 /**

@@ -270,6 +270,9 @@ export async function saveCentralProjects(
 
   const cleanDocKey = getCleanTopicKey(roomKey);
 
+  let supabaseSaved = false;
+  let firestoreSaved = false;
+
   // 1. [Supabase REST 실시간 저장]
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
@@ -291,37 +294,43 @@ export async function saveCentralProjects(
       });
 
       if (res.ok) {
-        return { success: true, message: `Supabase 클라우드 실시간 저장 완료 (${projects.length}개 프로젝트)` };
+        supabaseSaved = true;
       } else {
         const errBody = await res.text();
-        console.error("Supabase save error response:", res.status, errBody);
-        return { success: false, message: `Supabase 저장 실패 (${res.status}): ${errBody}` };
+        console.warn("Supabase save error response:", res.status, errBody);
       }
     } catch (err: any) {
-      console.error("Supabase write warning", err);
-      return { success: false, message: `Supabase 네트워크 통신 오류: ${err?.message || err}` };
+      console.warn("Supabase write warning", err);
     }
   }
 
-  // 2. [Firebase Firestore CDN 실시간 저장 (폴백)]
+  // 2. [Firebase Firestore CDN 실시간 저장 (동시 동기화)]
   if (isFirebaseConfigured()) {
     try {
       const db = await getFirestoreDb();
       if (db) {
         const cleanPayload = JSON.parse(JSON.stringify(payload));
         await db.collection("vision_pass_rooms").doc(cleanDocKey).set(cleanPayload);
-        return { success: true, message: "Firebase Firestore 실시간 저장 완료" };
+        firestoreSaved = true;
       }
     } catch (err) {
       console.warn("Firebase Firestore write warning", err);
     }
   }
 
+  if (supabaseSaved && firestoreSaved) {
+    return { success: true, message: `클라우드 실시간 저장 완료 (Supabase + Firebase, ${projects.length}개 프로젝트)` };
+  } else if (supabaseSaved) {
+    return { success: true, message: `Supabase 클라우드 실시간 저장 완료 (${projects.length}개 프로젝트)` };
+  } else if (firestoreSaved) {
+    return { success: true, message: `Firebase Firestore 실시간 저장 완료 (${projects.length}개 프로젝트)` };
+  }
+
   return { success: true, message: "로컬 스토리지에 안전하게 저장되었습니다." };
 }
 
 /**
- * 📥 프로젝트 데이터 로드 (메모리 / Supabase / Firestore / 로컬 스토리지)
+ * 📥 프로젝트 데이터 로드 (메모리 / Supabase / Firestore / 로컬 스토리지 레거시 전수 복구)
  */
 export async function fetchCentralProjects(
   roomKey: string = getSyncRoomKey()
@@ -331,19 +340,10 @@ export async function fetchCentralProjects(
   updatedAt?: string;
   message?: string;
 }> {
-  // 1. 메모리 캐시 확인
-  if (memoryCacheProjects && memoryCacheProjects.length > 0) {
-    return {
-      success: true,
-      projects: memoryCacheProjects,
-      updatedAt: new Date().toISOString(),
-      message: "메모리 캐시 사용",
-    };
-  }
-
   const cleanRoom = (roomKey || DEFAULT_ROOM_KEY).toUpperCase();
+  const cleanDocKey = getCleanTopicKey(roomKey);
 
-  // 2. [Supabase REST 조회]
+  // 1. [Supabase REST 조회 시도]
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
       const res = await fetch(
@@ -357,7 +357,13 @@ export async function fetchCentralProjects(
       );
       if (res.ok) {
         const rows = await res.json();
-        if (Array.isArray(rows) && rows.length > 0 && rows[0].data?.projects) {
+        if (
+          Array.isArray(rows) &&
+          rows.length > 0 &&
+          rows[0].data?.projects &&
+          Array.isArray(rows[0].data.projects) &&
+          rows[0].data.projects.length > 0
+        ) {
           const payload = rows[0].data;
           memoryCacheProjects = payload.projects;
           if (typeof window !== "undefined") {
@@ -372,34 +378,16 @@ export async function fetchCentralProjects(
             success: true,
             projects: payload.projects,
             updatedAt: payload.updatedAt || rows[0].updated_at,
-            message: "Supabase 클라우드 데이터 동기화 완료",
-          };
-        } else {
-          return {
-            success: false,
-            message: `[${cleanRoom}] 방에 저장된 데이터가 없습니다. 먼저 PC에서 [클라우드 저장]을 실행해주세요.`,
+            message: `Supabase 클라우드 데이터 동기화 완료 (${payload.projects.length}개 프로젝트)`,
           };
         }
-      } else {
-        const errBody = await res.text();
-        console.error("Supabase fetch error response:", res.status, errBody);
-        return {
-          success: false,
-          message: `Supabase 조회 실패 (${res.status}): ${errBody}`,
-        };
       }
     } catch (err: any) {
-      console.warn("Supabase fetch warning", err);
-      return {
-        success: false,
-        message: `Supabase 조회 네트워크 오류: ${err?.message || err}`,
-      };
+      console.warn("Supabase fetch warning, trying Firestore fallback", err);
     }
   }
 
-  const cleanDocKey = getCleanTopicKey(roomKey);
-
-  // 3. [Firebase Firestore 조회]
+  // 2. [Firebase Firestore 조회 시도 (Supabase에 없거나 이전 7개 프로젝트 DB 연동 복원)]
   if (isFirebaseConfigured()) {
     try {
       const db = await getFirestoreDb();
@@ -417,35 +405,97 @@ export async function fetchCentralProjects(
                 }
               } catch {}
             }
-            return { success: true, projects: data.projects, updatedAt: data.updatedAt };
+            // Supabase에도 자동 동기화(마이그레이션 백필)
+            saveCentralProjects(data.projects, roomKey).catch(() => {});
+
+            return {
+              success: true,
+              projects: data.projects,
+              updatedAt: data.updatedAt || new Date().toISOString(),
+              message: `Firebase Firestore 데이터 연동 복원 완료 (${data.projects.length}개 프로젝트)`,
+            };
           }
         }
       }
     } catch (err) {
-      console.warn("Firestore fetch error", err);
+      console.warn("Firestore fetch warning", err);
     }
   }
 
-  // 4. [로컬 스토리지 캐시 로드]
+  // 3. [로컬 스토리지 캐시 및 레거시(V7, V6, V5, V2, V1...) 전수 탐색 복구]
   if (typeof window !== "undefined") {
     try {
-      const raw = localStorage.getItem(STORAGE_PROJECTS_KEY);
-      if (raw) {
-        const projects = JSON.parse(raw);
-        if (Array.isArray(projects) && projects.length > 0) {
-          memoryCacheProjects = projects;
-          return {
-            success: true,
-            projects,
-            updatedAt: localStorage.getItem(STORAGE_LAST_SYNC_KEY) || new Date().toISOString(),
-            message: "로컬 스토리지 데이터 로드",
-          };
+      const KNOWN_KEYS = [
+        STORAGE_PROJECTS_KEY,
+        "VISION_PASS_PROJECTS_DATA_V8",
+        "VISION_PASS_PROJECTS_DATA_V7",
+        "VISION_PASS_PROJECTS_DATA_V6",
+        "VISION_PASS_PROJECTS_DATA_V5",
+        "VISION_PASS_PROJECTS_DATA_V4",
+        "VISION_PASS_PROJECTS_DATA_V3",
+        "VISION_PASS_PROJECTS_DATA_V2",
+        "VISION_PASS_PROJECTS_DATA_V1",
+        "VISION_PASS_PROJECTS_V2",
+        "VISION_PASS_PROJECTS_V1",
+        "VISION_PASS_PROJECTS_DATA",
+        "VISION_PASS_PROJECTS",
+      ];
+
+      let bestProjects: ProjectMaster[] | null = null;
+
+      for (const k of KNOWN_KEYS) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].pjtCode !== undefined) {
+              if (!bestProjects || parsed.length > bestProjects.length) {
+                bestProjects = parsed;
+              }
+            }
+          } catch {}
         }
+      }
+
+      // localStorage 전체 키 전수 스캔 (사용자 정의 키나 임시 백업 탐색)
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && !KNOWN_KEYS.includes(k)) {
+          try {
+            const raw = localStorage.getItem(k);
+            if (raw && (raw.includes("pjtCode") || raw.includes("equipmentUnits"))) {
+              const parsed = JSON.parse(raw);
+              const list = Array.isArray(parsed)
+                ? parsed
+                : parsed?.projects && Array.isArray(parsed.projects)
+                ? parsed.projects
+                : null;
+              if (list && list.length > 0 && list[0].pjtCode) {
+                if (!bestProjects || list.length > bestProjects.length) {
+                  bestProjects = list;
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+
+      if (bestProjects && bestProjects.length > 0) {
+        memoryCacheProjects = bestProjects;
+        localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(bestProjects));
+        // 클라우드에도 업로드 시도
+        saveCentralProjects(bestProjects, roomKey).catch(() => {});
+        return {
+          success: true,
+          projects: bestProjects,
+          updatedAt: localStorage.getItem(STORAGE_LAST_SYNC_KEY) || new Date().toISOString(),
+          message: `로컬 레거시 데이터 복원 완료 (${bestProjects.length}개 프로젝트)`,
+        };
       }
     } catch {}
   }
 
-  return { success: false, message: "저장된 데이터를 찾을 수 없습니다." };
+  return { success: false, message: `[${cleanRoom}] 방에 저장된 데이터를 찾을 수 없습니다.` };
 }
 
 // ============================================================================

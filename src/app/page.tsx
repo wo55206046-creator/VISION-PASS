@@ -27,20 +27,77 @@ import {
 } from "lucide-react";
 
 const STORAGE_KEY = "VISION_PASS_PROJECTS_DATA_V8";
+const LEGACY_STORAGE_KEYS = [
+  STORAGE_KEY,
+  "VISION_PASS_PROJECTS_DATA_V7",
+  "VISION_PASS_PROJECTS_DATA_V6",
+  "VISION_PASS_PROJECTS_DATA_V5",
+  "VISION_PASS_PROJECTS_DATA_V4",
+  "VISION_PASS_PROJECTS_DATA_V3",
+  "VISION_PASS_PROJECTS_DATA_V2",
+  "VISION_PASS_PROJECTS_DATA_V1",
+  "VISION_PASS_PROJECTS_V2",
+  "VISION_PASS_PROJECTS_V1",
+  "VISION_PASS_PROJECTS_DATA",
+  "VISION_PASS_PROJECTS",
+];
 
 function loadSavedProjects(): ProjectMaster[] {
   if (typeof window === "undefined") return INITIAL_PROJECT_LIST;
+
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+    let bestCandidate: ProjectMaster[] | null = null;
+
+    // 1. 이미 알려진 모든 이전 버전 키 전수 탐색
+    for (const key of LEGACY_STORAGE_KEYS) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
+            // 프로젝트 개수가 더 많거나 초기 기본 4개보다 많은 데이터를 최우선 선택
+            if (!bestCandidate || parsed.length > bestCandidate.length) {
+              bestCandidate = parsed;
+            }
+          }
+        } catch {}
       }
+    }
+
+    // 2. 혹시 다른 키 이름으로 저장되었을 가능성 (localStorage 전체 전수 조사)
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && !LEGACY_STORAGE_KEYS.includes(k)) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw && (raw.includes("pjtCode") || raw.includes("equipmentUnits"))) {
+            const parsed = JSON.parse(raw);
+            const list = Array.isArray(parsed)
+              ? parsed
+              : parsed?.projects && Array.isArray(parsed.projects)
+              ? parsed.projects
+              : null;
+            if (list && list.length > 0 && (list[0].pjtCode || list[0].site)) {
+              if (!bestCandidate || list.length > bestCandidate.length) {
+                bestCandidate = list;
+              }
+            }
+          }
+        } catch {}
+      }
+    }
+
+    if (bestCandidate && bestCandidate.length > 0) {
+      // 최신 V8 스토리지에 안전하게 동기화 보존
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(bestCandidate));
+      } catch {}
+      return bestCandidate;
     }
   } catch (e) {
     console.warn("Failed to load projects from localStorage", e);
   }
+
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_PROJECT_LIST));
   } catch (e) {}
