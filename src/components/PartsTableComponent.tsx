@@ -646,6 +646,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                             type="text"
                             value={tempSerial}
                             onChange={(e) => setTempSerial(e.target.value)}
+                            onBlur={() => handleSaveInlineSerial(part.id)}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") handleSaveInlineSerial(part.id);
                               if (e.key === "Escape") setEditingSerialId(null);
@@ -656,6 +657,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                           />
                           <button
                             type="button"
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={() => handleSaveInlineSerial(part.id)}
                             className="p-1 rounded bg-cyan-500 text-slate-950 hover:brightness-110 shrink-0"
                             title="저장"
@@ -664,7 +666,11 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => setEditingSerialId(null)}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setEditingSerialId(null);
+                              setTempSerial("");
+                            }}
                             className="p-1 rounded bg-slate-800 text-slate-400 hover:text-white shrink-0"
                             title="취소"
                           >
@@ -898,6 +904,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                               type="text"
                               value={tempSerial}
                               onChange={(e) => setTempSerial(e.target.value)}
+                              onBlur={() => handleSaveInlineSerial(part.id)}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") handleSaveInlineSerial(part.id);
                                 if (e.key === "Escape") setEditingSerialId(null);
@@ -908,6 +915,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                             />
                             <button
                               type="button"
+                              onMouseDown={(e) => e.preventDefault()}
                               onClick={() => handleSaveInlineSerial(part.id)}
                               className="p-1 rounded-md bg-cyan-500 text-slate-950 hover:brightness-110 shrink-0"
                               title="저장 (Enter)"
@@ -916,7 +924,11 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => setEditingSerialId(null)}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                setEditingSerialId(null);
+                                setTempSerial("");
+                              }}
                               className="p-1 rounded-md bg-slate-800 text-slate-400 hover:text-white shrink-0"
                               title="취소 (Esc)"
                             >

@@ -472,17 +472,24 @@ export const INITIAL_PROJECT_LIST: ProjectMaster[] = [
         unitIndex: 1,
         equipmentSerial: "WOA-SK26-0703",
         parts: [
-          { id: "p4-1-1", partName: "Atmospheric Dual-Arm Robot", spec: "Yaskawa SR100 300mm", detectedSerial: "", isVerified: false },
-          { id: "p4-1-2", partName: "Recirculating Chiller Unit", spec: "SMC Thermo-chiller", detectedSerial: "", isVerified: false },
-          { id: "p4-1-3", partName: "Safety Interlock Controller", spec: "Pilz PNOZ Multi 2 / SIL 3", detectedSerial: "", isVerified: false },
+          { id: "p4-1-1", category: "[ WOA-683 ]", partName: "Delivery Pump", subSpec: "815", spec: "PM28238-815, 230V", detectedSerial: "", isVerified: false },
+          { id: "p4-1-2", category: "[ WOA-683 ]", partName: "Calibration Pump", subSpec: "-", spec: "107CCD18-621", detectedSerial: "", isVerified: false },
+          { id: "p4-1-3", category: "[ WOA-683 ]", partName: "Ozone Analyzer", subSpec: "-", spec: "49i-B1NAA", detectedSerial: "", isVerified: false },
+          { id: "p4-1-4", category: "[ WOA-683 ]", partName: "Calibration", subSpec: "-", spec: "49iPS-BZAA", detectedSerial: "", isVerified: false },
+          { id: "p4-1-5", category: "[ CONTROL ]", partName: "Control Board", subSpec: "UCON-161", spec: "Main S/N", detectedSerial: "", isVerified: false },
+          { id: "p4-1-6", category: "[ CONTROL ]", partName: "Control Board", subSpec: "UCON-107", spec: "I/O S/N", detectedSerial: "", isVerified: false },
         ]
       },
       {
         unitIndex: 2,
         equipmentSerial: "WOA-SK26-0704",
         parts: [
-          { id: "p4-2-1", partName: "Atmospheric Dual-Arm Robot", spec: "Yaskawa SR100 300mm", detectedSerial: "", isVerified: false },
-          { id: "p4-2-2", partName: "Recirculating Chiller Unit", spec: "SMC Thermo-chiller", detectedSerial: "", isVerified: false },
+          { id: "p4-2-1", category: "[ WOA-683 ]", partName: "Delivery Pump", subSpec: "815", spec: "PM28238-815, 230V", detectedSerial: "", isVerified: false },
+          { id: "p4-2-2", category: "[ WOA-683 ]", partName: "Calibration Pump", subSpec: "-", spec: "107CCD18-621", detectedSerial: "", isVerified: false },
+          { id: "p4-2-3", category: "[ WOA-683 ]", partName: "Ozone Analyzer", subSpec: "-", spec: "49i-B1NAA", detectedSerial: "", isVerified: false },
+          { id: "p4-2-4", category: "[ WOA-683 ]", partName: "Calibration", subSpec: "-", spec: "49iPS-BZAA", detectedSerial: "", isVerified: false },
+          { id: "p4-2-5", category: "[ CONTROL ]", partName: "Control Board", subSpec: "UCON-161", spec: "Main S/N", detectedSerial: "", isVerified: false },
+          { id: "p4-2-6", category: "[ CONTROL ]", partName: "Control Board", subSpec: "UCON-107", spec: "I/O S/N", detectedSerial: "", isVerified: false },
         ]
       }
     ]

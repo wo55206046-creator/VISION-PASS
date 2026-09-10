@@ -1,5 +1,5 @@
 import { ProjectMaster } from "@/types";
-import { countVerifiedSerials } from "./project-merger";
+import { mergeProjectLists, countVerifiedSerials } from "./project-merger";
 
 // ============================================================================
 // 1. 중앙 원격 데이터베이스 설정 및 인터페이스 정의 (Supabase 전용)
@@ -168,6 +168,23 @@ export function subscribeLocalBroadcast(onUpdate: (projects: ProjectMaster[]) =>
 let memoryCacheProjects: ProjectMaster[] | null = null;
 
 /**
+ * 🔍 로컬 브라우저에 저장된 최신 프로젝트 데이터 직접 조회
+ */
+function loadDirectLocalProjects(): ProjectMaster[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw =
+      localStorage.getItem(STORAGE_PROJECTS_KEY) ||
+      localStorage.getItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+/**
  * 💾 프로젝트 데이터 저장 (Supabase 클라우드 실시간 저장 + LocalStorage 안전 보관)
  */
 export async function saveCentralProjects(
@@ -199,25 +216,54 @@ export async function saveCentralProjects(
     projects,
   };
 
-  // 2. [Supabase REST 실시간 저장]
+  // 2. [Supabase REST 실시간 저장 - 3단계 안전 Upsert 보장]
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
-      const headers: Record<string, string> = {
+      const baseHeaders: Record<string, string> = {
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
         "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates",
       };
 
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?on_conflict=room_key`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          room_key: payload.roomKey,
-          data: payload,
-          updated_at: nowStr,
-        }),
+      const bodyPayload = JSON.stringify({
+        room_key: payload.roomKey,
+        data: payload,
+        updated_at: nowStr,
       });
+
+      // 1단계: PostgREST merge-duplicates Upsert 시도
+      let res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?on_conflict=room_key`, {
+        method: "POST",
+        headers: {
+          ...baseHeaders,
+          "Prefer": "resolution=merge-duplicates",
+        },
+        body: bodyPayload,
+      });
+
+      // 2단계: Upsert 실패 시(테이블 고유키 제약조건 차이 등), PATCH(수정) 시도
+      if (!res.ok) {
+        res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(payload.roomKey)}`, {
+          method: "PATCH",
+          headers: {
+            ...baseHeaders,
+            "Prefer": "return=representation",
+          },
+          body: JSON.stringify({
+            data: payload,
+            updated_at: nowStr,
+          }),
+        });
+
+        // 3단계: 기존 레코드가 없어 0건 수정되었거나 오류인 경우 일반 INSERT 시도
+        if (!res.ok) {
+          res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync`, {
+            method: "POST",
+            headers: baseHeaders,
+            body: bodyPayload,
+          });
+        }
+      }
 
       if (res.ok) {
         return { success: true, message: `Supabase 클라우드 실시간 저장 완료 (${projects.length}개 프로젝트)` };
@@ -268,20 +314,37 @@ export async function fetchCentralProjects(
           rows[0].data.projects.length > 0
         ) {
           const payload = rows[0].data;
-          memoryCacheProjects = payload.projects;
+          const cloudProjects = payload.projects;
+          const localProjects = loadDirectLocalProjects();
+
+          // ★ 핵심: 클라우드 데이터로 로컬을 무조건 덮어쓰지 않고 스마트 병합!
+          // 로컬에 이미 입력된 시리얼 번호는 절대 지워지지 않도록 보호!
+          const merged = localProjects && localProjects.length > 0
+            ? mergeProjectLists(localProjects, cloudProjects)
+            : cloudProjects;
+
+          memoryCacheProjects = merged;
           if (typeof window !== "undefined") {
             try {
-              localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(payload.projects));
+              const mJson = JSON.stringify(merged);
+              localStorage.setItem(STORAGE_PROJECTS_KEY, mJson);
+              localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", mJson);
               if (payload.updatedAt) {
                 localStorage.setItem(STORAGE_LAST_SYNC_KEY, payload.updatedAt);
               }
             } catch {}
           }
+
+          // 로컬에 시리얼이 더 많이 입력되어 있다면 클라우드로 즉시 역동기화(Auto-heal)
+          if (localProjects && countVerifiedSerials(merged) > countVerifiedSerials(cloudProjects)) {
+            saveCentralProjects(merged, roomKey).catch(() => {});
+          }
+
           return {
             success: true,
-            projects: payload.projects,
+            projects: merged,
             updatedAt: payload.updatedAt || rows[0].updated_at,
-            message: `Supabase 클라우드 데이터 동기화 완료 (${payload.projects.length}개 프로젝트)`,
+            message: `Supabase 클라우드 데이터 동기화 완료 (${merged.length}개 프로젝트)`,
           };
         }
       }
@@ -290,7 +353,7 @@ export async function fetchCentralProjects(
     }
   }
 
-  // 2. [로컬 스토리지 캐시 및 레거시(V7, V6, V5, V2, V1...) 전수 탐색 복구]
+  // 2. [로컬 스토리지 캐시 및 레거시 전수 복구]
   if (typeof window !== "undefined") {
     try {
       const KNOWN_KEYS = [
@@ -299,16 +362,19 @@ export async function fetchCentralProjects(
         "VISION_PASS_PROJECTS_DATA_V8",
         "VISION_PASS_PROJECTS_DATA_V7",
         "VISION_PASS_PROJECTS_DATA_V6",
-        "VISION_PASS_PROJECTS_DATA_V5",
-        "VISION_PASS_PROJECTS_DATA_V4",
-        "VISION_PASS_PROJECTS_DATA_V3",
-        "VISION_PASS_PROJECTS_DATA_V2",
-        "VISION_PASS_PROJECTS_DATA_V1",
-        "VISION_PASS_PROJECTS_V2",
-        "VISION_PASS_PROJECTS_V1",
-        "VISION_PASS_PROJECTS_DATA",
-        "VISION_PASS_PROJECTS",
       ];
+
+      // 현재 V8 또는 영구 백업에 데이터가 있으면 최우선 반환
+      const directLocal = loadDirectLocalProjects();
+      if (directLocal && directLocal.length > 0) {
+        memoryCacheProjects = directLocal;
+        return {
+          success: true,
+          projects: directLocal,
+          updatedAt: localStorage.getItem(STORAGE_LAST_SYNC_KEY) || new Date().toISOString(),
+          message: `로컬 스토리지 데이터 로드 완료 (${directLocal.length}개 프로젝트)`,
+        };
+      }
 
       let bestProjects: ProjectMaster[] | null = null;
       let bestSerialCount = -1;
@@ -320,7 +386,7 @@ export async function fetchCentralProjects(
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
               const serialCount = countVerifiedSerials(parsed);
-              if (!bestProjects || serialCount > bestSerialCount || (serialCount === bestSerialCount && parsed.length > bestProjects.length)) {
+              if (!bestProjects || serialCount > bestSerialCount) {
                 bestProjects = parsed;
                 bestSerialCount = serialCount;
               }
@@ -329,35 +395,11 @@ export async function fetchCentralProjects(
         }
       }
 
-      // localStorage 전체 키 전수 스캔 (사용자 정의 키나 임시 백업 탐색)
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && !KNOWN_KEYS.includes(k)) {
-          try {
-            const raw = localStorage.getItem(k);
-            if (raw && (raw.includes("pjtCode") || raw.includes("equipmentUnits"))) {
-              const parsed = JSON.parse(raw);
-              const list = Array.isArray(parsed)
-                ? parsed
-                : parsed?.projects && Array.isArray(parsed.projects)
-                ? parsed.projects
-                : null;
-              if (list && list.length > 0 && (list[0].pjtCode || list[0].site)) {
-                const serialCount = countVerifiedSerials(list);
-                if (!bestProjects || serialCount > bestSerialCount || (serialCount === bestSerialCount && list.length > bestProjects.length)) {
-                  bestProjects = list;
-                  bestSerialCount = serialCount;
-                }
-              }
-            }
-          } catch {}
-        }
-      }
-
       if (bestProjects && bestProjects.length > 0) {
         memoryCacheProjects = bestProjects;
-        localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(bestProjects));
-        // 클라우드에도 업로드 시도
+        const pJson = JSON.stringify(bestProjects);
+        localStorage.setItem(STORAGE_PROJECTS_KEY, pJson);
+        localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", pJson);
         saveCentralProjects(bestProjects, roomKey).catch(() => {});
         return {
           success: true,
@@ -373,7 +415,7 @@ export async function fetchCentralProjects(
 }
 
 // ============================================================================
-// 6. 실시간 동기화 리스너 (Supabase 3.5초 스마트 폴링)
+// 6. 실시간 동기화 리스너 (Supabase 3.5초 스마트 폴링 + 로컬 시리얼 100% 보존)
 // ============================================================================
 export function subscribeCentralRealtime(
   onUpdate: (projects: ProjectMaster[]) => void,
@@ -412,14 +454,23 @@ export function subscribeCentralRealtime(
               Array.isArray(payload.projects)
             ) {
               lastKnownTimestamp = updatedTime;
-              memoryCacheProjects = payload.projects;
+              const localProjects = loadDirectLocalProjects();
+
+              // ★ 스마트 병합을 적용하여 기존 로컬 시리얼 100% 보존
+              const merged = localProjects && localProjects.length > 0
+                ? mergeProjectLists(localProjects, payload.projects)
+                : payload.projects;
+
+              memoryCacheProjects = merged;
               if (typeof window !== "undefined") {
                 try {
-                  localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(payload.projects));
+                  const mJson = JSON.stringify(merged);
+                  localStorage.setItem(STORAGE_PROJECTS_KEY, mJson);
+                  localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", mJson);
                   localStorage.setItem(STORAGE_LAST_SYNC_KEY, updatedTime);
                 } catch {}
               }
-              onUpdate(payload.projects);
+              onUpdate(merged);
             }
           }
         }

@@ -29,6 +29,8 @@ import {
 
 const STORAGE_KEY = "VISION_PASS_PROJECTS_DATA_V8";
 const PERSISTENT_BACKUP_KEY = "VISION_PASS_PERMANENT_SERIALS_SNAPSHOT";
+const STORAGE_ACTIVE_PROJECT_ID = "VISION_PASS_ACTIVE_PROJECT_ID";
+const STORAGE_ACTIVE_STEP = "VISION_PASS_ACTIVE_STEP";
 const LEGACY_STORAGE_KEYS = [
   PERSISTENT_BACKUP_KEY,
   STORAGE_KEY,
@@ -49,10 +51,24 @@ function loadSavedProjects(): ProjectMaster[] {
   if (typeof window === "undefined") return INITIAL_PROJECT_LIST;
 
   try {
+    // 1. 현재 최신 V8 또는 영구 백업에 데이터가 이미 있으면 최우선 반환 (구버전 캐시로 덮어쓰기 원천 차단)
+    const primaryKeys = [STORAGE_KEY, PERSISTENT_BACKUP_KEY];
+    for (const key of primaryKeys) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
+            return parsed;
+          }
+        } catch {}
+      }
+    }
+
+    // 2. primaryKeys에 없는 경우에만 과거 레거시 버전 탐색
     let bestCandidate: ProjectMaster[] | null = null;
     let bestSerialCount = -1;
 
-    // 1. 이미 알려진 모든 이전 버전 및 영구 백업 키 전수 탐색
     for (const key of LEGACY_STORAGE_KEYS) {
       const raw = localStorage.getItem(key);
       if (raw) {
@@ -60,35 +76,9 @@ function loadSavedProjects(): ProjectMaster[] {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
             const serialCount = countVerifiedSerials(parsed);
-            // 시리얼 번호가 더 많이 입력되어 있거나, 프로젝트 개수가 더 많은 데이터셋을 절대 우선 복구
-            if (!bestCandidate || serialCount > bestSerialCount || (serialCount === bestSerialCount && parsed.length > bestCandidate.length)) {
+            if (!bestCandidate || serialCount > bestSerialCount) {
               bestCandidate = parsed;
               bestSerialCount = serialCount;
-            }
-          }
-        } catch {}
-      }
-    }
-
-    // 2. 혹시 다른 키 이름으로 저장되었을 가능성 (localStorage 전체 전수 조사)
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && !LEGACY_STORAGE_KEYS.includes(k)) {
-        try {
-          const raw = localStorage.getItem(k);
-          if (raw && (raw.includes("pjtCode") || raw.includes("equipmentUnits"))) {
-            const parsed = JSON.parse(raw);
-            const list = Array.isArray(parsed)
-              ? parsed
-              : parsed?.projects && Array.isArray(parsed.projects)
-              ? parsed.projects
-              : null;
-            if (list && list.length > 0 && (list[0].pjtCode || list[0].site)) {
-              const serialCount = countVerifiedSerials(list);
-              if (!bestCandidate || serialCount > bestSerialCount || (serialCount === bestSerialCount && list.length > bestCandidate.length)) {
-                bestCandidate = list;
-                bestSerialCount = serialCount;
-              }
             }
           }
         } catch {}
@@ -110,11 +100,35 @@ function loadSavedProjects(): ProjectMaster[] {
 }
 
 export default function Home() {
-  const [currentStep, setCurrentStep] = useState<number>(1);
-  const [projects, setProjects] = useState<ProjectMaster[]>(() => INITIAL_PROJECT_LIST);
-  const [currentProjectId, setCurrentProjectId] = useState<string>(
-    () => INITIAL_PROJECT_LIST[0]?.id || "pjt-001"
-  );
+  const [currentStep, setCurrentStep] = useState<number>(() => {
+    if (typeof window === "undefined") return 1;
+    try {
+      const s = localStorage.getItem(STORAGE_ACTIVE_STEP);
+      if (s) {
+        const parsed = parseInt(s, 10);
+        if (parsed >= 1 && parsed <= 4) return parsed;
+      }
+    } catch {}
+    return 1;
+  });
+
+  const [projects, setProjects] = useState<ProjectMaster[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = loadSavedProjects();
+      if (saved && saved.length > 0) return saved;
+    }
+    return INITIAL_PROJECT_LIST;
+  });
+
+  const [currentProjectId, setCurrentProjectId] = useState<string>(() => {
+    if (typeof window === "undefined") return INITIAL_PROJECT_LIST[0]?.id || "pjt-001";
+    try {
+      const savedId = localStorage.getItem(STORAGE_ACTIVE_PROJECT_ID);
+      if (savedId && savedId.trim()) return savedId.trim();
+    } catch {}
+    return INITIAL_PROJECT_LIST[0]?.id || "pjt-001";
+  });
+
   const [draftProject, setDraftProject] = useState<ProjectMaster | null>(null);
 
   // 실시간 동기화 및 데이터 영구 보존 제어용 Refs
@@ -123,6 +137,7 @@ export default function Home() {
   const isSyncingInFlight = useRef(false);
   const lastKnownCloudJson = useRef<string>("");
   const syncPushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastLocalEditTimeRef = useRef<number>(0); // ★ 로컬 수정 보호 락 (Anti-Revert Lock)
 
   // 1. [자동 수신] 클라우드 최신 데이터 실시간 풀 함수 (스마트 병합 적용)
   const fetchCloudProjects = async () => {
@@ -133,6 +148,13 @@ export default function Home() {
       const res = await pullProjectsFromCloud();
       if (res.success && res.projects && res.projects.length > 0) {
         setProjects((prevProjects) => {
+          // 로컬 수정 직후 15초 이내이고 클라우드의 시리얼 수가 더 적으면 덮어쓰지 않고 로컬 우선
+          const localSerials = countVerifiedSerials(prevProjects);
+          const cloudSerials = countVerifiedSerials(res.projects!);
+          if (Date.now() - lastLocalEditTimeRef.current < 15000 && cloudSerials < localSerials) {
+            return prevProjects;
+          }
+
           // ★ 기존 로컬에 이미 입력된 시리얼 번호가 절대 사라지지 않도록 스마트 병합!
           const merged = mergeProjectLists(prevProjects, res.projects!);
           const mergedJson = JSON.stringify(merged);
@@ -169,7 +191,13 @@ export default function Home() {
     const saved = loadSavedProjects();
     if (saved && saved.length > 0) {
       setProjects(saved);
-      setCurrentProjectId(saved[0].id || "pjt-001");
+      const rememberedId = localStorage.getItem(STORAGE_ACTIVE_PROJECT_ID);
+      const targetPjt = rememberedId ? saved.find((p) => p.id === rememberedId) : null;
+      if (targetPjt) {
+        setCurrentProjectId(targetPjt.id || "pjt-001");
+      } else if (saved[0]?.id) {
+        setCurrentProjectId(saved[0].id);
+      }
       lastKnownCloudJson.current = JSON.stringify(saved);
     }
 
@@ -190,6 +218,11 @@ export default function Home() {
     const unsubscribeBroadcast = subscribeLocalBroadcast((incoming) => {
       if (incoming && incoming.length > 0) {
         setProjects((prev) => {
+          const localSerials = countVerifiedSerials(prev);
+          const incomingSerials = countVerifiedSerials(incoming);
+          if (Date.now() - lastLocalEditTimeRef.current < 15000 && incomingSerials < localSerials) {
+            return prev;
+          }
           const merged = mergeProjectLists(prev, incoming);
           const mergedJson = JSON.stringify(merged);
           if (mergedJson !== lastKnownCloudJson.current) {
@@ -208,6 +241,11 @@ export default function Home() {
     const unsubscribeRealtime = subscribeCloudRealtime((incoming) => {
       if (incoming && incoming.length > 0) {
         setProjects((prev) => {
+          const localSerials = countVerifiedSerials(prev);
+          const incomingSerials = countVerifiedSerials(incoming);
+          if (Date.now() - lastLocalEditTimeRef.current < 15000 && incomingSerials < localSerials) {
+            return prev;
+          }
           const merged = mergeProjectLists(prev, incoming);
           const mergedJson = JSON.stringify(merged);
           if (mergedJson !== lastKnownCloudJson.current) {
@@ -276,8 +314,16 @@ export default function Home() {
   // 현재 선택된 프로젝트
   const currentProject = projects.find((p) => p.id === currentProjectId) || projects[0];
 
+  const navigateToStep = (step: number) => {
+    setCurrentStep(step);
+    try {
+      localStorage.setItem(STORAGE_ACTIVE_STEP, String(step));
+    } catch {}
+  };
+
   // 프로젝트 실시간 업데이트 (즉시 로컬 저장 및 React 상태 반영)
   const updateCurrentProject = (updater: (prev: ProjectMaster) => ProjectMaster) => {
+    lastLocalEditTimeRef.current = Date.now();
     setProjects((prevProjects) => {
       const nextProjects = prevProjects.map((p) => {
         if (p.id === currentProjectId) {
@@ -310,13 +356,16 @@ export default function Home() {
       }
     } catch {}
     setDraftProject(newPjt);
-    setCurrentStep(2); // 2. PJT 입력 단계로 이동
+    navigateToStep(2); // 2. PJT 입력 단계로 이동
   };
 
   const handleSelectProject = (projectId: string, targetStep = 3) => {
     setDraftProject(null);
     setCurrentProjectId(projectId);
-    setCurrentStep(targetStep);
+    navigateToStep(targetStep);
+    try {
+      localStorage.setItem(STORAGE_ACTIVE_PROJECT_ID, projectId);
+    } catch {}
   };
 
   const handleDuplicateProject = (projectId: string) => {
@@ -354,7 +403,11 @@ export default function Home() {
       const next = projects.filter((p) => p.id !== projectId);
       setProjects(next);
       if (next.length > 0 && currentProjectId === projectId) {
-        setCurrentProjectId(next[0].id || "");
+        const fallbackId = next[0].id || "";
+        setCurrentProjectId(fallbackId);
+        try {
+          localStorage.setItem(STORAGE_ACTIVE_PROJECT_ID, fallbackId);
+        } catch {}
       }
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -392,7 +445,10 @@ export default function Home() {
 
     setCurrentProjectId(finalizedPjt.id || "");
     setDraftProject(null);
-    setCurrentStep(1); // 1. PJT List 목록 화면으로 이동!
+    navigateToStep(1); // 1. PJT List 목록 화면으로 이동!
+    try {
+      localStorage.setItem(STORAGE_ACTIVE_PROJECT_ID, finalizedPjt.id || "");
+    } catch {}
   };
 
   return (
@@ -404,7 +460,7 @@ export default function Home() {
           if (step === 2 && !draftProject) {
             handleCreateNewProject();
           } else {
-            setCurrentStep(step);
+            navigateToStep(step);
           }
         }}
         pjtCode={currentProject?.pjtCode}
@@ -449,12 +505,12 @@ export default function Home() {
               if (pjtToSave) {
                 handleSaveDraftProject(pjtToSave);
               } else {
-                setCurrentStep(1);
+                navigateToStep(1);
               }
             }}
             onBackToPjtList={() => {
               setDraftProject(null);
-              setCurrentStep(1);
+              navigateToStep(1);
             }}
           />
         )}
@@ -464,8 +520,8 @@ export default function Home() {
           <EquipmentUnitStep
             project={currentProject}
             onUpdate={updateCurrentProject}
-            onPrev={() => setCurrentStep(2)}
-            onBackToPjtList={() => setCurrentStep(1)}
+            onPrev={() => navigateToStep(2)}
+            onBackToPjtList={() => navigateToStep(1)}
           />
         )}
 
@@ -493,7 +549,7 @@ export default function Home() {
                   if (item.num === 2 && !draftProject) {
                     handleCreateNewProject();
                   } else {
-                    setCurrentStep(item.num);
+                    navigateToStep(item.num);
                   }
                 }}
                 className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all cursor-pointer ${

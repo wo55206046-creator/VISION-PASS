@@ -5,6 +5,14 @@ import { ProjectMaster, EquipmentUnit, PartItem } from "@/types";
  * - 로컬 데이터와 원격(클라우드) 데이터를 합칠 때, 사용자가 이미 입력/스캔한 시리얼 번호가
  *   빈 값으로 덮어써져 사라지는 문제를 100% 원천 차단합니다.
  */
+function getPartCompositeKey(pt: PartItem): string {
+  const cat = (pt.category || "").trim().toLowerCase();
+  const name = (pt.partName || "").trim().toLowerCase();
+  const sub = (pt.subSpec || "").trim().toLowerCase();
+  const spec = (pt.spec || "").trim().toLowerCase();
+  return `${cat}::${name}::${sub}::${spec}`;
+}
+
 export function mergeProjectLists(
   existingList: ProjectMaster[],
   incomingList: ProjectMaster[]
@@ -22,7 +30,7 @@ export function mergeProjectLists(
     mergedMap.set(key, JSON.parse(JSON.stringify(p)));
   }
 
-  // 2. Incoming 프로젝트와 스마트 병합
+  // 2. Incoming 프로젝트와 스마트 병합 (기존 입력 시리얼 100% 영구 보존)
   for (const inc of incomingList) {
     if (!inc) continue;
     const key = (inc.pjtCode?.trim() || inc.id || "").toUpperCase();
@@ -54,37 +62,42 @@ export function mergeProjectLists(
         continue;
       }
       if (exUnit && incUnit) {
-        // 호기 시리얼 결정: 시리얼이 입력되어 있는 쪽 최우선 보존
+        // 호기 설비 시리얼 결정: 입력되어 있는 쪽 최우선 보존
         const chosenSerial =
           exUnit.equipmentSerial?.trim() || incUnit.equipmentSerial?.trim() || "";
 
-        // 부품 목록 병합
+        // 부품 목록 병합: 복합 키 기반 맵핑
         const partMap = new Map<string, PartItem>();
-        // 기존 부품 먼저 적재
+        // 1) 기존 부품 먼저 적재
         for (const pt of exUnit.parts || []) {
-          const ptKey = (pt.partName + "::" + (pt.spec || "")).toLowerCase();
+          const ptKey = getPartCompositeKey(pt);
           partMap.set(ptKey, JSON.parse(JSON.stringify(pt)));
         }
 
-        // incoming 부품 병합 (기존 시리얼 절대 보호)
+        // 2) incoming 부품 병합 (기존에 입력된 시리얼은 절대로 빈 값으로 덮어쓰지 않음)
         for (const incPt of incUnit.parts || []) {
-          const ptKey = (incPt.partName + "::" + (incPt.spec || "")).toLowerCase();
+          const ptKey = getPartCompositeKey(incPt);
           const exPt = partMap.get(ptKey);
 
           if (!exPt) {
             partMap.set(ptKey, JSON.parse(JSON.stringify(incPt)));
           } else {
             // ★ 핵심: 이미 입력된 시리얼 번호는 빈 값으로 절대 덮어쓰지 않음!
+            const exSerial = exPt.detectedSerial?.trim() || "";
+            const incSerial = incPt.detectedSerial?.trim() || "";
+
+            // 시리얼 우선순위: 기존 시리얼이 있으면 무조건 유지 (incoming이 빈 값이면 절대 덮어쓰지 않음)
+            const finalSerial = exSerial || incSerial;
+            const finalVerified = Boolean(finalSerial) && (exPt.isVerified || incPt.isVerified);
+
             const mergedPart: PartItem = {
-              ...exPt,
               ...incPt,
-              detectedSerial:
-                exPt.detectedSerial?.trim() || incPt.detectedSerial?.trim() || "",
-              isVerified:
-                Boolean(exPt.detectedSerial?.trim() && exPt.isVerified) ||
-                Boolean(incPt.detectedSerial?.trim() && incPt.isVerified),
-              scannedAt: exPt.scannedAt || incPt.scannedAt,
-              confidence: exPt.confidence || incPt.confidence,
+              ...exPt,
+              id: exPt.id || incPt.id,
+              detectedSerial: finalSerial,
+              isVerified: finalVerified,
+              scannedAt: exSerial ? (exPt.scannedAt || new Date().toISOString()) : (incPt.scannedAt || exPt.scannedAt),
+              confidence: exSerial ? (exPt.confidence || incPt.confidence) : (incPt.confidence || exPt.confidence),
             };
             partMap.set(ptKey, mergedPart);
           }
@@ -98,15 +111,16 @@ export function mergeProjectLists(
       }
     }
 
-    // 프로젝트 메타정보 병합
+    // 프로젝트 메타정보 병합 (기존 ID 유지하여 화면 전환 방지)
     const mergedProject: ProjectMaster = {
-      ...existing,
       ...inc,
-      site: inc.site || existing.site,
-      pjtCode: inc.pjtCode || existing.pjtCode,
-      equipmentName: inc.equipmentName || existing.equipmentName,
-      inspectorName: inc.inspectorName || existing.inspectorName,
-      inspectionDate: inc.inspectionDate || existing.inspectionDate,
+      ...existing,
+      id: existing.id || inc.id,
+      site: existing.site || inc.site,
+      pjtCode: existing.pjtCode || inc.pjtCode,
+      equipmentName: existing.equipmentName || inc.equipmentName,
+      inspectorName: existing.inspectorName || inc.inspectorName,
+      inspectionDate: existing.inspectionDate || inc.inspectionDate,
       quantity: mergedUnits.length,
       equipmentUnits: mergedUnits,
       updatedAt:
