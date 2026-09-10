@@ -1,4 +1,5 @@
 import { ProjectMaster } from "@/types";
+import { countVerifiedSerials } from "./project-merger";
 
 // ============================================================================
 // 1. 중앙 원격 데이터베이스 설정 및 인터페이스 정의 (Supabase 전용)
@@ -179,7 +180,9 @@ export async function saveCentralProjects(
 
   if (typeof window !== "undefined") {
     try {
-      localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(projects));
+      const pJson = JSON.stringify(projects);
+      localStorage.setItem(STORAGE_PROJECTS_KEY, pJson);
+      localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", pJson);
       localStorage.setItem(STORAGE_LAST_SYNC_KEY, nowStr);
     } catch (e) {
       console.warn("LocalStorage save error", e);
@@ -291,6 +294,7 @@ export async function fetchCentralProjects(
   if (typeof window !== "undefined") {
     try {
       const KNOWN_KEYS = [
+        "VISION_PASS_PERMANENT_SERIALS_SNAPSHOT",
         STORAGE_PROJECTS_KEY,
         "VISION_PASS_PROJECTS_DATA_V8",
         "VISION_PASS_PROJECTS_DATA_V7",
@@ -307,6 +311,7 @@ export async function fetchCentralProjects(
       ];
 
       let bestProjects: ProjectMaster[] | null = null;
+      let bestSerialCount = -1;
 
       for (const k of KNOWN_KEYS) {
         const raw = localStorage.getItem(k);
@@ -314,8 +319,10 @@ export async function fetchCentralProjects(
           try {
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
-              if (!bestProjects || parsed.length > bestProjects.length) {
+              const serialCount = countVerifiedSerials(parsed);
+              if (!bestProjects || serialCount > bestSerialCount || (serialCount === bestSerialCount && parsed.length > bestProjects.length)) {
                 bestProjects = parsed;
+                bestSerialCount = serialCount;
               }
             }
           } catch {}
@@ -336,8 +343,10 @@ export async function fetchCentralProjects(
                 ? parsed.projects
                 : null;
               if (list && list.length > 0 && (list[0].pjtCode || list[0].site)) {
-                if (!bestProjects || list.length > bestProjects.length) {
+                const serialCount = countVerifiedSerials(list);
+                if (!bestProjects || serialCount > bestSerialCount || (serialCount === bestSerialCount && list.length > bestProjects.length)) {
                   bestProjects = list;
+                  bestSerialCount = serialCount;
                 }
               }
             }

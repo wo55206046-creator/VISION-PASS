@@ -17,6 +17,7 @@ import {
   setSyncRoomKey,
 } from "@/lib/cloud-sync";
 import { initOfflineQueueListener } from "@/lib/offline-sync-queue";
+import { mergeProjectLists, countVerifiedSerials } from "@/lib/project-merger";
 import {
   ShieldCheck,
   Cpu,
@@ -27,7 +28,9 @@ import {
 } from "lucide-react";
 
 const STORAGE_KEY = "VISION_PASS_PROJECTS_DATA_V8";
+const PERSISTENT_BACKUP_KEY = "VISION_PASS_PERMANENT_SERIALS_SNAPSHOT";
 const LEGACY_STORAGE_KEYS = [
+  PERSISTENT_BACKUP_KEY,
   STORAGE_KEY,
   "VISION_PASS_PROJECTS_DATA_V7",
   "VISION_PASS_PROJECTS_DATA_V6",
@@ -47,17 +50,20 @@ function loadSavedProjects(): ProjectMaster[] {
 
   try {
     let bestCandidate: ProjectMaster[] | null = null;
+    let bestSerialCount = -1;
 
-    // 1. 이미 알려진 모든 이전 버전 키 전수 탐색
+    // 1. 이미 알려진 모든 이전 버전 및 영구 백업 키 전수 탐색
     for (const key of LEGACY_STORAGE_KEYS) {
       const raw = localStorage.getItem(key);
       if (raw) {
         try {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
-            // 프로젝트 개수가 더 많거나 초기 기본 4개보다 많은 데이터를 최우선 선택
-            if (!bestCandidate || parsed.length > bestCandidate.length) {
+            const serialCount = countVerifiedSerials(parsed);
+            // 시리얼 번호가 더 많이 입력되어 있거나, 프로젝트 개수가 더 많은 데이터셋을 절대 우선 복구
+            if (!bestCandidate || serialCount > bestSerialCount || (serialCount === bestSerialCount && parsed.length > bestCandidate.length)) {
               bestCandidate = parsed;
+              bestSerialCount = serialCount;
             }
           }
         } catch {}
@@ -78,8 +84,10 @@ function loadSavedProjects(): ProjectMaster[] {
               ? parsed.projects
               : null;
             if (list && list.length > 0 && (list[0].pjtCode || list[0].site)) {
-              if (!bestCandidate || list.length > bestCandidate.length) {
+              const serialCount = countVerifiedSerials(list);
+              if (!bestCandidate || serialCount > bestSerialCount || (serialCount === bestSerialCount && list.length > bestCandidate.length)) {
                 bestCandidate = list;
+                bestSerialCount = serialCount;
               }
             }
           }
@@ -88,9 +96,9 @@ function loadSavedProjects(): ProjectMaster[] {
     }
 
     if (bestCandidate && bestCandidate.length > 0) {
-      // 최신 V8 스토리지에 안전하게 동기화 보존
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(bestCandidate));
+        localStorage.setItem(PERSISTENT_BACKUP_KEY, JSON.stringify(bestCandidate));
       } catch {}
       return bestCandidate;
     }
@@ -98,9 +106,6 @@ function loadSavedProjects(): ProjectMaster[] {
     console.warn("Failed to load projects from localStorage", e);
   }
 
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_PROJECT_LIST));
-  } catch (e) {}
   return INITIAL_PROJECT_LIST;
 }
 
@@ -112,13 +117,14 @@ export default function Home() {
   );
   const [draftProject, setDraftProject] = useState<ProjectMaster | null>(null);
 
-  // 실시간 동기화 제어용 Refs
+  // 실시간 동기화 및 데이터 영구 보존 제어용 Refs
   const isInitialMount = useRef(true);
+  const isInitialLoadComplete = useRef(false); // ★ 초기 로드 전 빈 데이터로 클라우드 덮어쓰기 원천 차단
   const isSyncingInFlight = useRef(false);
   const lastKnownCloudJson = useRef<string>("");
   const syncPushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 1. [자동 수신] 클라우드 최신 데이터 실시간 풀 함수
+  // 1. [자동 수신] 클라우드 최신 데이터 실시간 풀 함수 (스마트 병합 적용)
   const fetchCloudProjects = async () => {
     if (isSyncingInFlight.current) return;
     if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
@@ -126,19 +132,23 @@ export default function Home() {
       isSyncingInFlight.current = true;
       const res = await pullProjectsFromCloud();
       if (res.success && res.projects && res.projects.length > 0) {
-        const incomingJson = JSON.stringify(res.projects);
-        if (incomingJson !== lastKnownCloudJson.current) {
-          lastKnownCloudJson.current = incomingJson;
-          setProjects(res.projects);
+        setProjects((prevProjects) => {
+          // ★ 기존 로컬에 이미 입력된 시리얼 번호가 절대 사라지지 않도록 스마트 병합!
+          const merged = mergeProjectLists(prevProjects, res.projects!);
+          const mergedJson = JSON.stringify(merged);
+          lastKnownCloudJson.current = mergedJson;
           try {
-            localStorage.setItem(STORAGE_KEY, incomingJson);
+            localStorage.setItem(STORAGE_KEY, mergedJson);
+            localStorage.setItem(PERSISTENT_BACKUP_KEY, mergedJson);
           } catch {}
-        }
+          return merged;
+        });
       }
     } catch {
       // 백그라운드 네트워크 상태 무소음 처리
     } finally {
       isSyncingInFlight.current = false;
+      isInitialLoadComplete.current = true;
     }
   };
 
@@ -155,6 +165,7 @@ export default function Home() {
       } catch {}
     }
 
+    // 1단계: 로컬 저장소 및 영구 백업 스냅샷에서 기존 시리얼 작업 데이터 우선 복원
     const saved = loadSavedProjects();
     if (saved && saved.length > 0) {
       setProjects(saved);
@@ -162,43 +173,56 @@ export default function Home() {
       lastKnownCloudJson.current = JSON.stringify(saved);
     }
 
-    // 앱 시작 시 클라우드에서 최신 데이터 1회 안전 로드
-    fetchCloudProjects();
+    // 2단계: 클라우드에서 최신 데이터 가져와 안전 병합(Smart Merge)
+    fetchCloudProjects().finally(() => {
+      // 초기 로드가 완전히 끝난 뒤에만 자동 푸시 활성화
+      setTimeout(() => {
+        isInitialLoadComplete.current = true;
+      }, 600);
+    });
 
     // 화면 복귀, 탭 포커스 시 부드럽게 1회 확인
     const handleQuickSync = () => fetchCloudProjects();
     window.addEventListener("focus", handleQuickSync);
     document.addEventListener("visibilitychange", handleQuickSync);
 
-    // 1. 로컬 브로드캐스트 채널 구독 (동일 브라우저 탭 간 0.001초 즉각 동기화)
+    // 1. 로컬 브로드캐스트 채널 구독 (동일 브라우저 탭 간 스마트 병합)
     const unsubscribeBroadcast = subscribeLocalBroadcast((incoming) => {
       if (incoming && incoming.length > 0) {
-        const incomingJson = JSON.stringify(incoming);
-        if (incomingJson !== lastKnownCloudJson.current) {
-          lastKnownCloudJson.current = incomingJson;
-          setProjects(incoming);
-          try {
-            localStorage.setItem(STORAGE_KEY, incomingJson);
-          } catch {}
-        }
+        setProjects((prev) => {
+          const merged = mergeProjectLists(prev, incoming);
+          const mergedJson = JSON.stringify(merged);
+          if (mergedJson !== lastKnownCloudJson.current) {
+            lastKnownCloudJson.current = mergedJson;
+            try {
+              localStorage.setItem(STORAGE_KEY, mergedJson);
+              localStorage.setItem(PERSISTENT_BACKUP_KEY, mergedJson);
+            } catch {}
+          }
+          return merged;
+        });
       }
     });
 
-    // 2. ⚡ 초고속 실시간 SSE 클라우드 스트림 구독 (PC ↔ 모바일 0.05초 무제한 라이브 연동, 429 에러 원천 차단)
+    // 2. ⚡ 초고속 실시간 클라우드 스트림 구독 (스마트 병합)
     const unsubscribeRealtime = subscribeCloudRealtime((incoming) => {
       if (incoming && incoming.length > 0) {
-        const incomingJson = JSON.stringify(incoming);
-        if (incomingJson !== lastKnownCloudJson.current) {
-          lastKnownCloudJson.current = incomingJson;
-          setProjects(incoming);
-          try {
-            localStorage.setItem(STORAGE_KEY, incomingJson);
-          } catch {}
-        }
+        setProjects((prev) => {
+          const merged = mergeProjectLists(prev, incoming);
+          const mergedJson = JSON.stringify(merged);
+          if (mergedJson !== lastKnownCloudJson.current) {
+            lastKnownCloudJson.current = mergedJson;
+            try {
+              localStorage.setItem(STORAGE_KEY, mergedJson);
+              localStorage.setItem(PERSISTENT_BACKUP_KEY, mergedJson);
+            } catch {}
+          }
+          return merged;
+        });
       }
     });
 
-    // 3. 📦 오프라인 큐 리스너 등록 (네트워크 재연결 시 대기 중인 수정사항 자동 일괄 반영)
+    // 3. 📦 오프라인 큐 리스너 등록
     const unsubscribeOfflineQueue = initOfflineQueueListener();
 
     return () => {
@@ -217,10 +241,17 @@ export default function Home() {
       return;
     }
 
+    // ★ 안전 가드: 초기 로드가 완전히 끝나기 전에는 빈 데이터로 클라우드를 덮어쓰지 않음!
+    if (!isInitialLoadComplete.current) {
+      return;
+    }
+
     const currentJson = JSON.stringify(projects);
     try {
       if (projects && projects.length > 0) {
         localStorage.setItem(STORAGE_KEY, currentJson);
+        // ★ 영구 보존 스냅샷 2중 안전 저장
+        localStorage.setItem(PERSISTENT_BACKUP_KEY, currentJson);
       }
     } catch (e) {
       console.warn("Failed to save projects to localStorage", e);
@@ -257,7 +288,9 @@ export default function Home() {
       });
       
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextProjects));
+        const nextJson = JSON.stringify(nextProjects);
+        localStorage.setItem(STORAGE_KEY, nextJson);
+        localStorage.setItem(PERSISTENT_BACKUP_KEY, nextJson);
       } catch {}
 
       return nextProjects;
