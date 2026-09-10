@@ -81,12 +81,19 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
 
   // 현재 호기 부품 목록 업데이트 핸들러
   const handleUpdateCurrentParts = (newParts: PartItem[]) => {
-    onUpdate((prev) => ({
-      ...prev,
-      equipmentUnits: (prev?.equipmentUnits || []).map((u) =>
-        u.unitIndex === activeUnitIndex ? { ...u, parts: newParts } : u
-      ),
-    }));
+    onUpdate((prev) => {
+      const units = prev?.equipmentUnits || [];
+      const unitExists = units.some((u) => u.unitIndex === activeUnitIndex);
+      const nextUnits = unitExists
+        ? units.map((u) => (u.unitIndex === activeUnitIndex ? { ...u, parts: newParts } : u))
+        : [...units, { unitIndex: activeUnitIndex, equipmentSerial: "", parts: newParts }];
+
+      return {
+        ...prev,
+        equipmentUnits: nextUnits,
+        updatedAt: new Date().toISOString(),
+      };
+    });
   };
 
   // 프리셋에서 신규 부품 추가 핸들러

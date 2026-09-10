@@ -148,10 +148,12 @@ export default function MainApp() {
       const res = await pullProjectsFromCloud();
       if (res.success && res.projects && res.projects.length > 0) {
         setProjects((prevProjects) => {
-          // 로컬 수정 직후 15초 이내이고 클라우드의 시리얼 수가 더 적으면 덮어쓰지 않고 로컬 우선
+          // ★ 클라우드의 시리얼 수가 로컬보다 적으면 무조건 로컬 데이터 우선 보호! (원격 빈 데이터로 인한 덮어쓰기 영구 차단)
           const localSerials = countVerifiedSerials(prevProjects);
           const cloudSerials = countVerifiedSerials(res.projects!);
-          if (Date.now() - lastLocalEditTimeRef.current < 15000 && cloudSerials < localSerials) {
+          if (cloudSerials < localSerials) {
+            // 로컬에 작업 중인 시리얼이 더 많으므로 클라우드로 즉시 역동기화(Auto-heal)
+            pushProjectsToCloud(prevProjects).catch(() => {});
             return prevProjects;
           }
 
@@ -220,7 +222,7 @@ export default function MainApp() {
         setProjects((prev) => {
           const localSerials = countVerifiedSerials(prev);
           const incomingSerials = countVerifiedSerials(incoming);
-          if (Date.now() - lastLocalEditTimeRef.current < 15000 && incomingSerials < localSerials) {
+          if (incomingSerials < localSerials) {
             return prev;
           }
           const merged = mergeProjectLists(prev, incoming);
@@ -243,7 +245,7 @@ export default function MainApp() {
         setProjects((prev) => {
           const localSerials = countVerifiedSerials(prev);
           const incomingSerials = countVerifiedSerials(incoming);
-          if (Date.now() - lastLocalEditTimeRef.current < 15000 && incomingSerials < localSerials) {
+          if (incomingSerials < localSerials) {
             return prev;
           }
           const merged = mergeProjectLists(prev, incoming);
@@ -330,21 +332,41 @@ export default function MainApp() {
   const updateCurrentProject = (updater: (prev: ProjectMaster) => ProjectMaster) => {
     lastLocalEditTimeRef.current = Date.now();
     setProjects((prevProjects) => {
+      const targetId = currentProjectId || currentProject?.id;
+      let matched = false;
       const nextProjects = prevProjects.map((p) => {
-        if (p.id === currentProjectId) {
+        if (
+          p.id === targetId ||
+          (currentProjectId && p.id === currentProjectId) ||
+          (currentProject && p.id === currentProject.id)
+        ) {
+          matched = true;
           const updated = updater(p);
           return { ...updated, updatedAt: new Date().toISOString() };
         }
         return p;
       });
+
+      // 🛡️ 만약 ID 불일치 시 현재 보고 있던 첫 번째 프로젝트 또는 활성 프로젝트를 확실하게 갱신
+      const finalProjects = matched
+        ? nextProjects
+        : prevProjects.map((p, idx) => {
+            if (idx === 0 || (currentProject && p.id === currentProject.id)) {
+              const updated = updater(p);
+              return { ...updated, updatedAt: new Date().toISOString() };
+            }
+            return p;
+          });
       
       try {
-        const nextJson = JSON.stringify(nextProjects);
+        const nextJson = JSON.stringify(finalProjects);
         localStorage.setItem(STORAGE_KEY, nextJson);
         localStorage.setItem(PERSISTENT_BACKUP_KEY, nextJson);
-      } catch {}
+      } catch (e) {
+        console.warn("Storage write error", e);
+      }
 
-      return nextProjects;
+      return finalProjects;
     });
   };
 

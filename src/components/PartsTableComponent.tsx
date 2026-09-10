@@ -64,6 +64,8 @@ export const PartsTable: React.FC<PartsTableProps> = ({
   // ✏️ 2. 시리얼 인라인 편집 상태
   const [editingSerialId, setEditingSerialId] = useState<string | null>(null);
   const [tempSerial, setTempSerial] = useState<string>("");
+  const isSavingInlineRef = React.useRef(false);
+  const editingSerialIdRef = React.useRef<string | null>(null);
 
   // 📋 3. 전체 항목 상세 편집 모달 상태
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -139,16 +141,45 @@ export const PartsTable: React.FC<PartsTableProps> = ({
     onUpdateParts(updated);
   };
 
-  // ✏️ 10. 시리얼 번호 인라인 저장
-  const handleSaveInlineSerial = (partId: string) => {
-    const trimmed = tempSerial.trim();
+  const handleStartInlineEdit = (partId: string, initialValue: string = "") => {
+    isSavingInlineRef.current = false;
+    editingSerialIdRef.current = partId;
+    setEditingSerialId(partId);
+    setTempSerial(initialValue);
+  };
+
+  const handleCancelInlineEdit = () => {
+    isSavingInlineRef.current = false;
+    editingSerialIdRef.current = null;
+    setEditingSerialId(null);
+    setTempSerial("");
+  };
+
+  // ✏️ 10. 시리얼 번호 인라인 저장 (중복 실행 및 Blur 시 빈값 덮어쓰기 원천 차단)
+  const handleSaveInlineSerial = (partId: string, explicitValue?: string) => {
+    // 🛡️ 가드 1: 이미 저장 완료되어 처리 중인 경우(Enter 후 Blur 발생 등) 절대 중복 실행 차단
+    if (isSavingInlineRef.current) return;
+    // 🛡️ 가드 2: 현재 편집 중인 부품 ID가 아니면 무시
+    if (editingSerialIdRef.current !== null && editingSerialIdRef.current !== partId && explicitValue === undefined) {
+      return;
+    }
+
+    isSavingInlineRef.current = true;
+    const valueToSave = explicitValue !== undefined ? explicitValue : tempSerial;
+    const trimmed = (valueToSave || "").trim();
+
+    // 편집 모드 종료
+    editingSerialIdRef.current = null;
+    setEditingSerialId(null);
+    setTempSerial("");
+
     const updated = parts.map((p) => {
       if (p.id === partId) {
         const hasValue = trimmed.length > 0;
         return {
           ...p,
           detectedSerial: trimmed,
-          isVerified: hasValue ? true : p.isVerified,
+          isVerified: hasValue ? true : (trimmed === "" ? false : p.isVerified),
           scannedAt: hasValue ? new Date().toISOString() : p.scannedAt,
         };
       }
@@ -160,8 +191,11 @@ export const PartsTable: React.FC<PartsTableProps> = ({
     }
 
     onUpdateParts(updated);
-    setEditingSerialId(null);
-    setTempSerial("");
+
+    // 연속 더블 클릭/Blur 레이스 컨디션 방지
+    setTimeout(() => {
+      isSavingInlineRef.current = false;
+    }, 200);
   };
 
   // 📋 11. 시리얼 번호 복사
@@ -648,8 +682,14 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                             onChange={(e) => setTempSerial(e.target.value)}
                             onBlur={() => handleSaveInlineSerial(part.id)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") handleSaveInlineSerial(part.id);
-                              if (e.key === "Escape") setEditingSerialId(null);
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleSaveInlineSerial(part.id);
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                handleCancelInlineEdit();
+                              }
                             }}
                             autoFocus
                             placeholder="시리얼 직접 입력..."
@@ -667,10 +707,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                           <button
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
-                              setEditingSerialId(null);
-                              setTempSerial("");
-                            }}
+                            onClick={handleCancelInlineEdit}
                             className="p-1 rounded bg-slate-800 text-slate-400 hover:text-white shrink-0"
                             title="취소"
                           >
@@ -680,10 +717,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                       ) : hasSerial ? (
                         <div className="flex items-center w-full min-w-0">
                           <span
-                            onClick={() => {
-                              setEditingSerialId(part.id);
-                              setTempSerial(part.detectedSerial || "");
-                            }}
+                            onClick={() => handleStartInlineEdit(part.id, part.detectedSerial || "")}
                             className="font-mono text-sm sm:text-base font-extrabold text-cyan-300 tracking-wide truncate cursor-pointer hover:underline"
                             title="클릭하여 시리얼 수정"
                           >
@@ -693,10 +727,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                       ) : (
                         <button
                           type="button"
-                          onClick={() => {
-                            setEditingSerialId(part.id);
-                            setTempSerial("");
-                          }}
+                          onClick={() => handleStartInlineEdit(part.id, "")}
                           className="text-slate-500 hover:text-slate-300 text-xs italic font-mono flex items-center gap-1 w-full"
                         >
                           <span>(시리얼 미입력 - 터치하여 작성)</span>
@@ -906,8 +937,14 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                               onChange={(e) => setTempSerial(e.target.value)}
                               onBlur={() => handleSaveInlineSerial(part.id)}
                               onKeyDown={(e) => {
-                                if (e.key === "Enter") handleSaveInlineSerial(part.id);
-                                if (e.key === "Escape") setEditingSerialId(null);
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  handleSaveInlineSerial(part.id);
+                                }
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  handleCancelInlineEdit();
+                                }
                               }}
                               autoFocus
                               placeholder="시리얼 직접 입력..."
@@ -925,10 +962,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => {
-                                setEditingSerialId(null);
-                                setTempSerial("");
-                              }}
+                              onClick={handleCancelInlineEdit}
                               className="p-1 rounded-md bg-slate-800 text-slate-400 hover:text-white shrink-0"
                               title="취소 (Esc)"
                             >
@@ -940,10 +974,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                             {hasSerial ? (
                               <span
                                 className="font-mono font-extrabold text-sm text-cyan-300 tracking-wide cursor-pointer hover:underline truncate max-w-[200px]"
-                                onClick={() => {
-                                  setEditingSerialId(part.id);
-                                  setTempSerial(part.detectedSerial || "");
-                                }}
+                                onClick={() => handleStartInlineEdit(part.id, part.detectedSerial || "")}
                                 title="클릭하여 시리얼 번호 수정"
                               >
                                 {part.detectedSerial}
@@ -951,13 +982,10 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setEditingSerialId(part.id);
-                                  setTempSerial("");
-                                }}
+                                onClick={() => handleStartInlineEdit(part.id, "")}
                                 className="text-slate-500 hover:text-cyan-400 text-[11px] italic font-mono flex items-center gap-1"
                               >
-                                <span>(미입력)</span>
+                                <span>(시리얼 미입력)</span>
                                 <Edit2 className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
                               </button>
                             )}
