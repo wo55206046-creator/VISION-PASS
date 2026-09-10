@@ -219,23 +219,23 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
             >
               <div className="space-y-2.5">
                 {/* 1. Main Info: 고객사 -> PJT CODE -> 설비명 */}
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-wrap sm:flex-nowrap">
                   {/* 고객사 */}
                   <span
-                    className={`shrink-0 whitespace-nowrap text-xs font-bold flex items-center gap-1 px-2.5 py-0.5 rounded-lg border shadow-sm ${siteStyle.bg}`}
+                    className={`shrink-0 whitespace-nowrap text-xs sm:text-sm font-extrabold flex items-center gap-1.5 px-3 py-1 sm:py-1.5 rounded-xl border shadow-sm ${siteStyle.bg}`}
                   >
-                    <Building2 className={`h-3.5 w-3.5 ${siteStyle.icon}`} />
+                    <Building2 className={`h-4 w-4 shrink-0 ${siteStyle.icon}`} />
                     <span>{pjt.site}</span>
                   </span>
 
-                  {/* PJT CODE */}
-                  <span className="shrink-0 whitespace-nowrap font-mono font-extrabold text-xs text-white tracking-wider bg-slate-950 px-2.5 py-0.5 rounded-lg border border-slate-800">
+                  {/* PJT CODE (사용자 요청: 폰트 확대 및 시인성 극대화) */}
+                  <span className="shrink-0 whitespace-nowrap font-mono font-black text-sm sm:text-base text-cyan-300 tracking-wider bg-slate-950 px-3.5 py-1 sm:py-1.5 rounded-xl border border-cyan-500/40 shadow-md shadow-cyan-950/30 ring-1 ring-cyan-500/20">
                     {pjt.pjtCode}
                   </span>
 
                   {/* 설비명 */}
                   <h3
-                    className="min-w-0 truncate font-bold text-white text-sm sm:text-base tracking-wide"
+                    className="min-w-0 truncate font-black text-white text-base sm:text-lg tracking-wide"
                     title={pjt.equipmentName}
                   >
                     {pjt.equipmentName}
@@ -243,12 +243,12 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                 </div>
 
                 {/* 2. S/N & 진행률/완료 상태 배지 (S/N 뒤에 배치) */}
-                <div className="bg-slate-950/80 border border-slate-800/80 px-3 py-1.5 rounded-xl font-mono text-xs flex items-center justify-between gap-2">
+                <div className="bg-slate-950/80 border border-slate-800/80 px-3 py-1.5 sm:py-2 rounded-xl font-mono text-xs sm:text-sm flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 truncate">
-                    <span className="text-[11px] text-cyan-400 font-bold shrink-0">
+                    <span className="text-xs text-cyan-400 font-bold shrink-0">
                       S/N:
                     </span>
-                    <span className="text-cyan-300 font-medium tracking-wide text-xs truncate">
+                    <span className="text-cyan-200 font-bold tracking-wide text-xs sm:text-sm truncate">
                       {formatSerialRange(pjt.equipmentUnits)}
                     </span>
                   </div>
