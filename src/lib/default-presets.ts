@@ -342,7 +342,7 @@ export function createEmptyProject(): ProjectMaster {
     equipmentName: "TM100L (NaVi-TM100L-0312)",
     quantity: 1,
     inspectorName: "김형태, 유병준",
-    inspectionDate: getTodayDateString(),
+    inspectionDate: "2026-09-07",
     notes: "TM100L 표준 시리얼 리스트 양식 (8개 모듈)",
     equipmentUnits: [
       {
@@ -368,9 +368,9 @@ export const INITIAL_PROJECT_LIST: ProjectMaster[] = [
     equipmentName: "TM100L (NaVi-TM100L-0312)",
     quantity: 1,
     inspectorName: "김형태, 유병준",
-    inspectionDate: getTodayDateString(),
+    inspectionDate: "2026-09-07",
     notes: "TM100L 표준 시리얼 리스트 양식 (8개 모듈)",
-    updatedAt: new Date().toISOString(),
+    updatedAt: "2026-09-07T09:00:00.000Z",
     equipmentUnits: [
       {
         unitIndex: 1,
@@ -387,16 +387,16 @@ export const INITIAL_PROJECT_LIST: ProjectMaster[] = [
     equipmentName: "COSMOS-100 (COSMOS-100-0340)",
     quantity: 3,
     inspectorName: "정재헌, 손홍렬",
-    inspectionDate: getTodayDateString(),
+    inspectionDate: "2026-09-07",
     notes: "40 Port 대구경 챔버 / 진공 게이지 및 칠러 시리얼 스캔 진행 중",
-    updatedAt: new Date(Date.now() - 3600000).toISOString(),
+    updatedAt: "2026-09-07T10:00:00.000Z",
     equipmentUnits: [
       {
         unitIndex: 1,
         equipmentSerial: "COS1-HC26-0703",
         parts: [
-          { id: "p2-1-1", partName: "Turbo Molecular Pump (TMP)", spec: "Shimadzu TMP-2003LM", detectedSerial: "SHI-TMP-8831A", isVerified: true, scannedAt: new Date().toISOString(), confidence: 97 },
-          { id: "p2-1-2", partName: "Recirculating Chiller Unit", spec: "SMC Thermo-chiller 5kW", detectedSerial: "SMC-CHL-9921", isVerified: true, scannedAt: new Date().toISOString(), confidence: 93 },
+          { id: "p2-1-1", partName: "Turbo Molecular Pump (TMP)", spec: "Shimadzu TMP-2003LM", detectedSerial: "SHI-TMP-8831A", isVerified: true, scannedAt: "2026-09-07T10:00:00.000Z", confidence: 97 },
+          { id: "p2-1-2", partName: "Recirculating Chiller Unit", spec: "SMC Thermo-chiller 5kW", detectedSerial: "SMC-CHL-9921", isVerified: true, scannedAt: "2026-09-07T10:00:00.000Z", confidence: 93 },
           { id: "p2-1-3", partName: "Pendulum Throttle Valve", spec: "VAT Series 65 / DN 250", detectedSerial: "", isVerified: false },
         ]
       },
@@ -426,32 +426,32 @@ export const INITIAL_PROJECT_LIST: ProjectMaster[] = [
     equipmentName: "VOICE200ultra-SOT200S (VOICE200ultra-SOT200S-0124)",
     quantity: 3,
     inspectorName: "정재헌, 손홍렬",
-    inspectionDate: getTodayDateString(),
+    inspectionDate: "2026-09-07",
     notes: "24 Port 3개 호기 연속 라인 설치 검수 완료",
-    updatedAt: new Date(Date.now() - 7200000).toISOString(),
+    updatedAt: "2026-09-07T11:00:00.000Z",
     equipmentUnits: [
       {
         unitIndex: 1,
         equipmentSerial: "SOTSU-SK26-0701",
         parts: [
-          { id: "p3-1-1", partName: "MFC (Mass Flow Controller) - SiH4", spec: "Horiba STEC / 0-500 sccm", detectedSerial: "STEC-2026-H8821", isVerified: true, scannedAt: new Date().toISOString(), confidence: 98 },
-          { id: "p3-1-2", partName: "Dry Vacuum Pump", spec: "Edwards iXH1820 / 1800 m3/h", detectedSerial: "EDW-IXH-99420A", isVerified: true, scannedAt: new Date().toISOString(), confidence: 96 },
+          { id: "p3-1-1", partName: "MFC (Mass Flow Controller) - SiH4", spec: "Horiba STEC / 0-500 sccm", detectedSerial: "STEC-2026-H8821", isVerified: true, scannedAt: "2026-09-07T11:00:00.000Z", confidence: 98 },
+          { id: "p3-1-2", partName: "Dry Vacuum Pump", spec: "Edwards iXH1820 / 1800 m3/h", detectedSerial: "EDW-IXH-99420A", isVerified: true, scannedAt: "2026-09-07T11:00:00.000Z", confidence: 96 },
         ]
       },
       {
         unitIndex: 2,
         equipmentSerial: "SOTSU-SK26-0702",
         parts: [
-          { id: "p3-2-1", partName: "MFC (Mass Flow Controller) - SiH4", spec: "Horiba STEC / 0-500 sccm", detectedSerial: "STEC-2026-H8822", isVerified: true, scannedAt: new Date().toISOString(), confidence: 97 },
-          { id: "p3-2-2", partName: "Dry Vacuum Pump", spec: "Edwards iXH1820 / 1800 m3/h", detectedSerial: "EDW-IXH-99421B", isVerified: true, scannedAt: new Date().toISOString(), confidence: 95 },
+          { id: "p3-2-1", partName: "MFC (Mass Flow Controller) - SiH4", spec: "Horiba STEC / 0-500 sccm", detectedSerial: "STEC-2026-H8822", isVerified: true, scannedAt: "2026-09-07T11:00:00.000Z", confidence: 97 },
+          { id: "p3-2-2", partName: "Dry Vacuum Pump", spec: "Edwards iXH1820 / 1800 m3/h", detectedSerial: "EDW-IXH-99421B", isVerified: true, scannedAt: "2026-09-07T11:00:00.000Z", confidence: 95 },
         ]
       },
       {
         unitIndex: 3,
         equipmentSerial: "SOTSU-SK26-0703",
         parts: [
-          { id: "p3-3-1", partName: "MFC (Mass Flow Controller) - SiH4", spec: "Horiba STEC / 0-500 sccm", detectedSerial: "STEC-2026-H8823", isVerified: true, scannedAt: new Date().toISOString(), confidence: 96 },
-          { id: "p3-3-2", partName: "Dry Vacuum Pump", spec: "Edwards iXH1820 / 1800 m3/h", detectedSerial: "EDW-IXH-99422C", isVerified: true, scannedAt: new Date().toISOString(), confidence: 94 },
+          { id: "p3-3-1", partName: "MFC (Mass Flow Controller) - SiH4", spec: "Horiba STEC / 0-500 sccm", detectedSerial: "STEC-2026-H8823", isVerified: true, scannedAt: "2026-09-07T11:00:00.000Z", confidence: 96 },
+          { id: "p3-3-2", partName: "Dry Vacuum Pump", spec: "Edwards iXH1820 / 1800 m3/h", detectedSerial: "EDW-IXH-99422C", isVerified: true, scannedAt: "2026-09-07T11:00:00.000Z", confidence: 94 },
         ]
       }
     ]
@@ -464,9 +464,9 @@ export const INITIAL_PROJECT_LIST: ProjectMaster[] = [
     equipmentName: "WOA-683 (WOA-683-0208)",
     quantity: 2,
     inspectorName: "정재헌, 손홍렬",
-    inspectionDate: getTodayDateString(),
+    inspectionDate: "2026-09-07",
     notes: "8 Port 세정 시스템 / 부품 시리얼 검증 대기",
-    updatedAt: new Date(Date.now() - 10800000).toISOString(),
+    updatedAt: "2026-09-07T12:00:00.000Z",
     equipmentUnits: [
       {
         unitIndex: 1,
@@ -502,15 +502,15 @@ export const INITIAL_PROJECT_LIST: ProjectMaster[] = [
     equipmentName: "NaVi-MG200 (NaVi-MG200)",
     quantity: 1,
     inspectorName: "김형태, 유병준",
-    inspectionDate: getTodayDateString(),
+    inspectionDate: "2026-09-07",
     notes: "핸들러 설비 검수 준비",
-    updatedAt: new Date(Date.now() - 14400000).toISOString(),
+    updatedAt: "2026-09-07T13:00:00.000Z",
     equipmentUnits: [
       {
         unitIndex: 1,
         equipmentSerial: "MG20-NT26-1102",
         parts: [
-          { id: "p5-1", partName: "MFC (Mass Flow Controller) - NF3", spec: "Brooks GF120 / 0-2000 sccm", detectedSerial: "BRK-NF3-4410", isVerified: true, scannedAt: new Date().toISOString(), confidence: 95 },
+          { id: "p5-1", partName: "MFC (Mass Flow Controller) - NF3", spec: "Brooks GF120 / 0-2000 sccm", detectedSerial: "BRK-NF3-4410", isVerified: true, scannedAt: "2026-09-07T13:00:00.000Z", confidence: 95 },
           { id: "p5-2", partName: "Fast Shut-off Gate Valve", spec: "VAT Series 12.1 / DN 200", detectedSerial: "", isVerified: false },
           { id: "p5-3", partName: "Safety Interlock Controller", spec: "Pilz PNOZ Multi 2 / SIL 3", detectedSerial: "", isVerified: false },
         ]

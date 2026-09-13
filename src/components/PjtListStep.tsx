@@ -167,6 +167,7 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
       onUpdateProject({
         ...editingPjt,
         quantity: editingPjt.equipmentUnits.length,
+        updatedAt: new Date().toISOString(),
       });
     }
 
@@ -323,7 +324,7 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                   <span className="flex items-center gap-1 shrink-0">
                     <Calendar className="h-3 w-3 text-slate-500 shrink-0" />
                     <span>
-                      작성일: <span className="text-slate-300 font-medium">{pjt.inspectionDate}</span>
+                      작성일: <span className="text-slate-300 font-medium">{pjt.inspectionDate || "-"}</span>
                     </span>
                   </span>
                 </div>
@@ -474,14 +475,20 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="text-slate-300 font-bold block mb-1">검사일자</label>
+                  <label className="text-slate-300 font-bold block mb-1">작성일자 (검사일자)</label>
                   <input
                     type="date"
-                    value={editingPjt.inspectionDate}
+                    value={editingPjt.inspectionDate || ""}
+                    onClick={(e: React.MouseEvent<HTMLInputElement>) => {
+                      try {
+                        (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
+                      } catch (err) {}
+                    }}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingPjt({ ...editingPjt, inspectionDate: e.target.value })
                     }
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:border-cyan-500 focus:outline-none"
+                    style={{ colorScheme: "dark" }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:border-cyan-500 focus:outline-none cursor-pointer"
                   />
                 </div>
               </div>

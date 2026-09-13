@@ -23,6 +23,7 @@ import {
   markProjectAsDeleted,
   isProjectDeleted,
   unmarkProjectAsDeleted,
+  getDeletedPartKeys,
   cleanStorageFromDeleted,
 } from "@/lib/deleted-projects";
 import {
@@ -59,7 +60,8 @@ function loadSavedProjects(): ProjectMaster[] {
 
   try {
     const delKeys = getDeletedProjectKeys();
-    cleanStorageFromDeleted(delKeys);
+    const delPartKeys = getDeletedPartKeys();
+    cleanStorageFromDeleted(delKeys, delPartKeys);
 
     // 1. 현재 최신 V8 또는 영구 백업에 데이터가 이미 있으면 최우선 반환 (삭제된 프로젝트 제외)
     const primaryKeys = [STORAGE_KEY, PERSISTENT_BACKUP_KEY];
@@ -155,12 +157,19 @@ export default function MainApp() {
   const fetchCloudProjects = async () => {
     if (isSyncingInFlight.current) return;
     if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+
+    // ★ 로컬 수정 보호 락: 최근 5초 이내에 로컬 작업(삭제/편집)이 있었다면 원격 덮어쓰기 일시 차단
+    if (Date.now() - lastLocalEditTimeRef.current < 5000) {
+      return;
+    }
+
     try {
       isSyncingInFlight.current = true;
       const res = await pullProjectsFromCloud();
       if (res.success && res.projects && res.projects.length > 0) {
         const delKeys = getDeletedProjectKeys();
-        cleanStorageFromDeleted(delKeys);
+        const delPartKeys = getDeletedPartKeys();
+        cleanStorageFromDeleted(delKeys, delPartKeys);
         const incomingSanitized = res.projects.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
 
         setProjects((prevProjects) => {
@@ -174,8 +183,8 @@ export default function MainApp() {
             return currentSanitized;
           }
 
-          // ★ 기존 로컬에 이미 입력된 시리얼 번호가 절대 사라지지 않도록 스마트 병합! (삭제된 프로젝트 부활 배제)
-          const merged = mergeProjectLists(currentSanitized, incomingSanitized, delKeys);
+          // ★ 기존 로컬에 이미 입력된 시리얼 번호가 절대 사라지지 않도록 스마트 병합! (삭제된 프로젝트/부품 부활 배제)
+          const merged = mergeProjectLists(currentSanitized, incomingSanitized, delKeys, delPartKeys);
           const mergedJson = JSON.stringify(merged);
           lastKnownCloudJson.current = mergedJson;
           try {
@@ -228,15 +237,20 @@ export default function MainApp() {
       }, 600);
     });
 
-    // 화면 복귀, 탭 포커스 시 부드럽게 1회 확인
-    const handleQuickSync = () => fetchCloudProjects();
+    // 화면 복귀, 탭 포커스 시 부드럽게 1회 확인 (최근 5초 로컬 편집 중일 시 무시)
+    const handleQuickSync = () => {
+      if (Date.now() - lastLocalEditTimeRef.current < 5000) return;
+      fetchCloudProjects();
+    };
     window.addEventListener("focus", handleQuickSync);
     document.addEventListener("visibilitychange", handleQuickSync);
 
     // 1. 로컬 브로드캐스트 채널 구독 (동일 브라우저 탭 간 스마트 병합)
     const unsubscribeBroadcast = subscribeLocalBroadcast((incoming) => {
+      if (Date.now() - lastLocalEditTimeRef.current < 5000) return;
       if (incoming && incoming.length > 0) {
         const delKeys = getDeletedProjectKeys();
+        const delPartKeys = getDeletedPartKeys();
         const cleanIncoming = incoming.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
         setProjects((prev) => {
           const cleanPrev = prev.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
@@ -245,7 +259,7 @@ export default function MainApp() {
           if (incomingSerials < localSerials) {
             return cleanPrev;
           }
-          const merged = mergeProjectLists(cleanPrev, cleanIncoming, delKeys);
+          const merged = mergeProjectLists(cleanPrev, cleanIncoming, delKeys, delPartKeys);
           const mergedJson = JSON.stringify(merged);
           if (mergedJson !== lastKnownCloudJson.current) {
             lastKnownCloudJson.current = mergedJson;
@@ -261,8 +275,10 @@ export default function MainApp() {
 
     // 2. ⚡ 초고속 실시간 클라우드 스트림 구독 (스마트 병합)
     const unsubscribeRealtime = subscribeCloudRealtime((incoming) => {
+      if (Date.now() - lastLocalEditTimeRef.current < 5000) return;
       if (incoming && incoming.length > 0) {
         const delKeys = getDeletedProjectKeys();
+        const delPartKeys = getDeletedPartKeys();
         const cleanIncoming = incoming.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
         setProjects((prev) => {
           const cleanPrev = prev.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
@@ -271,7 +287,7 @@ export default function MainApp() {
           if (incomingSerials < localSerials) {
             return cleanPrev;
           }
-          const merged = mergeProjectLists(cleanPrev, cleanIncoming, delKeys);
+          const merged = mergeProjectLists(cleanPrev, cleanIncoming, delKeys, delPartKeys);
           const mergedJson = JSON.stringify(merged);
           if (mergedJson !== lastKnownCloudJson.current) {
             lastKnownCloudJson.current = mergedJson;
@@ -383,8 +399,12 @@ export default function MainApp() {
       
       try {
         const nextJson = JSON.stringify(finalProjects);
+        lastKnownCloudJson.current = nextJson;
         localStorage.setItem(STORAGE_KEY, nextJson);
         localStorage.setItem(PERSISTENT_BACKUP_KEY, nextJson);
+        const delKeys = getDeletedProjectKeys();
+        const delPartKeys = getDeletedPartKeys();
+        cleanStorageFromDeleted(delKeys, delPartKeys);
       } catch (e) {
         console.warn("Storage write error", e);
       }
@@ -421,6 +441,7 @@ export default function MainApp() {
   const handleDuplicateProject = (projectId: string) => {
     const target = projects.find((p) => p.id === projectId);
     if (!target) return;
+    lastLocalEditTimeRef.current = Date.now();
     const dup: ProjectMaster = {
       ...target,
       id: "pjt-" + Math.random().toString(36).substring(2, 9),
@@ -441,9 +462,11 @@ export default function MainApp() {
     unmarkProjectAsDeleted(dup.id, dup.pjtCode);
     const next = [dup, ...projects];
     setProjects(next);
+    const nextJson = JSON.stringify(next);
+    lastKnownCloudJson.current = nextJson;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      localStorage.setItem(PERSISTENT_BACKUP_KEY, JSON.stringify(next));
+      localStorage.setItem(STORAGE_KEY, nextJson);
+      localStorage.setItem(PERSISTENT_BACKUP_KEY, nextJson);
     } catch {}
     pushProjectsToCloud(next).catch(console.warn);
   };
@@ -484,6 +507,7 @@ export default function MainApp() {
 
   // 2단계에서 [PJT 추가] 완료 시 신규 프로젝트 목록 추가 후 1단계(PJT List)로 이동
   const handleSaveDraftProject = (pjtToSave: ProjectMaster) => {
+    lastLocalEditTimeRef.current = Date.now();
     const newId = pjtToSave.id && pjtToSave.id !== "draft" ? pjtToSave.id : "pjt-" + Date.now();
     const finalizedPjt: ProjectMaster = {
       ...pjtToSave,
@@ -506,9 +530,11 @@ export default function MainApp() {
       : [finalizedPjt, ...projects];
 
     setProjects(next);
+    const nextJson = JSON.stringify(next);
+    lastKnownCloudJson.current = nextJson;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      localStorage.setItem(PERSISTENT_BACKUP_KEY, JSON.stringify(next));
+      localStorage.setItem(STORAGE_KEY, nextJson);
+      localStorage.setItem(PERSISTENT_BACKUP_KEY, nextJson);
     } catch {}
     pushProjectsToCloud(next).catch(console.warn);
 
@@ -548,11 +574,18 @@ export default function MainApp() {
             onDuplicateProject={handleDuplicateProject}
             onDeleteProject={handleDeleteProject}
             onUpdateProject={(updated) => {
-              const next = projects.map((p) => (p.id === updated.id ? updated : p));
+              lastLocalEditTimeRef.current = Date.now();
+              const stamped: ProjectMaster = {
+                ...updated,
+                updatedAt: new Date().toISOString(),
+              };
+              const next = projects.map((p) => (p.id === stamped.id ? stamped : p));
               setProjects(next);
+              const nextJson = JSON.stringify(next);
+              lastKnownCloudJson.current = nextJson;
               try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-                localStorage.setItem(PERSISTENT_BACKUP_KEY, JSON.stringify(next));
+                localStorage.setItem(STORAGE_KEY, nextJson);
+                localStorage.setItem(PERSISTENT_BACKUP_KEY, nextJson);
               } catch {}
               pushProjectsToCloud(next).catch(console.warn);
             }}

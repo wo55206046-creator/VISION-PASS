@@ -4,6 +4,11 @@ import React, { useState, useMemo, Fragment } from "react";
 import { PartItem } from "@/types";
 import { generateId, triggerScanFeedback } from "@/lib/utils";
 import {
+  markPartAsDeleted,
+  unmarkPartAsDeleted,
+  getPartCompositeKey,
+} from "@/lib/deleted-projects";
+import {
   Plus,
   Camera,
   CheckCircle2,
@@ -209,6 +214,12 @@ export const PartsTable: React.FC<PartsTableProps> = ({
   // 🗑️ 12. 단일 부품 삭제
   const handleDeletePart = (partId: string, partName: string) => {
     if (confirm(`[${partName}] 부품을 삭제하시겠습니까?`)) {
+      const target = parts.find((p) => p.id === partId);
+      if (target) {
+        markPartAsDeleted(target.id, getPartCompositeKey(target));
+      } else {
+        markPartAsDeleted(partId);
+      }
       const updated = parts.filter((p) => p.id !== partId);
       onUpdateParts(updated);
     }
@@ -338,6 +349,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
       updatedParts = [...parts, newItem];
     }
 
+    unmarkPartAsDeleted(newItem.id, getPartCompositeKey(newItem));
     onUpdateParts(updatedParts);
     setIsAddModalOpen(false);
     setNewPartName("");

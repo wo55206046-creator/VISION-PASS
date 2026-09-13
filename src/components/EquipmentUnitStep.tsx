@@ -11,6 +11,7 @@ import {
 } from "@/lib/excel-export";
 import { DEFAULT_SITES } from "@/lib/default-presets";
 import { generateId, generateNextSerial, cascadeSerialFromUnit1 } from "@/lib/utils";
+import { unmarkPartAsDeleted, getPartCompositeKey } from "@/lib/deleted-projects";
 import {
   Layers,
   Copy,
@@ -98,6 +99,7 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
 
   // 프리셋에서 신규 부품 추가 핸들러
   const handleAddPresetParts = (newParts: PartItem[]) => {
+    newParts.forEach((p) => unmarkPartAsDeleted(p.id, getPartCompositeKey(p)));
     const existingParts = currentUnit?.parts || [];
     handleUpdateCurrentParts([...existingParts, ...newParts]);
   };

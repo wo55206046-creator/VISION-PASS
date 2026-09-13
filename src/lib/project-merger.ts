@@ -1,32 +1,44 @@
 import { ProjectMaster, EquipmentUnit, PartItem } from "@/types";
-import { getDeletedProjectKeys, isProjectDeleted } from "./deleted-projects";
+import {
+  getDeletedProjectKeys,
+  isProjectDeleted,
+  getDeletedPartKeys,
+  isPartDeleted,
+  getPartCompositeKey,
+} from "./deleted-projects";
 
-/**
- * 🛡️ 데이터 영구 보존 스마트 병합(Smart Merge) 엔진
- * - 로컬 데이터와 원격(클라우드) 데이터를 합칠 때, 사용자가 이미 입력/스캔한 시리얼 번호가
- *   빈 값으로 덮어써져 사라지는 문제를 100% 원천 차단합니다.
- * - 삭제(Tombstone)된 프로젝트는 원격이나 레거시 캐시에서 절대로 부활하지 않도록 보호합니다.
- */
-function getPartCompositeKey(pt: PartItem): string {
-  const cat = (pt.category || "").trim().toLowerCase();
-  const name = (pt.partName || "").trim().toLowerCase();
-  const sub = (pt.subSpec || "").trim().toLowerCase();
-  const spec = (pt.spec || "").trim().toLowerCase();
-  return `${cat}::${name}::${sub}::${spec}`;
-}
+export { getPartCompositeKey };
 
 export function mergeProjectLists(
   existingList: ProjectMaster[],
   incomingList: ProjectMaster[],
-  deletedKeys?: Set<string>
+  deletedKeys?: Set<string>,
+  deletedPartKeys?: Set<string>
 ): ProjectMaster[] {
   const delKeys = deletedKeys || getDeletedProjectKeys();
+  const delPartKeys = deletedPartKeys || getDeletedPartKeys();
 
   if (!existingList || existingList.length === 0) {
-    return (incomingList || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+    return (incomingList || [])
+      .filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys))
+      .map((p) => ({
+        ...p,
+        equipmentUnits: (p.equipmentUnits || []).map((u) => ({
+          ...u,
+          parts: (u.parts || []).filter((pt) => !isPartDeleted(pt.id, getPartCompositeKey(pt), delPartKeys)),
+        })),
+      }));
   }
   if (!incomingList || incomingList.length === 0) {
-    return (existingList || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+    return (existingList || [])
+      .filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys))
+      .map((p) => ({
+        ...p,
+        equipmentUnits: (p.equipmentUnits || []).map((u) => ({
+          ...u,
+          parts: (u.parts || []).filter((pt) => !isPartDeleted(pt.id, getPartCompositeKey(pt), delPartKeys)),
+        })),
+      }));
   }
 
   const mergedMap = new Map<string, ProjectMaster>();
@@ -40,7 +52,7 @@ export function mergeProjectLists(
     mergedMap.set(key, JSON.parse(JSON.stringify(p)));
   }
 
-  // 2. Incoming 프로젝트와 스마트 병합 (기존 입력 시리얼 100% 영구 보존 & 삭제 프로젝트 부활 차단)
+  // 2. Incoming 프로젝트와 스마트 병합 (기존 입력 시리얼 100% 영구 보존 & 삭제 프로젝트/부활 차단)
   for (const inc of incomingList) {
     if (!inc) continue;
     if (isProjectDeleted(inc.id, inc.pjtCode, delKeys)) continue;
@@ -50,7 +62,11 @@ export function mergeProjectLists(
 
     if (!existing) {
       // 삭제 목록에 없는 유효한 신규 프로젝트만 추가
-      mergedMap.set(key, JSON.parse(JSON.stringify(inc)));
+      const sanitizedUnits = (inc.equipmentUnits || []).map((u) => ({
+        ...u,
+        parts: (u.parts || []).filter((pt) => !isPartDeleted(pt.id, getPartCompositeKey(pt), delPartKeys)),
+      }));
+      mergedMap.set(key, { ...JSON.parse(JSON.stringify(inc)), equipmentUnits: sanitizedUnits });
       continue;
     }
 
@@ -59,17 +75,26 @@ export function mergeProjectLists(
     const incomingUnits = inc.equipmentUnits || [];
     const mergedUnits: EquipmentUnit[] = [];
     const maxUnits = Math.max(existingUnits.length, incomingUnits.length);
+    const isExistingNewer = new Date(existing.updatedAt || 0) >= new Date(inc.updatedAt || 0);
 
     for (let uIdx = 1; uIdx <= maxUnits; uIdx++) {
       const exUnit = existingUnits.find((u) => u.unitIndex === uIdx);
       const incUnit = incomingUnits.find((u) => u.unitIndex === uIdx);
 
       if (!exUnit && incUnit) {
-        mergedUnits.push(JSON.parse(JSON.stringify(incUnit)));
+        const filteredParts = (incUnit.parts || []).filter((pt) => {
+          const compKey = getPartCompositeKey(pt);
+          return !isPartDeleted(pt.id, compKey, delPartKeys);
+        });
+        mergedUnits.push({ ...JSON.parse(JSON.stringify(incUnit)), parts: filteredParts });
         continue;
       }
       if (exUnit && !incUnit) {
-        mergedUnits.push(JSON.parse(JSON.stringify(exUnit)));
+        const filteredParts = (exUnit.parts || []).filter((pt) => {
+          const compKey = getPartCompositeKey(pt);
+          return !isPartDeleted(pt.id, compKey, delPartKeys);
+        });
+        mergedUnits.push({ ...JSON.parse(JSON.stringify(exUnit)), parts: filteredParts });
         continue;
       }
       if (exUnit && incUnit) {
@@ -77,41 +102,42 @@ export function mergeProjectLists(
         const chosenSerial =
           exUnit.equipmentSerial?.trim() || incUnit.equipmentSerial?.trim() || "";
 
-        // 부품 목록 병합: 복합 키 기반 맵핑
+        // ★ 핵심: 어느 쪽이 더 최신인가에 따라 기본 부품 목록(Base Set)을 결정
+        // local(existing)이 더 최신인 경우: 사용자가 삭제한 부품은 절대 incoming에서 되살아나지 않음!
+        const baseUnit = isExistingNewer ? exUnit : incUnit;
+        const secondaryUnit = isExistingNewer ? incUnit : exUnit;
+
         const partMap = new Map<string, PartItem>();
-        // 1) 기존 부품 먼저 적재
-        for (const pt of exUnit.parts || []) {
+
+        // 1) 최신(Base) 부품 목록 먼저 적재 (삭제된 부품 영구 제외)
+        for (const pt of baseUnit.parts || []) {
           const ptKey = getPartCompositeKey(pt);
+          if (isPartDeleted(pt.id, ptKey, delPartKeys)) continue;
           partMap.set(ptKey, JSON.parse(JSON.stringify(pt)));
         }
 
-        // 2) incoming 부품 병합 (기존에 입력된 시리얼은 절대로 빈 값으로 덮어쓰지 않음)
-        for (const incPt of incUnit.parts || []) {
-          const ptKey = getPartCompositeKey(incPt);
-          const exPt = partMap.get(ptKey);
+        // 2) 보조(Secondary) 부품에서 누락된 시리얼 번호만 안전 병합
+        for (const secPt of secondaryUnit.parts || []) {
+          const ptKey = getPartCompositeKey(secPt);
+          if (isPartDeleted(secPt.id, ptKey, delPartKeys)) continue;
 
-          if (!exPt) {
-            partMap.set(ptKey, JSON.parse(JSON.stringify(incPt)));
-          } else {
-            // ★ 핵심: 이미 입력된 시리얼 번호는 빈 값으로 절대 덮어쓰지 않음!
-            const exSerial = exPt.detectedSerial?.trim() || "";
-            const incSerial = incPt.detectedSerial?.trim() || "";
+          const basePt = partMap.get(ptKey);
+          if (basePt) {
+            // 이미 base에 존재하는 부품이면 시리얼 병합 (입력된 시리얼 보존)
+            const baseSerial = basePt.detectedSerial?.trim() || "";
+            const secSerial = secPt.detectedSerial?.trim() || "";
+            const finalSerial = baseSerial || secSerial;
+            const finalVerified = Boolean(finalSerial) && (basePt.isVerified || secPt.isVerified);
 
-            // 시리얼 우선순위: 기존 시리얼이 있으면 무조건 유지 (incoming이 빈 값이면 절대 덮어쓰지 않음)
-            const finalSerial = exSerial || incSerial;
-            const finalVerified = Boolean(finalSerial) && (exPt.isVerified || incPt.isVerified);
-
-            const mergedPart: PartItem = {
-              ...incPt,
-              ...exPt,
-              id: exPt.id || incPt.id,
-              detectedSerial: finalSerial,
-              isVerified: finalVerified,
-              scannedAt: exSerial ? (exPt.scannedAt || new Date().toISOString()) : (incPt.scannedAt || exPt.scannedAt),
-              confidence: exSerial ? (exPt.confidence || incPt.confidence) : (incPt.confidence || exPt.confidence),
-            };
-            partMap.set(ptKey, mergedPart);
+            basePt.detectedSerial = finalSerial;
+            basePt.isVerified = finalVerified;
+            basePt.scannedAt = baseSerial ? (basePt.scannedAt || new Date().toISOString()) : (secPt.scannedAt || basePt.scannedAt);
+            basePt.confidence = baseSerial ? (basePt.confidence || secPt.confidence) : (secPt.confidence || basePt.confidence);
+          } else if (!isExistingNewer) {
+            // 원격이 더 최신인데 로컬에만 존재했던 유효 신규 부품인 경우에만 추가 허용
+            partMap.set(ptKey, JSON.parse(JSON.stringify(secPt)));
           }
+          // ★ isExistingNewer인 경우: 로컬이 더 최신이므로, 로컬에서 삭제된 부품은 절대 secondaryUnit에서 되살아나지 않음!
         }
 
         mergedUnits.push({
@@ -122,16 +148,20 @@ export function mergeProjectLists(
       }
     }
 
-    // 프로젝트 메타정보 병합 (기존 ID 유지하여 화면 전환 방지)
+    // 프로젝트 메타정보 병합 (더 최신인 쪽의 정보를 최우선 적용하여 작성일/담당자/모델명 임의 변경 방지)
+    const newerProj = isExistingNewer ? existing : inc;
+    const olderProj = isExistingNewer ? inc : existing;
+
     const mergedProject: ProjectMaster = {
-      ...inc,
-      ...existing,
+      ...olderProj,
+      ...newerProj,
       id: existing.id || inc.id,
-      site: existing.site || inc.site,
-      pjtCode: existing.pjtCode || inc.pjtCode,
-      equipmentName: existing.equipmentName || inc.equipmentName,
-      inspectorName: existing.inspectorName || inc.inspectorName,
-      inspectionDate: existing.inspectionDate || inc.inspectionDate,
+      site: (newerProj.site || olderProj.site || "").trim(),
+      pjtCode: (newerProj.pjtCode || olderProj.pjtCode || "").trim(),
+      equipmentName: (newerProj.equipmentName || olderProj.equipmentName || "").trim(),
+      inspectorName: (newerProj.inspectorName || olderProj.inspectorName || "").trim(),
+      inspectionDate: (newerProj.inspectionDate || olderProj.inspectionDate || "").trim(),
+      notes: newerProj.notes !== undefined ? newerProj.notes : olderProj.notes,
       quantity: mergedUnits.length,
       equipmentUnits: mergedUnits,
       updatedAt:
