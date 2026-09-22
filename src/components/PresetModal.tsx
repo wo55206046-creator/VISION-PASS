@@ -75,6 +75,23 @@ export const PresetModal: React.FC<PresetModalProps> = ({
     }
   }, [templates]);
 
+  // 모달이 열릴 때 4단계(설비 부품 양식)에서 새로 등록/수정된 최신 양식을 즉시 재동기화
+  useEffect(() => {
+    if (isOpen && typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(STORAGE_TEMPLATES_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setTemplates(parsed);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to reload templates on open", e);
+      }
+    }
+  }, [isOpen]);
+
   // Template Editor Modal State
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<PjtModelTemplate | null>(null);

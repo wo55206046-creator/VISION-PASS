@@ -78,39 +78,84 @@ export function parseCombinedPjtInput(input: string): {
   return null;
 }
 
+const STORAGE_TEMPLATES_KEY = "VISION_PASS_PJT_TEMPLATES_V2";
+
 /**
- * 💡 모델명 또는 PJT 코드로 가장 적합한 PJT 표준 양식(Template) 자동 매칭
+ * 💡 4단계(설비 부품 양식)에 등록된 최신 PJT 양식 목록 로드
  */
-export function findMatchingTemplate(modelName?: string, pjtCode?: string): PjtModelTemplate | null {
+export function getRegisteredTemplates(): PjtModelTemplate[] {
   try {
-    let allTemplates: PjtModelTemplate[] = [...PJT_MODEL_TEMPLATES];
     if (typeof window !== "undefined") {
       const saved =
+        localStorage.getItem(STORAGE_TEMPLATES_KEY) ||
         localStorage.getItem("VISION_PASS_TEMPLATES_V2") ||
         localStorage.getItem("VISION_PASS_TEMPLATES_V1");
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          allTemplates = parsed;
+          return parsed;
         }
       }
     }
+  } catch (e) {
+    console.warn("Error loading registered templates:", e);
+  }
+  return PJT_MODEL_TEMPLATES;
+}
+
+/**
+ * 💡 모델명 또는 PJT 코드로 가장 적합한 PJT 표준 양식(Template) 자동 매칭
+ * 4단계 [설비 부품 양식]에 등록된 사용자 양식 및 수정사항을 최우선으로 매칭합니다.
+ */
+export function findMatchingTemplate(
+  modelName?: string,
+  pjtCode?: string,
+  customTemplates?: PjtModelTemplate[]
+): PjtModelTemplate | null {
+  try {
+    const allTemplates = customTemplates && customTemplates.length > 0
+      ? customTemplates
+      : getRegisteredTemplates();
 
     const cleanModel = (modelName || "").trim().toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
     const cleanPjt = (pjtCode || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 
     if (!cleanModel && !cleanPjt) return null;
 
-    // 1. 모델명 유사도 검색
+    // 1. 모델명 유사도 검색 (최우선)
     if (cleanModel) {
-      const match = allTemplates.find((t) => {
+      // 1-1. 완전 일치 (Exact match)
+      const exact = allTemplates.find((t) => {
         const tModel = t.modelName.toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
-        return tModel.includes(cleanModel) || cleanModel.includes(tModel);
+        return tModel === cleanModel;
       });
-      if (match) return match;
+      if (exact) return exact;
+
+      // 1-2. 접두사 일치 (Prefix match - 예: WOA-683 -> WOA-683 8P)
+      const prefixMatch = allTemplates.find((t) => {
+        const tModel = t.modelName.toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+        return tModel.startsWith(cleanModel) || cleanModel.startsWith(tModel);
+      });
+      if (prefixMatch) return prefixMatch;
+
+      // 1-3. 포함 일치 (Substring match)
+      const subMatch = allTemplates.find((t) => {
+        const tModel = t.modelName.toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+        return tModel.includes(cleanModel);
+      });
+      if (subMatch) return subMatch;
+
+      // 1-4. 역방향 포함 일치 (긴 사양서명 입력 시)
+      if (cleanModel.length >= 3) {
+        const reverseMatch = allTemplates.find((t) => {
+          const tModel = t.modelName.toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+          return tModel.length >= 3 && cleanModel.includes(tModel);
+        });
+        if (reverseMatch) return reverseMatch;
+      }
     }
 
-    // 2. PJT 코드 힌트 검색
+    // 2. PJT 코드 힌트 검색 (차순위)
     if (cleanPjt) {
       const match = allTemplates.find((t) => {
         const tPjt = (t.pjtCodeHint || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -150,13 +195,85 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
   // 수량 입력란 타이핑 중간 상태 (Backspace 시 1로 즉시 튕겨나가는 현상 방지)
   const [quantityInput, setQuantityInput] = useState<string>(String(project.quantity || 1));
 
+  // 4단계(설비 부품 양식)에서 등록된 최신 양식 목록 로드
+  const [registeredTemplates, setRegisteredTemplates] = useState<PjtModelTemplate[]>(() => {
+    return getRegisteredTemplates();
+  });
+
+  // 양식 변경 모달이 닫히거나 변경되었을 때 최신 양식 즉시 재동기화
+  React.useEffect(() => {
+    setRegisteredTemplates(getRegisteredTemplates());
+  }, [isPresetModalOpen]);
+
   React.useEffect(() => {
     setQuantityInput(String(project.quantity || 1));
   }, [project.quantity]);
 
+  // 모델명 직접 입력 시 4단계 양식과 실시간 자동 매칭
+  const handleEquipmentNameChange = (val: string) => {
+    onUpdate((prev) => {
+      const matched = findMatchingTemplate(val, prev.pjtCode, registeredTemplates);
+      if (matched && matched.parts && matched.parts.length > 0 && matched.modelName !== prev.templateName) {
+        const templateParts = matched.parts.map((p) => ({
+          ...p,
+          id: generateId(),
+          detectedSerial: "",
+          isVerified: false,
+          scannedAt: undefined,
+          confidence: undefined,
+        }));
+        return {
+          ...prev,
+          equipmentName: val,
+          templateName: matched.modelName,
+          equipmentUnits: (prev.equipmentUnits || []).map((u) => ({
+            ...u,
+            parts: templateParts.map((p) => ({ ...p, id: generateId() })),
+          })),
+        };
+      }
+      return {
+        ...prev,
+        equipmentName: val,
+      };
+    });
+  };
+
+  // PJT CODE 직접 입력 시 모델명이 비어있을 경우 해당 코드의 양식 자동 추천
+  const handlePjtCodeChange = (val: string) => {
+    const code = val.toUpperCase();
+    onUpdate((prev) => {
+      if (!prev.equipmentName?.trim()) {
+        const matched = findMatchingTemplate("", code, registeredTemplates);
+        if (matched && matched.parts && matched.parts.length > 0 && matched.modelName !== prev.templateName) {
+          const templateParts = matched.parts.map((p) => ({
+            ...p,
+            id: generateId(),
+            detectedSerial: "",
+            isVerified: false,
+          }));
+          return {
+            ...prev,
+            pjtCode: code,
+            templateName: matched.modelName,
+            equipmentName: matched.modelName,
+            equipmentUnits: (prev.equipmentUnits || []).map((u) => ({
+              ...u,
+              parts: templateParts.map((p) => ({ ...p, id: generateId() })),
+            })),
+          };
+        }
+      }
+      return {
+        ...prev,
+        pjtCode: code,
+      };
+    });
+  };
+
   // 스마트 자동 분리 데이터 일괄 적용
   const applySmartParsedData = (parsed: { site?: string; pjtCode?: string; equipmentName?: string }) => {
-    const matchedTpl = findMatchingTemplate(parsed.equipmentName, parsed.pjtCode);
+    const matchedTpl = findMatchingTemplate(parsed.equipmentName, parsed.pjtCode, registeredTemplates);
 
     onUpdate((prev) => {
       let updatedUnits = prev?.equipmentUnits || [];
@@ -280,7 +397,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
       currentPjtCode = parsed.pjtCode || currentPjtCode;
       currentEquipmentName = parsed.equipmentName || currentEquipmentName;
 
-      const matchedTpl = findMatchingTemplate(currentEquipmentName, currentPjtCode);
+      const matchedTpl = findMatchingTemplate(currentEquipmentName, currentPjtCode, registeredTemplates);
       let updatedUnits = project.equipmentUnits || [];
       let templateName = project.templateName;
 
@@ -464,7 +581,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
                   if (parsed) {
                     applySmartParsedData(parsed);
                   } else {
-                    onUpdate((prev) => ({ ...prev, pjtCode: val.toUpperCase() }));
+                    handlePjtCodeChange(val);
                   }
                 }}
                 onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
@@ -488,31 +605,50 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               <Cpu className="h-3.5 w-3.5 text-cyan-400" />
               <span>모델명 (인증명)</span> <span className="text-cyan-400">*</span>
             </label>
-            <span className="text-[10px] font-mono text-cyan-400">사양서 확인</span>
+            <span className="text-[10px] font-mono text-cyan-400">사양서 확인 / 4단계 양식 자동 추천</span>
           </div>
-          <input
-            type="text"
-            placeholder="예: NaVi-MG200 (NaVi-MG200H-0224), WOA-683 (WOA-683-0124)"
-            value={project.equipmentName}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-              const val = e.target.value;
-              const parsed = parseCombinedPjtInput(val);
-              if (parsed) {
-                applySmartParsedData(parsed);
-              } else {
-                onUpdate((prev) => ({ ...prev, equipmentName: val }));
-              }
-            }}
-            onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
-              const pasteText = e.clipboardData.getData("text");
-              const parsed = parseCombinedPjtInput(pasteText);
-              if (parsed) {
-                e.preventDefault();
-                applySmartParsedData(parsed);
-              }
-            }}
-            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-          />
+          <div className="relative">
+            <input
+              type="text"
+              list="template-models-datalist"
+              placeholder="예: NaVi-MG200, WOA-683 8P, Navi-WF301 24P"
+              value={project.equipmentName}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                const val = e.target.value;
+                const parsed = parseCombinedPjtInput(val);
+                if (parsed) {
+                  applySmartParsedData(parsed);
+                } else {
+                  handleEquipmentNameChange(val);
+                }
+              }}
+              onBlur={() => {
+                if (project.equipmentName) {
+                  const matched = findMatchingTemplate(project.equipmentName, project.pjtCode, registeredTemplates);
+                  if (matched && matched.parts && matched.modelName !== project.templateName) {
+                    handleApplyTemplateToAllUnits(matched);
+                  }
+                }
+              }}
+              onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
+                const pasteText = e.clipboardData.getData("text");
+                const parsed = parseCombinedPjtInput(pasteText);
+                if (parsed) {
+                  e.preventDefault();
+                  applySmartParsedData(parsed);
+                }
+              }}
+              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            />
+            {/* 4. 설비 부품 양식에 등록된 목록 자동완성 Datalist */}
+            <datalist id="template-models-datalist">
+              {registeredTemplates.map((t) => (
+                <option key={t.id} value={t.modelName}>
+                  {t.description ? `${t.description} (${t.parts?.length || 0}개 품목)` : `${t.parts?.length || 0}개 품목`}
+                </option>
+              ))}
+            </datalist>
+          </div>
         </div>
 
         {/* 3. 설비 담당자 (좌) & 검수일자 (우) */}
