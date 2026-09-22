@@ -76,14 +76,26 @@ export function markProjectAsDeleted(id?: string, pjtCode?: string): void {
 
 /**
  * 📦 다수의 삭제 프로젝트 키 일괄 등록 (클라우드 동기화 패킷 수신 시 활용)
+ * - 현재 로컬에서 활발하게 사용/작업 중인 프로젝트는 절대 삭제 목록에 등록되지 않도록 보호
  */
-export function markProjectsAsDeletedBulk(keys: string[]): void {
+export function markProjectsAsDeletedBulk(keys: string[], activeProjects?: { id?: string; pjtCode?: string }[]): void {
   if (typeof window === "undefined" || !keys || !Array.isArray(keys) || keys.length === 0) return;
   try {
     const set = getDeletedProjectKeys();
+    const activeSet = new Set<string>();
+    if (activeProjects && Array.isArray(activeProjects)) {
+      for (const p of activeProjects) {
+        if (p?.id?.trim()) activeSet.add(p.id.trim().toUpperCase());
+        if (p?.pjtCode?.trim()) activeSet.add(p.pjtCode.trim().toUpperCase());
+      }
+    }
+
     for (const k of keys) {
       if (k && String(k).trim()) {
-        set.add(String(k).trim().toUpperCase());
+        const cleanKey = String(k).trim().toUpperCase();
+        if (!activeSet.has(cleanKey)) {
+          set.add(cleanKey);
+        }
       }
     }
     localStorage.setItem(STORAGE_DELETED_PROJECTS_KEY, JSON.stringify(Array.from(set)));
@@ -96,8 +108,8 @@ export function markProjectsAsDeletedBulk(keys: string[]): void {
 export function isProjectDeleted(id?: string, pjtCode?: string, deletedKeys?: Set<string>): boolean {
   const set = deletedKeys || getDeletedProjectKeys();
   if (set.size === 0) return false;
-  if (id && set.has(id.trim().toUpperCase())) return true;
-  if (pjtCode && set.has(pjtCode.trim().toUpperCase())) return true;
+  if (id && id.trim() && set.has(id.trim().toUpperCase())) return true;
+  if (pjtCode && pjtCode.trim() && set.has(pjtCode.trim().toUpperCase())) return true;
   return false;
 }
 
@@ -108,8 +120,8 @@ export function unmarkProjectAsDeleted(id?: string, pjtCode?: string): void {
   if (typeof window === "undefined") return;
   try {
     const set = getDeletedProjectKeys();
-    if (id) set.delete(id.trim().toUpperCase());
-    if (pjtCode) set.delete(pjtCode.trim().toUpperCase());
+    if (id && id.trim()) set.delete(id.trim().toUpperCase());
+    if (pjtCode && pjtCode.trim()) set.delete(pjtCode.trim().toUpperCase());
     localStorage.setItem(STORAGE_DELETED_PROJECTS_KEY, JSON.stringify(Array.from(set)));
   } catch {}
 }

@@ -126,15 +126,19 @@ export function findMatchingTemplate(modelName?: string, pjtCode?: string): PjtM
 
 interface ProjectMasterStepProps {
   project: ProjectMaster;
+  isDraft?: boolean;
   onUpdate: (updater: (prev: ProjectMaster) => ProjectMaster) => void;
   onNext: () => void;
+  onSaveAndGoList?: () => void;
   onBackToPjtList?: () => void;
 }
 
 export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
   project,
+  isDraft = false,
   onUpdate,
   onNext,
+  onSaveAndGoList,
   onBackToPjtList,
 }) => {
   const [customSite, setCustomSite] = useState("");
@@ -142,6 +146,13 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [smartAutoFilled, setSmartAutoFilled] = useState(false);
   const [isPresetModalOpen, setIsPresetModalOpen] = useState(false);
+
+  // 수량 입력란 타이핑 중간 상태 (Backspace 시 1로 즉시 튕겨나가는 현상 방지)
+  const [quantityInput, setQuantityInput] = useState<string>(String(project.quantity || 1));
+
+  React.useEffect(() => {
+    setQuantityInput(String(project.quantity || 1));
+  }, [project.quantity]);
 
   // 스마트 자동 분리 데이터 일괄 적용
   const applySmartParsedData = (parsed: { site?: string; pjtCode?: string; equipmentName?: string }) => {
@@ -214,13 +225,13 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
     return { recentInspectors: list, lastInspector: latest || list[0] };
   }, []);
 
-  // 수량 변경 시 equipmentUnits 동기화 (기존 데이터 보존)
+  // 수량 변경 시 equipmentUnits 동기화 (최대 1,000대 지원 및 기존 데이터 보존)
   const handleQuantityChange = (newQty: number) => {
-    if (newQty < 1 || newQty > 50) return;
+    const clampedQty = Math.max(1, Math.min(1000, newQty));
 
     onUpdate((prev) => {
       const currentUnits = [...(prev?.equipmentUnits || [])];
-      const diff = newQty - currentUnits.length;
+      const diff = clampedQty - currentUnits.length;
 
       if (diff > 0) {
         // 호기 추가
@@ -246,12 +257,12 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
         }
       } else if (diff < 0) {
         // 호기 감소
-        currentUnits.splice(newQty);
+        currentUnits.splice(clampedQty);
       }
 
       return {
         ...prev,
-        quantity: newQty,
+        quantity: clampedQty,
         equipmentUnits: currentUnits,
       };
     });
@@ -368,7 +379,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             02
           </span>
           <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
-            프로젝트 추가
+            {isDraft ? "신규 프로젝트 추가" : "프로젝트 정보 수정"}
           </h2>
         </div>
       </div>
@@ -573,7 +584,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
           </div>
         </div>
 
-        {/* 4. 설비 수량 (호기 생성) */}
+        {/* 4. 설비 수량 (호기 생성) - 최대 1,000대 확장 및 안정적인 타이핑 지원 */}
         <div className="space-y-1.5">
           <label className="flex items-center justify-between text-xs font-semibold text-slate-300">
             <span className="flex items-center gap-1.5">
@@ -581,15 +592,19 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               <span>설비 수량 (호기 생성)</span> <span className="text-cyan-400">*</span>
             </span>
             <span className="text-[11px] text-slate-400 font-mono">
-              현재 {project.quantity}개 호기
+              현재 {project.quantity}개 호기 (최대 1,000대 지원)
             </span>
           </label>
 
           <div className="flex items-center gap-2 max-w-xs">
             <button
               type="button"
-              onClick={() => handleQuantityChange(project.quantity - 1)}
-              disabled={project.quantity <= 1}
+              onClick={() => {
+                const nextVal = Math.max(1, (project.quantity || 1) - 1);
+                handleQuantityChange(nextVal);
+                setQuantityInput(String(nextVal));
+              }}
+              disabled={(project.quantity || 1) <= 1}
               className="flex h-9 w-10 items-center justify-center rounded-xl bg-slate-800 text-base font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
             >
               -
@@ -597,16 +612,42 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             <input
               type="number"
               min="1"
-              max="50"
-              value={project.quantity}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleQuantityChange(parseInt(e.target.value) || 1)}
+              max="1000"
+              value={quantityInput}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                const raw = e.target.value;
+                setQuantityInput(raw);
+                if (raw.trim() !== "") {
+                  const parsed = parseInt(raw, 10);
+                  if (!isNaN(parsed) && parsed >= 1 && parsed <= 1000) {
+                    handleQuantityChange(parsed);
+                  }
+                }
+              }}
+              onBlur={() => {
+                const parsed = parseInt(quantityInput, 10);
+                if (isNaN(parsed) || parsed < 1) {
+                  handleQuantityChange(1);
+                  setQuantityInput("1");
+                } else if (parsed > 1000) {
+                  handleQuantityChange(1000);
+                  setQuantityInput("1000");
+                } else {
+                  handleQuantityChange(parsed);
+                  setQuantityInput(String(parsed));
+                }
+              }}
               style={{ MozAppearance: "textfield" }}
               className="w-full text-center rounded-xl bg-slate-950 border border-slate-700 py-1.5 text-sm font-bold font-mono text-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
             <button
               type="button"
-              onClick={() => handleQuantityChange(project.quantity + 1)}
-              disabled={project.quantity >= 50}
+              onClick={() => {
+                const nextVal = Math.min(1000, (project.quantity || 1) + 1);
+                handleQuantityChange(nextVal);
+                setQuantityInput(String(nextVal));
+              }}
+              disabled={(project.quantity || 1) >= 1000}
               className="flex h-9 w-10 items-center justify-center rounded-xl bg-slate-800 text-base font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
             >
               +
@@ -701,26 +742,63 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
       </div>
 
       {/* Action Button */}
-      <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+      <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-2">
         {onBackToPjtList ? (
           <button
             type="button"
             onClick={onBackToPjtList}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 px-5 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-all cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 px-4 sm:px-5 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-all cursor-pointer"
           >
             <ArrowLeft className="h-4 w-4" />
             <span>1. PJT List 목록</span>
           </button>
         ) : <div />}
 
-        <button
-          type="button"
-          onClick={handleNextClick}
-          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-3 text-xs font-extrabold text-slate-950 shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer"
-        >
-          <Plus className="h-4 w-4 stroke-[3]" />
-          <span>PJT 추가</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {isDraft && onSaveAndGoList && (
+            <button
+              type="button"
+              onClick={() => {
+                let currentPjtCode = project?.pjtCode || "";
+                let currentEquipmentName = project?.equipmentName || "";
+                if (!currentPjtCode?.trim()) {
+                  setErrorMsg("PJT CODE를 입력해주세요.");
+                  return;
+                }
+                if (!currentEquipmentName?.trim()) {
+                  setErrorMsg("설비명을 입력해주세요.");
+                  return;
+                }
+                setErrorMsg(null);
+                onSaveAndGoList();
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3.5 sm:px-4 py-3 text-xs font-bold text-cyan-300 transition-all cursor-pointer shadow-sm"
+              title="프로젝트를 등록하고 1단계 목록으로 돌아갑니다"
+            >
+              <CheckCircle2 className="h-4 w-4 text-cyan-400" />
+              <span>저장 후 목록으로</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleNextClick}
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 sm:px-6 py-3 text-xs font-extrabold text-slate-950 shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer"
+          >
+            {isDraft ? (
+              <>
+                <Plus className="h-4 w-4 stroke-[3]" />
+                <span>PJT 생성 및 OCR 검사 시작</span>
+                <ArrowRight className="h-4 w-4 stroke-[2.5]" />
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-4 w-4 stroke-[2.5]" />
+                <span>수정사항 저장</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* 📑 PJT 양식 Modal */}

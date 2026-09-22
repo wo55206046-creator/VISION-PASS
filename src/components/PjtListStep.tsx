@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { ProjectMaster, EquipmentUnit } from "@/types";
 import {
   Layers,
@@ -107,6 +107,38 @@ function formatSerialRange(units: EquipmentUnit[] = []): string {
   return `${unit1Serial}~${lastSerial}`;
 }
 
+// 작성일(inspectionDate) 및 최근 작업 시각(updatedAt) 기준 최신순(내림차순) 정렬 헬퍼
+function parseDateScore(dateStr?: string): number {
+  if (!dateStr || !dateStr.trim()) return -1;
+  const trimmed = dateStr.trim();
+  // YYYY-MM-DD 형식의 경우 로컬 날짜 타임스탬프로 안전하게 변환
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const parts = trimmed.split("-").map(Number);
+    return new Date(parts[0], parts[1] - 1, parts[2]).getTime();
+  }
+  const t = Date.parse(trimmed);
+  return isNaN(t) ? -1 : t;
+}
+
+export function compareProjectsByDate(a: ProjectMaster, b: ProjectMaster): number {
+  // 1. 작성일(inspectionDate) 기준 최신순 (내림차순: 오늘/최근 날짜가 맨 위로)
+  const dateScoreA = parseDateScore(a.inspectionDate);
+  const dateScoreB = parseDateScore(b.inspectionDate);
+  if (dateScoreA !== dateScoreB) {
+    return dateScoreB - dateScoreA;
+  }
+
+  // 2. 작성일이 같거나 둘 다 없는 경우: 최근 수정/작업 시각(updatedAt) 기준 최신순
+  const updateScoreA = parseDateScore(a.updatedAt);
+  const updateScoreB = parseDateScore(b.updatedAt);
+  if (updateScoreA !== updateScoreB) {
+    return updateScoreB - updateScoreA;
+  }
+
+  // 3. 둘 다 같을 경우 ID 역순 기준 안정적 정렬
+  return (b.id || "").localeCompare(a.id || "");
+}
+
 export const PjtListStep: React.FC<PjtListStepProps> = ({
   projects,
   currentProjectId,
@@ -124,15 +156,28 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
   const [editingPjt, setEditingPjt] = useState<ProjectMaster | null>(null);
 
   const filteredProjects = projects.filter((p) => {
-    const q = searchFilter.toLowerCase();
+    if (!p) return false;
+    const q = searchFilter.trim().toLowerCase();
+    if (!q) return true;
+    const pjtCode = (p.pjtCode || "").toLowerCase();
+    const equipmentName = (p.equipmentName || "").toLowerCase();
+    const site = (p.site || "").toLowerCase();
+    const inspectorName = (p.inspectorName || "").toLowerCase();
+    const serialMatch = (p.equipmentUnits || []).some((u) => (u?.equipmentSerial || "").toLowerCase().includes(q));
+
     return (
-      p.pjtCode.toLowerCase().includes(q) ||
-      p.equipmentName.toLowerCase().includes(q) ||
-      p.site.toLowerCase().includes(q) ||
-      p.equipmentUnits.some((u) => u.equipmentSerial.toLowerCase().includes(q)) ||
-      (p.inspectorName && p.inspectorName.toLowerCase().includes(q))
+      pjtCode.includes(q) ||
+      equipmentName.includes(q) ||
+      site.includes(q) ||
+      inspectorName.includes(q) ||
+      serialMatch
     );
   });
+
+  // ★ 작성일 기준 가장 최신/빠른 날짜가 맨 위로 오도록 정렬 (작업자가 최근 작업한 PJT를 즉시 이어 작업할 수 있도록 보장)
+  const sortedProjects = useMemo(() => {
+    return [...filteredProjects].sort(compareProjectsByDate);
+  }, [filteredProjects]);
 
   const handleExportExcel = async (pjt: ProjectMaster, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -190,10 +235,16 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
             </h2>
           </div>
 
-          {/* 총 프로젝트 개수 (우측 배치) */}
-          <span className="text-xs font-mono text-slate-300 bg-slate-950 px-2.5 py-1 rounded-full border border-slate-800 shrink-0 whitespace-nowrap shadow-inner">
-            총 <strong className="text-cyan-400 font-bold">{filteredProjects.length}</strong>개 프로젝트
-          </span>
+          {/* 정렬 기준 및 총 프로젝트 개수 (우측 배치) */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-mono text-cyan-300 bg-cyan-950/60 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border border-cyan-800/50 shadow-inner">
+              <Calendar className="h-3 w-3 text-cyan-400 shrink-0" />
+              <span>작성일 최신순</span>
+            </span>
+            <span className="text-xs font-mono text-slate-300 bg-slate-950 px-2.5 py-1 rounded-full border border-slate-800 shrink-0 whitespace-nowrap shadow-inner">
+              총 <strong className="text-cyan-400 font-bold">{sortedProjects.length}</strong>개 프로젝트
+            </span>
+          </div>
         </div>
 
         {/* 2. 검색창 + [+ 신규 PJT 추가] 버튼 (동일 라인 배치) */}
@@ -223,7 +274,7 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
 
       {/* PC 2열 그리드 & 모바일 1열 카드 배치 (PC 뷰에서 반반 2개 PJT 표시) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4">
-        {filteredProjects.map((pjt) => {
+        {sortedProjects.map((pjt) => {
           const isCurrent = pjt.id === currentProjectId;
           let totalParts = 0;
           let verifiedParts = 0;
@@ -389,6 +440,12 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
         })}
       </div>
 
+      {sortedProjects.length === 0 && (
+        <div className="text-center py-12 bg-slate-900/40 rounded-2xl border border-slate-800/80">
+          <p className="text-slate-400 text-xs">일치하는 프로젝트가 없습니다.</p>
+        </div>
+      )}
+
       {/* Quick PJT Edit Modal (PJT 수정 모달 - Serial NO. 수정 포함) */}
       {isEditModalOpen && editingPjt && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -495,41 +552,68 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
 
               {/* 4. 호기별 설비 S/N 수정 */}
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <label className="text-cyan-300 font-bold block text-[11px]">
                     호기별 설비 S/N 수정 (총 {editingPjt.equipmentUnits.length}대) :
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextIdx = editingPjt.equipmentUnits.length + 1;
-                      const baseParts = (editingPjt.equipmentUnits[0]?.parts || []).map((p) => ({
-                        ...p,
-                        id: "id-" + Math.random().toString(36).substring(2, 9),
-                        detectedSerial: "",
-                        isVerified: false,
-                        scannedAt: undefined,
-                        confidence: undefined,
-                      }));
-                      const unit1Serial = editingPjt.equipmentUnits[0]?.equipmentSerial?.trim();
-                      const nextSerial = unit1Serial ? cascadeSerialFromUnit1(unit1Serial, nextIdx) : "";
-                      const newUnit = {
-                        unitIndex: nextIdx,
-                        equipmentSerial: nextSerial,
-                        parts: baseParts,
-                      };
-                      const updatedUnits = [...editingPjt.equipmentUnits, newUnit];
-                      setEditingPjt({
-                        ...editingPjt,
-                        quantity: updatedUnits.length,
-                        equipmentUnits: updatedUnits,
-                      });
-                    }}
-                    className="px-2.5 py-1 bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 rounded-lg font-bold text-[11px] hover:opacity-90 shadow-sm flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="h-3 w-3 stroke-[3]" />
-                    <span>호기 추가</span>
-                  </button>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-slate-400 font-mono">수량 조절:</span>
+                    <div className="flex items-center bg-slate-900 border border-slate-700 rounded-lg overflow-hidden">
+                      <button
+                        type="button"
+                        disabled={editingPjt.equipmentUnits.length <= 1}
+                        onClick={() => {
+                          const currentUnits = [...editingPjt.equipmentUnits];
+                          if (currentUnits.length > 1) {
+                            currentUnits.pop();
+                            setEditingPjt({
+                              ...editingPjt,
+                              quantity: currentUnits.length,
+                              equipmentUnits: currentUnits,
+                            });
+                          }
+                        }}
+                        className="px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-40 cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <span className="px-2 text-xs font-mono font-bold text-cyan-300">
+                        {editingPjt.equipmentUnits.length}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={editingPjt.equipmentUnits.length >= 1000}
+                        onClick={() => {
+                          const nextIdx = editingPjt.equipmentUnits.length + 1;
+                          const baseParts = (editingPjt.equipmentUnits[0]?.parts || []).map((p) => ({
+                            ...p,
+                            id: "id-" + Math.random().toString(36).substring(2, 9),
+                            detectedSerial: "",
+                            isVerified: false,
+                            scannedAt: undefined,
+                            confidence: undefined,
+                          }));
+                          const unit1Serial = editingPjt.equipmentUnits[0]?.equipmentSerial?.trim();
+                          const nextSerial = unit1Serial ? cascadeSerialFromUnit1(unit1Serial, nextIdx) : "";
+                          const newUnit = {
+                            unitIndex: nextIdx,
+                            equipmentSerial: nextSerial,
+                            parts: baseParts,
+                          };
+                          const updatedUnits = [...editingPjt.equipmentUnits, newUnit];
+                          setEditingPjt({
+                            ...editingPjt,
+                            quantity: updatedUnits.length,
+                            equipmentUnits: updatedUnits,
+                          });
+                        }}
+                        className="px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-40 cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
@@ -591,20 +675,37 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
               </div>
             </div>
 
-            <div className="flex gap-2 pt-3 border-t border-slate-800">
+            <div className="space-y-2 pt-3 border-t border-slate-800">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="w-1/2 bg-slate-800 text-slate-300 py-2.5 rounded-xl text-xs hover:bg-slate-700 cursor-pointer"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  className="w-1/2 bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 cursor-pointer"
+                >
+                  변경사항 저장
+                </button>
+              </div>
+
               <button
                 type="button"
-                onClick={() => setIsEditModalOpen(false)}
-                className="w-1/2 bg-slate-800 text-slate-300 py-2.5 rounded-xl text-xs hover:bg-slate-700 cursor-pointer"
+                onClick={() => {
+                  const targetId = editingPjt.id || "";
+                  if (targetId) {
+                    setIsEditModalOpen(false);
+                    onSelectProject(targetId, 2);
+                  }
+                }}
+                className="w-full py-2 px-3 bg-slate-900/90 hover:bg-slate-800 border border-cyan-800/50 hover:border-cyan-500 rounded-xl text-xs font-bold text-cyan-300 flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
               >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEdit}
-                className="w-1/2 bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 cursor-pointer"
-              >
-                변경사항 저장
+                <span>2단계 상세 설정 및 BOM 양식 변경으로 이동</span>
+                <ArrowRight className="h-3.5 w-3.5 text-cyan-400" />
               </button>
             </div>
           </div>

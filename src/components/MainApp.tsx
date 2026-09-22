@@ -505,9 +505,10 @@ export default function MainApp() {
     }
   };
 
-  // 2단계에서 [PJT 추가] 완료 시 신규 프로젝트 목록 추가 후 1단계(PJT List)로 이동
-  const handleSaveDraftProject = (pjtToSave: ProjectMaster) => {
+  // 2단계에서 프로젝트 저장 (신규 PJT 추가 시 바로 3단계 OCR 검증으로 연결하거나 1단계 목록 복귀)
+  const handleSaveDraftProject = (pjtToSave: ProjectMaster, targetStep: number = 3) => {
     lastLocalEditTimeRef.current = Date.now();
+    const isNew = !projects.some((p) => p.id === pjtToSave.id);
     const newId = pjtToSave.id && pjtToSave.id !== "draft" ? pjtToSave.id : "pjt-" + Date.now();
     const finalizedPjt: ProjectMaster = {
       ...pjtToSave,
@@ -540,7 +541,7 @@ export default function MainApp() {
 
     setCurrentProjectId(finalizedPjt.id || "");
     setDraftProject(null);
-    navigateToStep(1); // 1. PJT List 목록 화면으로 이동!
+    navigateToStep(targetStep);
     try {
       localStorage.setItem(STORAGE_ACTIVE_PROJECT_ID, finalizedPjt.id || "");
     } catch {}
@@ -552,11 +553,7 @@ export default function MainApp() {
       <Header
         currentStep={currentStep}
         onStepChange={(step) => {
-          if (step === 2 && !draftProject) {
-            handleCreateNewProject();
-          } else {
-            navigateToStep(step);
-          }
+          navigateToStep(step);
         }}
         pjtCode={currentProject?.pjtCode}
         equipmentName={currentProject?.equipmentName}
@@ -592,10 +589,11 @@ export default function MainApp() {
           />
         )}
 
-        {/* Step 2: 프로젝트 추가 (신규 PJT 생성 후 1단계 PJT List로 이동) */}
+        {/* Step 2: 프로젝트 입력 / 추가 */}
         {currentStep === 2 && (
           <ProjectMasterStep
             project={draftProject || currentProject || INITIAL_PROJECT_LIST[0]}
+            isDraft={Boolean(draftProject)}
             onUpdate={(updater) => {
               if (draftProject) {
                 setDraftProject(updater(draftProject));
@@ -606,7 +604,16 @@ export default function MainApp() {
             onNext={() => {
               const pjtToSave = draftProject || currentProject;
               if (pjtToSave) {
-                handleSaveDraftProject(pjtToSave);
+                // 신규 생성이면 바로 3단계(설비 OCR)로 진입하여 연속 작업 지원, 기존 수정이면 1단계 목록으로 이동
+                handleSaveDraftProject(pjtToSave, draftProject ? 3 : 1);
+              } else {
+                navigateToStep(1);
+              }
+            }}
+            onSaveAndGoList={() => {
+              const pjtToSave = draftProject || currentProject;
+              if (pjtToSave) {
+                handleSaveDraftProject(pjtToSave, 1);
               } else {
                 navigateToStep(1);
               }

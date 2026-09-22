@@ -43,11 +43,30 @@ export function mergeProjectLists(
 
   const mergedMap = new Map<string, ProjectMaster>();
 
-  // 1. 기존 프로젝트 목록 적재 (key: pjtCode 또는 id, 삭제된 프로젝트 제외)
+  // Helper to find existing project by ID first, then by pjtCode
+  const findExisting = (id?: string, code?: string): [string, ProjectMaster] | [null, null] => {
+    const idKey = id?.trim().toUpperCase();
+    if (idKey && mergedMap.has(idKey)) {
+      return [idKey, mergedMap.get(idKey)!];
+    }
+    const codeKey = code?.trim().toUpperCase();
+    if (codeKey) {
+      let foundEntry: [string, ProjectMaster] | null = null;
+      mergedMap.forEach((p, k) => {
+        if (!foundEntry && p.pjtCode?.trim().toUpperCase() === codeKey) {
+          foundEntry = [k, p];
+        }
+      });
+      if (foundEntry) return foundEntry;
+    }
+    return [null, null];
+  };
+
+  // 1. 기존 프로젝트 목록 적재 (key: id 최우선, pjtCode 차순위, 삭제된 프로젝트 제외)
   for (const p of existingList) {
     if (!p) continue;
     if (isProjectDeleted(p.id, p.pjtCode, delKeys)) continue;
-    const key = (p.pjtCode?.trim() || p.id || "").toUpperCase();
+    const key = (p.id?.trim() || p.pjtCode?.trim() || "").toUpperCase();
     if (!key || delKeys.has(key)) continue;
     mergedMap.set(key, JSON.parse(JSON.stringify(p)));
   }
@@ -56,9 +75,13 @@ export function mergeProjectLists(
   for (const inc of incomingList) {
     if (!inc) continue;
     if (isProjectDeleted(inc.id, inc.pjtCode, delKeys)) continue;
-    const key = (inc.pjtCode?.trim() || inc.id || "").toUpperCase();
-    if (!key || delKeys.has(key)) continue;
-    const existing = mergedMap.get(key);
+    const incIdKey = inc.id?.trim().toUpperCase();
+    const incCodeKey = inc.pjtCode?.trim().toUpperCase();
+    if (!incIdKey && !incCodeKey) continue;
+    if ((incIdKey && delKeys.has(incIdKey)) || (incCodeKey && delKeys.has(incCodeKey))) continue;
+
+    const [matchedKey, existing] = findExisting(inc.id, inc.pjtCode);
+    const key = matchedKey || incIdKey || incCodeKey || "";
 
     if (!existing) {
       // 삭제 목록에 없는 유효한 신규 프로젝트만 추가

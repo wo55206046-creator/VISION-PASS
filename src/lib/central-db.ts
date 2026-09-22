@@ -221,7 +221,21 @@ export async function saveCentralProjects(
       localStorage.setItem(STORAGE_LAST_SYNC_KEY, nowStr);
       cleanStorageFromDeleted(delKeys, delPartKeys);
     } catch (e) {
-      console.warn("LocalStorage save error", e);
+      console.warn("LocalStorage save error, attempting cleanup...", e);
+      try {
+        // 용량 부족 시 구버전 레거시 스냅샷 정리 후 재시도
+        for (let v = 1; v <= 7; v++) {
+          localStorage.removeItem(`VISION_PASS_PROJECTS_DATA_V${v}`);
+        }
+        localStorage.removeItem("VISION_PASS_PROJECTS_V1");
+        localStorage.removeItem("VISION_PASS_PROJECTS_V2");
+        localStorage.removeItem("VISION_PASS_PROJECTS");
+        const pJson = JSON.stringify(cleanProjects);
+        localStorage.setItem(STORAGE_PROJECTS_KEY, pJson);
+        localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", pJson);
+      } catch (retryErr) {
+        console.error("Critical: LocalStorage save failed even after cleanup", retryErr);
+      }
     }
   }
 
@@ -335,8 +349,9 @@ export async function fetchCentralProjects(
           rows[0].data.projects.length > 0
         ) {
           const payload = rows[0].data;
+          const directLocalProjects = loadDirectLocalProjects() || [];
           if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
-            markProjectsAsDeletedBulk(payload.deletedKeys);
+            markProjectsAsDeletedBulk(payload.deletedKeys, directLocalProjects);
           }
           if (payload.deletedPartKeys && Array.isArray(payload.deletedPartKeys)) {
             markPartsAsDeletedBulk(payload.deletedPartKeys);
@@ -345,8 +360,8 @@ export async function fetchCentralProjects(
           const delPartKeys = getDeletedPartKeys();
           cleanStorageFromDeleted(delKeys, delPartKeys);
 
-          const cloudProjects = (payload.projects || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-          const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+          const cloudProjects = (payload.projects || []).filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+          const localProjects = directLocalProjects.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
 
           // ★ 핵심: 클라우드 데이터로 로컬을 무조건 덮어쓰지 않고 스마트 병합!
           // 로컬에 이미 입력된 시리얼 번호는 절대 지워지지 않도록 보호하고, 삭제된 프로젝트/부품은 배제!
@@ -391,14 +406,21 @@ export async function fetchCentralProjects(
         "VISION_PASS_PERMANENT_SERIALS_SNAPSHOT",
         STORAGE_PROJECTS_KEY,
         "VISION_PASS_PROJECTS_DATA_V8",
-        "VISION_PASS_PROJECTS_DATA_V7",
-        "VISION_PASS_PROJECTS_DATA_V6",
       ];
 
-      // 현재 V8 또는 영구 백업에 데이터가 있으면 최우선 반환
+      // 현재 V8 또는 영구 백업에 데이터가 이미 있으면 최우선 반환 (과거 레거시 덮어쓰기 절대 금지!)
       const directLocal = loadDirectLocalProjects();
       if (directLocal && directLocal.length > 0) {
         memoryCacheProjects = directLocal;
+        // 최신 데이터가 건재하므로 저장공간 확보를 위해 구버전 레거시 키 정리
+        try {
+          for (let v = 1; v <= 7; v++) {
+            localStorage.removeItem(`VISION_PASS_PROJECTS_DATA_V${v}`);
+          }
+          localStorage.removeItem("VISION_PASS_PROJECTS_V1");
+          localStorage.removeItem("VISION_PASS_PROJECTS_V2");
+          localStorage.removeItem("VISION_PASS_PROJECTS");
+        } catch {}
         return {
           success: true,
           projects: directLocal,
@@ -489,8 +511,9 @@ export function subscribeCentralRealtime(
               Array.isArray(payload.projects)
             ) {
               lastKnownTimestamp = updatedTime;
+              const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
               if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
-                markProjectsAsDeletedBulk(payload.deletedKeys);
+                markProjectsAsDeletedBulk(payload.deletedKeys, localProjects);
               }
               if (payload.deletedPartKeys && Array.isArray(payload.deletedPartKeys)) {
                 markPartsAsDeletedBulk(payload.deletedPartKeys);
@@ -499,8 +522,7 @@ export function subscribeCentralRealtime(
               const delPartKeys = getDeletedPartKeys();
               cleanStorageFromDeleted(delKeys, delPartKeys);
 
-              const incomingProjects = (payload.projects || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-              const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+              const incomingProjects = (payload.projects || []).filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
 
               // ★ 스마트 병합을 적용하여 기존 로컬 시리얼 100% 보존 & 삭제 프로젝트/부품 배제
               const merged = localProjects && localProjects.length > 0
