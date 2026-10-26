@@ -115,7 +115,7 @@ export async function pingCentralDb(): Promise<{
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(roomKey)}&select=id,data,updated_at&order=updated_at.desc&limit=1`,
+      `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(roomKey)}&select=room_key,data,updated_at&order=updated_at.desc&limit=1`,
       {
         method: "GET",
         headers: {
@@ -377,69 +377,76 @@ export async function saveCentralProjects(
         data: payload,
         updated_at: nowStr,
       };
-      const rowJson = JSON.stringify(rowData);
-
-      // 1단계: 기존 room_key 레코드 존재 여부 확인 (SELECT id)
-      let existingId: string | number | null = null;
-      try {
-        const checkRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(payload.roomKey)}&select=id&order=updated_at.desc&limit=1`,
-          { headers: baseHeaders }
-        );
-        if (checkRes.ok) {
-          const rows = await checkRes.json();
-          if (Array.isArray(rows) && rows.length > 0 && rows[0].id !== undefined) {
-            existingId = rows[0].id;
-          }
-        }
-      } catch (checkErr) {
-        console.warn("Supabase check existing record error:", checkErr);
-      }
+      // 전송용 표준 행 데이터
+      const standardPayload = {
+        room_key: payload.roomKey,
+        data: payload,
+        updated_at: nowStr,
+      };
 
       let res: Response | null = null;
       let isSuccess = false;
 
-      // 2단계: 기존 행이 있으면 고유 id로 정확하게 수정 (PATCH)
-      if (existingId !== null && existingId !== undefined) {
-        try {
-          res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?id=eq.${encodeURIComponent(existingId)}`, {
-            method: "PATCH",
-            headers: {
-              ...baseHeaders,
-              "Prefer": "return=representation",
-            },
-            body: JSON.stringify({
-              data: payload,
-              updated_at: nowStr,
-            }),
-          });
-          if (res.ok) {
-            const patched = await res.json().catch(() => []);
-            if (Array.isArray(patched) && patched.length > 0) {
-              isSuccess = true;
-            }
-          }
-        } catch (patchErr) {
-          console.warn("PATCH failed, will fallback to POST", patchErr);
-        }
-      }
-
-      // 3단계: 기존 행이 없었거나, PATCH로 수정된 행이 0개인 경우 신규 생성 (POST)
-      if (!isSuccess) {
+      // 1순위: Supabase 공식 Upsert (room_key 기본키 중복 시 자동 UPDATE)
+      try {
         res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync`, {
           method: "POST",
           headers: {
             ...baseHeaders,
-            "Prefer": "return=representation",
+            "Prefer": "resolution=merge-duplicates,return=representation",
           },
-          body: JSON.stringify({
-            room_key: payload.roomKey,
-            data: payload,
-            updated_at: nowStr,
-          }),
+          body: JSON.stringify(standardPayload),
         });
         if (res.ok) {
           isSuccess = true;
+        }
+      } catch (upsertErr) {
+        console.warn("Supabase upsert error, trying fallback PATCH/POST:", upsertErr);
+      }
+
+      // 2순위 (폴백): 기존 레코드 유무 확인 후 PATCH 또는 POST
+      if (!isSuccess) {
+        try {
+          const checkRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(payload.roomKey)}&select=room_key&limit=1`,
+            { headers: baseHeaders }
+          );
+          let hasExisting = false;
+          if (checkRes.ok) {
+            const rows = await checkRes.json();
+            if (Array.isArray(rows) && rows.length > 0) {
+              hasExisting = true;
+            }
+          }
+
+          if (hasExisting) {
+            // 기존 레코드 덮어쓰기 (PATCH)
+            res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(payload.roomKey)}`, {
+              method: "PATCH",
+              headers: {
+                ...baseHeaders,
+                "Prefer": "return=representation",
+              },
+              body: JSON.stringify({
+                data: payload,
+                updated_at: nowStr,
+              }),
+            });
+            if (res.ok) isSuccess = true;
+          } else {
+            // 신규 레코드 삽입 (POST)
+            res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync`, {
+              method: "POST",
+              headers: {
+                ...baseHeaders,
+                "Prefer": "return=representation",
+              },
+              body: JSON.stringify(standardPayload),
+            });
+            if (res.ok) isSuccess = true;
+          }
+        } catch (fallbackErr) {
+          console.warn("Supabase fallback write failed:", fallbackErr);
         }
       }
 
