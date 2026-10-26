@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { ProjectMaster } from "@/types";
 import { INITIAL_PROJECT_LIST, createBlankProject } from "@/lib/default-presets";
 import { Header } from "@/components/Header";
+import { SyncModal } from "@/components/SyncModal";
 import { PjtListStep } from "@/components/PjtListStep";
 import { ProjectMasterStep } from "@/components/ProjectMasterStep";
 import { EquipmentUnitStep } from "@/components/EquipmentUnitStep";
@@ -144,6 +145,8 @@ export default function MainApp() {
   });
 
   const [draftProject, setDraftProject] = useState<ProjectMaster | null>(null);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"connected" | "syncing" | "error" | "offline">("connected");
 
   // 실시간 동기화 및 데이터 영구 보존 제어용 Refs
   const isInitialMount = useRef(true);
@@ -154,9 +157,9 @@ export default function MainApp() {
   const lastLocalEditTimeRef = useRef<number>(0); // ★ 로컬 수정 보호 락 (Anti-Revert Lock)
 
   // 1. [자동 수신] 클라우드 최신 데이터 실시간 풀 함수 (스마트 병합 적용)
-  const fetchCloudProjects = async () => {
+  const fetchCloudProjects = async (isInitial: boolean = false) => {
     if (isSyncingInFlight.current) return;
-    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (!isInitial && typeof document !== "undefined" && document.visibilityState !== "visible") return;
 
     // ★ 로컬 수정 보호 락: 최근 5초 이내에 로컬 작업(삭제/편집)이 있었다면 원격 덮어쓰기 일시 차단
     if (Date.now() - lastLocalEditTimeRef.current < 5000) {
@@ -165,8 +168,10 @@ export default function MainApp() {
 
     try {
       isSyncingInFlight.current = true;
+      setSyncStatus("syncing");
       const res = await pullProjectsFromCloud();
       if (res.success && res.projects && res.projects.length > 0) {
+        setSyncStatus("connected");
         const delKeys = getDeletedProjectKeys();
         const delPartKeys = getDeletedPartKeys();
         cleanStorageFromDeleted(delKeys, delPartKeys);
@@ -174,8 +179,18 @@ export default function MainApp() {
 
         setProjects((prevProjects) => {
           const currentSanitized = prevProjects.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-          // ★ 기존 로컬에 이미 입력된 시리얼 번호가 절대 사라지지 않도록 스마트 병합! (삭제된 프로젝트/부품 부활 배제)
-          const merged = mergeProjectLists(currentSanitized, incomingSanitized, delKeys, delPartKeys);
+          
+          // 🛡️ 로컬이 초기 5개 프리셋 상태인지 확인 (새 PC 또는 스마트폰)
+          const isLocalInitial =
+            currentSanitized.length <= 5 &&
+            currentSanitized.every((p) => p.id && /^pjt-00[1-5]$/.test(p.id)) &&
+            countVerifiedSerials(currentSanitized) <= 5;
+
+          // 로컬이 초기 5개이고 클라우드에 5개 이상의 유효한 프로젝트가 있는 경우 클라우드 데이터 전수 채택
+          const merged = (isLocalInitial && incomingSanitized.length >= 5)
+            ? incomingSanitized
+            : mergeProjectLists(currentSanitized, incomingSanitized, delKeys, delPartKeys);
+
           const mergedJson = JSON.stringify(merged);
           lastKnownCloudJson.current = mergedJson;
           try {
@@ -184,9 +199,11 @@ export default function MainApp() {
           } catch {}
           return merged;
         });
+      } else {
+        setSyncStatus("connected");
       }
     } catch {
-      // 백그라운드 네트워크 상태 무소음 처리
+      setSyncStatus("error");
     } finally {
       isSyncingInFlight.current = false;
       isInitialLoadComplete.current = true;
@@ -220,8 +237,8 @@ export default function MainApp() {
       lastKnownCloudJson.current = JSON.stringify(saved);
     }
 
-    // 2단계: 클라우드에서 최신 데이터 가져와 안전 병합(Smart Merge)
-    fetchCloudProjects().finally(() => {
+    // 2단계: 클라우드에서 최신 데이터 가져와 안전 병합(Smart Merge) - 초기 로드는 가시성 체크 없이 강제 수행!
+    fetchCloudProjects(true).finally(() => {
       // 초기 로드가 완전히 끝난 뒤에만 자동 푸시 활성화
       setTimeout(() => {
         isInitialLoadComplete.current = true;
@@ -235,6 +252,16 @@ export default function MainApp() {
     };
     window.addEventListener("focus", handleQuickSync);
     document.addEventListener("visibilitychange", handleQuickSync);
+
+    // 모바일 화면 터치 시 마지막 동기화 후 10초 이상 지났으면 부드럽게 백그라운드 갱신
+    let lastTouchSync = Date.now();
+    const handleMobileTouch = () => {
+      if (Date.now() - lastTouchSync > 10000 && Date.now() - lastLocalEditTimeRef.current > 5000) {
+        lastTouchSync = Date.now();
+        fetchCloudProjects();
+      }
+    };
+    window.addEventListener("pointerdown", handleMobileTouch, { passive: true });
 
     // 1. 로컬 브로드캐스트 채널 구독 (동일 브라우저 탭 간 스마트 병합)
     const unsubscribeBroadcast = subscribeLocalBroadcast((incoming) => {
@@ -294,6 +321,7 @@ export default function MainApp() {
     return () => {
       window.removeEventListener("focus", handleQuickSync);
       document.removeEventListener("visibilitychange", handleQuickSync);
+      window.removeEventListener("pointerdown", handleMobileTouch);
       unsubscribeBroadcast();
       unsubscribeRealtime();
       cleanupOfflineQueue();
@@ -546,6 +574,9 @@ export default function MainApp() {
         }}
         pjtCode={currentProject?.pjtCode}
         equipmentName={currentProject?.equipmentName}
+        onOpenSyncModal={() => setIsSyncModalOpen(true)}
+        syncStatus={syncStatus}
+        projectCount={projects.length}
       />
 
       {/* Main Workspace View */}
@@ -689,6 +720,31 @@ export default function MainApp() {
           </div>
         </div>
       </footer>
+
+      {/* PC ↔ 모바일 실시간 동기화 모달 */}
+      <SyncModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        projects={projects}
+        onUpdateProjects={(newProjects) => {
+          lastLocalEditTimeRef.current = Date.now();
+          setProjects(newProjects);
+          if (newProjects.length > 0) {
+            setCurrentProjectId((prev) => {
+              const exists = newProjects.some((p) => p.id === prev);
+              return exists ? prev : (newProjects[0].id || "pjt-001");
+            });
+          }
+        }}
+        onResetDefault={() => {
+          setProjects(INITIAL_PROJECT_LIST);
+          setCurrentProjectId(INITIAL_PROJECT_LIST[0]?.id || "pjt-001");
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_PROJECT_LIST));
+            localStorage.setItem(PERSISTENT_BACKUP_KEY, JSON.stringify(INITIAL_PROJECT_LIST));
+          } catch {}
+        }}
+      />
     </div>
   );
 }

@@ -46,7 +46,7 @@ export async function pullProjectsFromCloud(
   updatedAt?: string;
   message?: string;
 }> {
-  return await fetchCentralProjects(roomKey);
+  return await fetchCentralProjects(roomKey, force);
 }
 
 /**

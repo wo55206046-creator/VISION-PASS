@@ -94,6 +94,41 @@ export function getActiveDbConfig(): CentralDbConfig {
   };
 }
 
+/**
+ * 🩺 Supabase 중앙 데이터베이스 연결 상태 및 응답 지연 시간(Latency) 즉시 진단
+ */
+export async function pingCentralDb(): Promise<{ ok: boolean; latencyMs: number; message: string }> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return { ok: false, latencyMs: 0, message: "Supabase 설정 누락 (오프라인 모드)" };
+  }
+  const start = performance.now();
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?select=room_key&limit=1`, {
+      method: "GET",
+      headers: {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const latencyMs = Math.round(performance.now() - start);
+    if (res.ok) {
+      return { ok: true, latencyMs, message: `DB 연결 정상 (${latencyMs}ms)` };
+    }
+    return { ok: false, latencyMs, message: `DB 응답 오류: HTTP ${res.status}` };
+  } catch (err: any) {
+    const latencyMs = Math.round(performance.now() - start);
+    return {
+      ok: false,
+      latencyMs,
+      message: err.name === "AbortError" ? "DB 연결 타임아웃 (6초 초과)" : `DB 연결 실패: ${err.message || "오프라인"}`,
+    };
+  }
+}
+
 // ============================================================================
 // 3. GZIP 초경량 압축 / 해제 유틸리티
 // ============================================================================
@@ -354,7 +389,8 @@ export async function saveCentralProjects(
  * 📥 프로젝트 데이터 로드 (Supabase 클라우드 / 로컬 스토리지 레거시 전수 복구)
  */
 export async function fetchCentralProjects(
-  roomKey: string = getSyncRoomKey()
+  roomKey: string = getSyncRoomKey(),
+  forceOverwrite: boolean = false
 ): Promise<{
   success: boolean;
   projects?: ProjectMaster[];
@@ -366,6 +402,8 @@ export async function fetchCentralProjects(
   // 1. [Supabase REST 조회 시도]
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(cleanRoom)}&select=*`,
         {
@@ -373,8 +411,11 @@ export async function fetchCentralProjects(
             "apikey": SUPABASE_ANON_KEY,
             "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
           },
+          signal: controller.signal,
         }
       );
+      clearTimeout(timer);
+
       if (res.ok) {
         const rows = await res.json();
         if (
@@ -402,11 +443,19 @@ export async function fetchCentralProjects(
           const cloudProjects = (payload.projects || []).filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
           const localProjects = directLocalProjects.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
 
-          // ★ 핵심: 클라우드 데이터로 로컬을 무조건 덮어쓰지 않고 스마트 병합!
-          // 로컬에 이미 입력된 시리얼 번호는 절대 지워지지 않도록 보호하고, 삭제된 프로젝트/부품은 배제!
-          const merged = localProjects && localProjects.length > 0
-            ? mergeProjectLists(localProjects, cloudProjects, delKeys, delPartKeys)
-            : cloudProjects;
+          // 🛡️ 로컬이 초기 기본 5개 프리셋 상태인지 확인 (새 PC 또는 스마트폰 첫 접속)
+          const isLocalInitialDefaults =
+            localProjects.length <= 5 &&
+            localProjects.every((p) => p.id && /^pjt-00[1-5]$/.test(p.id)) &&
+            countVerifiedSerials(localProjects) <= 5;
+
+          // forceOverwrite이거나 로컬이 초기 5개 프리셋인데 클라우드에 더 많은 최신 프로젝트가 있는 경우 전수 채택
+          let merged: ProjectMaster[];
+          if (forceOverwrite || (isLocalInitialDefaults && cloudProjects.length >= 5) || localProjects.length === 0) {
+            merged = cloudProjects;
+          } else {
+            merged = mergeProjectLists(localProjects, cloudProjects, delKeys, delPartKeys);
+          }
 
           memoryCacheProjects = merged;
           if (typeof window !== "undefined") {
@@ -527,10 +576,11 @@ export function subscribeCentralRealtime(
   let isUnsubscribed = false;
   let supabasePollTimer: any = null;
 
-  // Supabase 실시간 동기화 (3.5초 주기 스마트 폴링)
+  // Supabase 실시간 동기화 (즉시 1회 확인 + 3.5초 주기 스마트 폴링)
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     let lastKnownTimestamp = "";
-    supabasePollTimer = setInterval(async () => {
+
+    const checkUpdates = async () => {
       if (isUnsubscribed) return;
       try {
         const res = await fetch(
@@ -547,49 +597,67 @@ export function subscribeCentralRealtime(
           if (Array.isArray(rows) && rows.length > 0 && rows[0].data) {
             const payload = rows[0].data;
             const updatedTime = payload.updatedAt || rows[0].updated_at || "";
+            const isDifferentSender = payload.senderDeviceId !== getDeviceId();
+            const incomingProjectsRaw = payload.projects;
+
             if (
               updatedTime &&
-              updatedTime !== lastKnownTimestamp &&
-              payload.senderDeviceId !== getDeviceId() &&
-              Array.isArray(payload.projects)
+              Array.isArray(incomingProjectsRaw) &&
+              incomingProjectsRaw.length > 0
             ) {
-              lastKnownTimestamp = updatedTime;
-              if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
-                saveDirectLocalTemplates(payload.templates);
-              }
               const delKeys = getDeletedProjectKeys();
               const delPartKeys = getDeletedPartKeys();
               const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-              if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
-                markProjectsAsDeletedBulk(payload.deletedKeys, localProjects);
-              }
-              if (payload.deletedPartKeys && Array.isArray(payload.deletedPartKeys)) {
-                markPartsAsDeletedBulk(payload.deletedPartKeys);
-              }
-              cleanStorageFromDeleted(delKeys, delPartKeys);
+              const isLocalInitial =
+                localProjects.length <= 5 &&
+                countVerifiedSerials(localProjects) <= 5;
 
-              const incomingProjects = (payload.projects || []).filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+              // 다른 기기에서 보냈거나, 로컬이 초기 5개 프리셋인데 클라우드에 더 많은 프로젝트가 있는 경우
+              if (
+                (updatedTime !== lastKnownTimestamp && isDifferentSender) ||
+                (isLocalInitial && incomingProjectsRaw.length > localProjects.length)
+              ) {
+                lastKnownTimestamp = updatedTime;
+                if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
+                  saveDirectLocalTemplates(payload.templates);
+                }
+                if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
+                  markProjectsAsDeletedBulk(payload.deletedKeys, localProjects);
+                }
+                if (payload.deletedPartKeys && Array.isArray(payload.deletedPartKeys)) {
+                  markPartsAsDeletedBulk(payload.deletedPartKeys);
+                }
+                cleanStorageFromDeleted(delKeys, delPartKeys);
 
-              // ★ 스마트 병합을 적용하여 기존 로컬 시리얼 100% 보존 & 삭제 프로젝트/부품 배제
-              const merged = localProjects && localProjects.length > 0
-                ? mergeProjectLists(localProjects, incomingProjects, delKeys, delPartKeys)
-                : incomingProjects;
+                const incomingProjects = incomingProjectsRaw.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
 
-              memoryCacheProjects = merged;
-              if (typeof window !== "undefined") {
-                try {
-                  const mJson = JSON.stringify(merged);
-                  localStorage.setItem(STORAGE_PROJECTS_KEY, mJson);
-                  localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", mJson);
-                  localStorage.setItem(STORAGE_LAST_SYNC_KEY, updatedTime);
-                } catch {}
+                // 🛡️ 로컬이 초기 5개 프리셋이면 클라우드 프로젝트 전수 채택
+                const merged = (isLocalInitial && incomingProjects.length >= 5)
+                  ? incomingProjects
+                  : (localProjects && localProjects.length > 0
+                      ? mergeProjectLists(localProjects, incomingProjects, delKeys, delPartKeys)
+                      : incomingProjects);
+
+                memoryCacheProjects = merged;
+                if (typeof window !== "undefined") {
+                  try {
+                    const mJson = JSON.stringify(merged);
+                    localStorage.setItem(STORAGE_PROJECTS_KEY, mJson);
+                    localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", mJson);
+                    localStorage.setItem(STORAGE_LAST_SYNC_KEY, updatedTime);
+                  } catch {}
+                }
+                onUpdate(merged);
               }
-              onUpdate(merged);
             }
           }
         }
       } catch {}
-    }, 3500);
+    };
+
+    // 마운트 즉시 1회 실행 후 3.5초 주기 폴링
+    checkUpdates();
+    supabasePollTimer = setInterval(checkUpdates, 3500);
   }
 
   return () => {

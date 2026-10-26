@@ -9,6 +9,7 @@ import {
   pullProjectsFromCloud,
   exportBackupFile,
   importBackupFile,
+  pingCentralDb,
 } from "@/lib/cloud-sync";
 import {
   Cloud,
@@ -30,6 +31,7 @@ import {
   Copy,
   Check,
   ExternalLink,
+  Activity,
 } from "lucide-react";
 
 interface SyncModalProps {
@@ -50,6 +52,8 @@ export const SyncModal: React.FC<SyncModalProps> = ({
   const [activeTab, setActiveTab] = useState<"cloud" | "file" | "reset">("cloud");
   const [roomKey, setRoomKeyState] = useState<string>(() => getSyncRoomKey());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isTestingPing, setIsTestingPing] = useState<boolean>(false);
+  const [pingResult, setPingResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
 
@@ -58,6 +62,19 @@ export const SyncModal: React.FC<SyncModalProps> = ({
   const currentOrigin = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "";
   const shareUrl = `${currentOrigin}?room=${encodeURIComponent(roomKey.trim().toUpperCase() || "WITHTECH-VISIONPASS-2026")}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(shareUrl)}`;
+
+  const handleTestConnection = async () => {
+    setIsTestingPing(true);
+    setPingResult(null);
+    try {
+      const res = await pingCentralDb();
+      setPingResult({ ok: res.ok, message: res.message });
+    } catch (e: any) {
+      setPingResult({ ok: false, message: e.message || "연결 테스트 실패" });
+    } finally {
+      setIsTestingPing(false);
+    }
+  };
 
   const handleCopyLink = () => {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -113,6 +130,11 @@ export const SyncModal: React.FC<SyncModalProps> = ({
 
     if (res.success && res.projects && res.projects.length > 0) {
       onUpdateProjects(res.projects);
+      try {
+        const pJson = JSON.stringify(res.projects);
+        localStorage.setItem("VISION_PASS_PROJECTS_DATA_V8", pJson);
+        localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", pJson);
+      } catch {}
       setStatusMsg({
         type: "success",
         text: `클라우드에서 최신 ${res.projects.length}개 프로젝트를 성공적으로 불러왔습니다!`,
@@ -253,14 +275,23 @@ export const SyncModal: React.FC<SyncModalProps> = ({
           {/* TAB 1: 클라우드 실시간 동기화 + QR 코드 */}
           {activeTab === "cloud" && (
             <div className="space-y-4">
-              {/* 동기화 키 설정 박스 */}
+              {/* 동기화 키 설정 박스 & DB 연결 테스트 */}
               <div className="rounded-xl bg-slate-950 p-3.5 border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                     <KeyRound className="h-4 w-4 text-cyan-400" />
                     <span>팀/설비 동기화 방 코드 (Sync Room Key)</span>
                   </label>
-                  <span className="text-[10px] text-cyan-400 font-mono">기기 간 고유 식별키</span>
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={isTestingPing}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition-all cursor-pointer"
+                    title="중앙 Supabase DB 연결 상태 즉시 진단"
+                  >
+                    <Activity className={`h-3 w-3 ${isTestingPing ? "animate-spin text-amber-400" : "text-cyan-400"}`} />
+                    <span>{isTestingPing ? "연결 확인 중..." : "DB 연결 진단"}</span>
+                  </button>
                 </div>
                 <div className="flex gap-2">
                   <input
@@ -278,6 +309,22 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                     키 저장
                   </button>
                 </div>
+                {pingResult && (
+                  <div
+                    className={`mt-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-mono flex items-center gap-1.5 ${
+                      pingResult.ok
+                        ? "bg-emerald-950/60 text-emerald-300 border border-emerald-800/60"
+                        : "bg-red-950/60 text-red-300 border border-red-800/60"
+                    }`}
+                  >
+                    {pingResult.ok ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                    )}
+                    <span>{pingResult.message}</span>
+                  </div>
+                )}
               </div>
 
               {/* 📱 스마트폰 즉시 연결 QR 코드 & 링크 */}
@@ -331,6 +378,25 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                   <span>클라우드 ➔ 스마트폰 내려받기</span>
                   <span className="text-[10px] font-normal text-slate-400">(모바일에서 최신 데이터 수신)</span>
                 </button>
+              </div>
+
+              {/* 💡 모바일 동기화 안내 및 문제 해결 */}
+              <div className="rounded-xl bg-slate-950/70 p-3 border border-slate-800 text-[11px] text-slate-400 space-y-1.5">
+                <div className="font-bold text-cyan-400 flex items-center gap-1">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  <span>스마트폰/모바일에서 5개만 보이고 동기화가 안 될 때:</span>
+                </div>
+                <ul className="list-disc pl-4 space-y-1 text-slate-300">
+                  <li>
+                    <strong>모바일 웹 브라우저(권장):</strong> 스마트폰 기본 카메라로 상단 QR 코드를 비추어 열면 PC의 10개 프로젝트가 즉시 동기화됩니다.
+                  </li>
+                  <li>
+                    <strong>강제 새로고침:</strong> 모바일에서 위 <code>[클라우드 ➔ 스마트폰 내려받기]</code> 버튼을 누르면 클라우드의 최신 10개 프로젝트를 즉시 전수 반영합니다.
+                  </li>
+                  <li>
+                    <strong>APK 앱 사용 시:</strong> 스마트폰에 설치된 앱(APK)이 과거 빌드본인 경우, PC에서 <code>build-apk.bat</code>를 실행하여 최신 APK로 갱신해주세요.
+                  </li>
+                </ul>
               </div>
             </div>
           )}
