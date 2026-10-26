@@ -95,30 +95,61 @@ export function getActiveDbConfig(): CentralDbConfig {
 }
 
 /**
- * 🩺 Supabase 중앙 데이터베이스 연결 상태 및 응답 지연 시간(Latency) 즉시 진단
+ * 🩺 Supabase 중앙 데이터베이스 연결 상태 및 실제 클라우드 적재 프로젝트 수량 정밀 진단
  */
-export async function pingCentralDb(): Promise<{ ok: boolean; latencyMs: number; message: string }> {
+export async function pingCentralDb(): Promise<{
+  ok: boolean;
+  latencyMs: number;
+  message: string;
+  cloudProjectCount?: number;
+  cloudUpdatedTime?: string;
+  cloudPjtCodes?: string[];
+}> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     return { ok: false, latencyMs: 0, message: "Supabase 설정 누락 (오프라인 모드)" };
   }
+  const roomKey = getSyncRoomKey();
   const start = performance.now();
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?select=room_key&limit=1`, {
-      method: "GET",
-      headers: {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      signal: controller.signal,
-    });
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(roomKey)}&select=data,updated_at&order=updated_at.desc&limit=1`,
+      {
+        method: "GET",
+        headers: {
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        signal: controller.signal,
+      }
+    );
     clearTimeout(timer);
     const latencyMs = Math.round(performance.now() - start);
     if (res.ok) {
-      return { ok: true, latencyMs, message: `DB 연결 정상 (${latencyMs}ms)` };
+      const rows = await res.json();
+      if (Array.isArray(rows) && rows.length > 0 && rows[0].data) {
+        const payload = rows[0].data;
+        const pList = payload.projects || [];
+        const pjtCodes = pList.map((p: any) => p.pjtCode || p.id).filter(Boolean);
+        return {
+          ok: true,
+          latencyMs,
+          cloudProjectCount: pList.length,
+          cloudUpdatedTime: payload.updatedAt || rows[0].updated_at,
+          cloudPjtCodes: pjtCodes,
+          message: `DB 정상 연결 (${latencyMs}ms) | 클라우드 실제 적재: ${pList.length}개 PJT (${pjtCodes.slice(0, 5).join(", ")}${pjtCodes.length > 5 ? " 외 " + (pjtCodes.length - 5) + "개" : ""})`,
+        };
+      }
+      return {
+        ok: true,
+        latencyMs,
+        cloudProjectCount: 0,
+        message: `DB 연결 정상 (${latencyMs}ms) | 현재 [${roomKey}] 방에 저장된 데이터 없음 (0개)`,
+      };
     }
-    return { ok: false, latencyMs, message: `DB 응답 오류: HTTP ${res.status}` };
+    const errText = await res.text().catch(() => "");
+    return { ok: false, latencyMs, message: `DB 응답 오류: HTTP ${res.status} (${errText})` };
   } catch (err: any) {
     const latencyMs = Math.round(performance.now() - start);
     return {
@@ -331,46 +362,70 @@ export async function saveCentralProjects(
         "Content-Type": "application/json",
       };
 
-      const bodyPayload = JSON.stringify({
+      // 전송용 표준 행 데이터 페이로드
+      const rowData = {
         room_key: payload.roomKey,
         data: payload,
         updated_at: nowStr,
-      });
+      };
+      const rowJson = JSON.stringify(rowData);
 
-      // 1단계: 기존 room_key 레코드 PATCH(수정) 최우선 시도
-      let res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(payload.roomKey)}`, {
-        method: "PATCH",
-        headers: {
-          ...baseHeaders,
-          "Prefer": "return=representation",
-        },
-        body: JSON.stringify({
-          data: payload,
-          updated_at: nowStr,
-        }),
-      });
+      // 1단계: 기존 room_key 레코드 존재 여부 확인 (SELECT id)
+      let existingId: string | number | null = null;
+      try {
+        const checkRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(payload.roomKey)}&select=id&order=updated_at.desc&limit=1`,
+          { headers: baseHeaders }
+        );
+        if (checkRes.ok) {
+          const rows = await checkRes.json();
+          if (Array.isArray(rows) && rows.length > 0 && rows[0].id !== undefined) {
+            existingId = rows[0].id;
+          }
+        }
+      } catch (checkErr) {
+        console.warn("Supabase check existing record error:", checkErr);
+      }
 
-      // 2단계: 기존 행이 없어 0건 수정되었거나 오류인 경우 일반 INSERT 시도
-      const updatedRows = res.ok ? await res.json().catch(() => []) : [];
-      if (!res.ok || !Array.isArray(updatedRows) || updatedRows.length === 0) {
+      let res: Response;
+      if (existingId !== null && existingId !== undefined) {
+        // 기존 행이 존재하면 해당 room_key 전체 행 덮어쓰기 (PATCH)
+        res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(payload.roomKey)}`, {
+          method: "PATCH",
+          headers: {
+            ...baseHeaders,
+            "Prefer": "return=representation",
+          },
+          body: rowJson,
+        });
+      } else {
+        // 기존 행이 없으면 신규 레코드 삽입 (POST)
         res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync`, {
           method: "POST",
           headers: {
             ...baseHeaders,
             "Prefer": "return=representation",
           },
-          body: bodyPayload,
+          body: rowJson,
         });
       }
 
       if (res.ok) {
         return { success: true, message: `Supabase 클라우드 실시간 저장 완료 (${projects.length}개 프로젝트)` };
       } else {
-        const errBody = await res.text();
+        const errBody = await res.text().catch(() => "Unknown error");
         console.warn("Supabase save error response:", res.status, errBody);
+        return {
+          success: false,
+          message: `클라우드 DB 저장 실패 (HTTP ${res.status}): ${errBody}`,
+        };
       }
     } catch (err: any) {
       console.warn("Supabase write warning", err);
+      return {
+        success: false,
+        message: `클라우드 DB 연결 오류: ${err.message || "네트워크를 확인해주세요"}`,
+      };
     }
   }
 
@@ -566,93 +621,109 @@ export function subscribeCentralRealtime(
   const cleanRoom = (roomKey || DEFAULT_ROOM_KEY).toUpperCase();
   let isUnsubscribed = false;
   let supabasePollTimer: any = null;
+  let lastKnownTimestamp = "";
 
-  // Supabase 실시간 동기화 (즉시 1회 확인 + 3.5초 주기 스마트 폴링)
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    let lastKnownTimestamp = "";
+  // Supabase 실시간 동기화 (즉시 실행 + 2초 주기 초고속 스마트 폴링 + 탭 포커스 즉시 감지)
+  const checkUpdates = async () => {
+    if (isUnsubscribed) return;
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
 
-    const checkUpdates = async () => {
-      if (isUnsubscribed) return;
-      try {
-        const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(cleanRoom)}&select=data,updated_at&order=updated_at.desc&limit=1`,
-          {
-            headers: {
-              "apikey": SUPABASE_ANON_KEY,
-              "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-            },
-          }
-        );
-        if (res.ok) {
-          const rows = await res.json();
-          if (Array.isArray(rows) && rows.length > 0 && rows[0].data) {
-            const payload = rows[0].data;
-            const updatedTime = payload.updatedAt || rows[0].updated_at || "";
-            const isDifferentSender = payload.senderDeviceId !== getDeviceId();
-            const incomingProjectsRaw = payload.projects;
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(cleanRoom)}&select=data,updated_at&order=updated_at.desc&limit=1`,
+        {
+          headers: {
+            "apikey": SUPABASE_ANON_KEY,
+            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+        }
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length > 0 && rows[0].data) {
+          const payload = rows[0].data;
+          const updatedTime = payload.updatedAt || rows[0].updated_at || "";
+          const incomingProjectsRaw = payload.projects;
 
+          if (
+            updatedTime &&
+            Array.isArray(incomingProjectsRaw) &&
+            incomingProjectsRaw.length > 0
+          ) {
+            const delKeys = getDeletedProjectKeys();
+            const delPartKeys = getDeletedPartKeys();
+            const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+
+            const isTimeChanged = updatedTime !== lastKnownTimestamp;
+            const isCountDifferent = incomingProjectsRaw.length !== localProjects.length;
+
+            // 1. 클라우드에 더 많은 데이터가 있거나 최신 업데이트인 경우 -> 로컬 전수 자동 반영!
             if (
-              updatedTime &&
-              Array.isArray(incomingProjectsRaw) &&
-              incomingProjectsRaw.length > 0
+              incomingProjectsRaw.length > localProjects.length ||
+              (isTimeChanged && incomingProjectsRaw.length >= localProjects.length)
             ) {
-              const delKeys = getDeletedProjectKeys();
-              const delPartKeys = getDeletedPartKeys();
-              const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-
-              // 다른 기기에서 보냈거나, 클라우드에 로컬보다 더 많은 프로젝트가 있는 경우 즉각 전수 반영!
-              if (
-                (updatedTime !== lastKnownTimestamp && isDifferentSender) ||
-                incomingProjectsRaw.length > localProjects.length
-              ) {
-                lastKnownTimestamp = updatedTime;
-                if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
-                  saveDirectLocalTemplates(payload.templates);
-                }
-                if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
-                  markProjectsAsDeletedBulk(payload.deletedKeys, localProjects);
-                }
-                if (payload.deletedPartKeys && Array.isArray(payload.deletedPartKeys)) {
-                  markPartsAsDeletedBulk(payload.deletedPartKeys);
-                }
-                cleanStorageFromDeleted(delKeys, delPartKeys);
-
-                const incomingProjects = incomingProjectsRaw.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-
-                // 🛡️ 클라우드에 더 많은 프로젝트가 있으면 전수 채택
-                const merged = incomingProjects.length > localProjects.length
-                  ? incomingProjects
-                  : (localProjects && localProjects.length > 0
-                      ? mergeProjectLists(localProjects, incomingProjects, delKeys, delPartKeys)
-                      : incomingProjects);
-
-                memoryCacheProjects = merged;
-                if (typeof window !== "undefined") {
-                  try {
-                    const mJson = JSON.stringify(merged);
-                    localStorage.setItem(STORAGE_PROJECTS_KEY, mJson);
-                    localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", mJson);
-                    localStorage.setItem(STORAGE_LAST_SYNC_KEY, updatedTime);
-                  } catch {}
-                }
-                onUpdate(merged);
+              lastKnownTimestamp = updatedTime;
+              if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
+                saveDirectLocalTemplates(payload.templates);
               }
+              if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
+                markProjectsAsDeletedBulk(payload.deletedKeys, localProjects);
+              }
+              if (payload.deletedPartKeys && Array.isArray(payload.deletedPartKeys)) {
+                markPartsAsDeletedBulk(payload.deletedPartKeys);
+              }
+              cleanStorageFromDeleted(delKeys, delPartKeys);
+
+              const incomingProjects = incomingProjectsRaw.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+
+              const merged = incomingProjects.length >= localProjects.length
+                ? incomingProjects
+                : mergeProjectLists(localProjects, incomingProjects, delKeys, delPartKeys);
+
+              memoryCacheProjects = merged;
+              try {
+                const mJson = JSON.stringify(merged);
+                localStorage.setItem(STORAGE_PROJECTS_KEY, mJson);
+                localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", mJson);
+                localStorage.setItem(STORAGE_LAST_SYNC_KEY, updatedTime);
+              } catch {}
+              onUpdate(merged);
+            }
+            // 2. 만약 로컬에 10개가 있고 클라우드에 5개만 있는 경우 -> 클라우드로 10개 즉시 자동 업로드(Auto-Heal)!
+            else if (localProjects.length > incomingProjectsRaw.length && localProjects.length > 0) {
+              lastKnownTimestamp = new Date().toISOString();
+              saveCentralProjects(localProjects, cleanRoom).catch(() => {});
             }
           }
         }
-      } catch {}
-    };
+      }
+    } catch {}
+  };
 
-    // 마운트 즉시 1회 실행 후 3.5초 주기 폴링
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    // 마운트 즉시 1회 실행 후 2초 주기 폴링
     checkUpdates();
-    supabasePollTimer = setInterval(checkUpdates, 3500);
+    supabasePollTimer = setInterval(checkUpdates, 2000);
+
+    // 사용자가 창으로 복귀하거나 모바일 화면을 켰을 때 0.05초만에 즉시 업데이트
+    const onVisibilityOrFocus = () => {
+      checkUpdates();
+    };
+    window.addEventListener("focus", onVisibilityOrFocus);
+    document.addEventListener("visibilitychange", onVisibilityOrFocus);
+
+    return () => {
+      isUnsubscribed = true;
+      if (supabasePollTimer) {
+        clearInterval(supabasePollTimer);
+      }
+      window.removeEventListener("focus", onVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", onVisibilityOrFocus);
+    };
   }
 
   return () => {
     isUnsubscribed = true;
-    if (supabasePollTimer) {
-      clearInterval(supabasePollTimer);
-    }
   };
 }
 

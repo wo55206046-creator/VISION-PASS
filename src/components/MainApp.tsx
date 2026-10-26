@@ -290,16 +290,21 @@ export default function MainApp() {
       }
     });
 
-    // 2. ⚡ 초고속 실시간 클라우드 스트림 구독 (스마트 병합)
+    // 2. ⚡ 초고속 실시간 클라우드 스트림 구독 (모든 기기 실시간 자동 공유)
     const unsubscribeRealtime = subscribeCloudRealtime((incoming) => {
-      if (Date.now() - lastLocalEditTimeRef.current < 5000) return;
+      if (Date.now() - lastLocalEditTimeRef.current < 3000) return;
       if (incoming && incoming.length > 0) {
         const delKeys = getDeletedProjectKeys();
         const delPartKeys = getDeletedPartKeys();
         const cleanIncoming = incoming.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
         setProjects((prev) => {
           const cleanPrev = prev.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-          const merged = mergeProjectLists(cleanPrev, cleanIncoming, delKeys, delPartKeys);
+          
+          // 🛡️ 클라우드 수량이 더 많으면 무조건 클라우드 데이터 전수 수용 (엣지/모바일 자동 공유)
+          const merged = cleanIncoming.length > cleanPrev.length
+            ? cleanIncoming
+            : mergeProjectLists(cleanPrev, cleanIncoming, delKeys, delPartKeys);
+
           const mergedJson = JSON.stringify(merged);
           if (mergedJson !== lastKnownCloudJson.current) {
             lastKnownCloudJson.current = mergedJson;
@@ -332,19 +337,14 @@ export default function MainApp() {
     };
   }, []);
 
-  // 3. [자동 발신] 프로젝트 변경 시 클라우드로 실시간 안전 푸시 (Debounced & Anti-Revert Lock)
+  // 3. [완전 자동 발신] 프로젝트 변경 시 클라우드 실시간 자동 저장 (Zero-Click Auto Save)
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
       return;
     }
 
-    // ★ 초기 로드 및 병합이 완료되기 전 빈 기본값으로 클라우드를 덮어쓰는 것 절대 차단!
-    if (!isInitialLoadComplete.current) {
-      return;
-    }
-
-    // 로컬 변경사항 로컬 스토리지 즉시 저장
+    // 로컬 스토리지 즉각 영구 저장
     try {
       const currentJson = JSON.stringify(projects);
       localStorage.setItem(STORAGE_KEY, currentJson);
@@ -354,15 +354,32 @@ export default function MainApp() {
     }
 
     const currentJson = JSON.stringify(projects);
-    // 클라우드에서 막 받아온 데이터와 완전히 동일하다면 불필요한 푸시 스킵
+    // 클라우드 최신 상태와 다르거나 프로젝트가 변경되었을 때 300ms 만에 자동 푸시
     if (currentJson !== lastKnownCloudJson.current && projects.length > 0) {
       if (syncPushTimeoutRef.current) clearTimeout(syncPushTimeoutRef.current);
+      setSyncStatus("syncing");
       syncPushTimeoutRef.current = setTimeout(async () => {
-        const res = await pushProjectsToCloud(projects);
-        if (res.success) {
-          lastKnownCloudJson.current = currentJson;
+        try {
+          const res = await pushProjectsToCloud(projects);
+          if (res.success) {
+            lastKnownCloudJson.current = currentJson;
+            setSyncStatus("connected");
+          } else {
+            console.warn("클라우드 자동 저장 응답 경고:", res.message);
+            // 2초 후 1회 조용한 재시도
+            setTimeout(() => {
+              pushProjectsToCloud(projects).then((r) => {
+                if (r.success) {
+                  lastKnownCloudJson.current = currentJson;
+                  setSyncStatus("connected");
+                }
+              }).catch(() => {});
+            }, 2000);
+          }
+        } catch (e) {
+          console.warn("클라우드 자동 저장 통신 오류:", e);
         }
-      }, 350);
+      }, 300);
     }
 
     return () => {

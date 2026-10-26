@@ -167,6 +167,19 @@ export const SyncModal: React.FC<SyncModalProps> = ({
 
         {/* Body Content */}
         <div className="p-5 space-y-4 overflow-y-auto">
+          {/* ⚡ 완전 자동 동기화 안내 배너 */}
+          <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/40 text-xs text-cyan-200 flex items-start gap-2.5">
+            <CheckCircle2 className="h-4 w-4 text-cyan-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <strong className="text-cyan-300 font-bold block">
+                ⚡ 실시간 자동 동기화 가동 중 (Zero-Click)
+              </strong>
+              <p className="text-[11px] text-cyan-100/90 leading-relaxed">
+                별도의 [저장]이나 [내려받기] 버튼을 누르지 않아도, 프로젝트 추가·수정·시리얼 입력 시 <strong>0.3초 내로 중앙 DB에 자동 저장</strong>되며, 다른 PC/모바일/Edge 브라우저로 <strong>2초 내에 실시간 자동 공유</strong>됩니다.
+              </p>
+            </div>
+          </div>
+
           {statusMsg && (
             <div
               className={`p-3 rounded-xl border text-xs flex items-center gap-2 animate-fadeIn ${
@@ -270,29 +283,35 @@ export const SyncModal: React.FC<SyncModalProps> = ({
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <button
-                type="button"
-                disabled={isSyncing}
-                onClick={handleCloudPush}
-                className="rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 p-3 text-xs font-bold text-slate-950 shadow-glow-cyan hover:opacity-95 disabled:opacity-50 transition-all cursor-pointer flex flex-col items-center justify-center gap-1"
-              >
-                <CloudUpload className="h-5 w-5" />
-                <span>PC 데이터 ➔ 클라우드 저장</span>
-                <span className="text-[10px] font-normal text-slate-900/80">(지금 작성한 내용 업로드)</span>
-              </button>
+            {/* Manual Override Action Buttons */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between text-[11px] text-slate-400">
+                <span className="font-semibold text-slate-300">수동 강제 동기화 (선택 사항)</span>
+                <span className="text-[10px] text-emerald-400 font-medium">● 자동 동기화 가동 중</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  disabled={isSyncing}
+                  onClick={handleCloudPush}
+                  className="rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 p-3 text-xs font-bold text-slate-950 shadow-glow-cyan hover:opacity-95 disabled:opacity-50 transition-all cursor-pointer flex flex-col items-center justify-center gap-1"
+                >
+                  <CloudUpload className="h-5 w-5" />
+                  <span>PC 데이터 ➔ 클라우드 즉시 저장</span>
+                  <span className="text-[10px] font-normal text-slate-900/80">(지금 즉시 강제 업로드)</span>
+                </button>
 
-              <button
-                type="button"
-                disabled={isSyncing}
-                onClick={handleCloudPull}
-                className="rounded-xl bg-slate-800 hover:bg-slate-750 border border-cyan-500/40 p-3 text-xs font-bold text-cyan-300 hover:text-cyan-200 disabled:opacity-50 transition-all cursor-pointer flex flex-col items-center justify-center gap-1 shadow-sm"
-              >
-                <CloudDownload className="h-5 w-5 text-cyan-400" />
-                <span>클라우드 ➔ 스마트폰 내려받기</span>
-                <span className="text-[10px] font-normal text-slate-400">(모바일에서 최신 데이터 수신)</span>
-              </button>
+                <button
+                  type="button"
+                  disabled={isSyncing}
+                  onClick={handleCloudPull}
+                  className="rounded-xl bg-slate-800 hover:bg-slate-750 border border-cyan-500/40 p-3 text-xs font-bold text-cyan-300 hover:text-cyan-200 disabled:opacity-50 transition-all cursor-pointer flex flex-col items-center justify-center gap-1 shadow-sm"
+                >
+                  <CloudDownload className="h-5 w-5 text-cyan-400" />
+                  <span>클라우드 ➔ 데이터 즉시 내려받기</span>
+                  <span className="text-[10px] font-normal text-slate-400">(지금 즉시 최신본 새로고침)</span>
+                </button>
+              </div>
             </div>
 
             {/* 💡 모바일 동기화 안내 및 문제 해결 */}
