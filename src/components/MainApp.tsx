@@ -156,13 +156,13 @@ export default function MainApp() {
   const syncPushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastLocalEditTimeRef = useRef<number>(0); // ★ 로컬 수정 보호 락 (Anti-Revert Lock)
 
-  // 1. [자동 수신] 클라우드 최신 데이터 실시간 풀 함수 (스마트 병합 적용)
+  // 1. [자동 수신] 클라우드 최신 데이터 실시간 풀 함수 (클라우드 우선주의)
   const fetchCloudProjects = async (isInitial: boolean = false) => {
     if (isSyncingInFlight.current) return;
     if (!isInitial && typeof document !== "undefined" && document.visibilityState !== "visible") return;
 
-    // ★ 로컬 수정 보호 락: 최근 5초 이내에 로컬 작업(삭제/편집)이 있었다면 원격 덮어쓰기 일시 차단
-    if (Date.now() - lastLocalEditTimeRef.current < 5000) {
+    // 로컬 작업 중 3초간 원격 덮어쓰기 일시 유예
+    if (!isInitial && Date.now() - lastLocalEditTimeRef.current < 3000) {
       return;
     }
 
@@ -179,26 +179,25 @@ export default function MainApp() {
 
         setProjects((prevProjects) => {
           const currentSanitized = prevProjects.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-          
-          // 🛡️ 핵심: 클라우드에 프로젝트가 더 많으면 무조건 클라우드 프로젝트 전수 채택! (엣지/스마트폰 동기화)
-          // 만약 로컬에 10개가 있고 클라우드에 5개만 있다면 로컬 10개 유지 및 즉시 클라우드로 10개 자동 업로드! (크롬 보정)
-          let merged: ProjectMaster[];
-          if (incomingSanitized.length > currentSanitized.length) {
-            merged = incomingSanitized;
-          } else if (currentSanitized.length > incomingSanitized.length) {
-            merged = currentSanitized;
-            pushProjectsToCloud(currentSanitized).catch(() => {});
+
+          // 🛡️ 핵심: 초기 로드이거나 클라우드에 데이터가 있으면 무조건 클라우드 최신 데이터를 전수 채택!
+          // (Edge, 스마트폰, 새 브라우저 접속 시 100% 동일한 프로젝트 즉각 공유 보장)
+          let adopted: ProjectMaster[];
+          if (isInitial || incomingSanitized.length >= currentSanitized.length) {
+            adopted = incomingSanitized;
           } else {
-            merged = mergeProjectLists(currentSanitized, incomingSanitized, delKeys, delPartKeys);
+            // 로컬에 더 많은 프로젝트가 있고 초기 로드가 아닐 때만 로컬 유지 후 클라우드로 푸시
+            adopted = currentSanitized;
+            pushProjectsToCloud(currentSanitized).catch(() => {});
           }
 
-          const mergedJson = JSON.stringify(merged);
-          lastKnownCloudJson.current = mergedJson;
+          const adoptedJson = JSON.stringify(adopted);
+          lastKnownCloudJson.current = adoptedJson;
           try {
-            localStorage.setItem(STORAGE_KEY, mergedJson);
-            localStorage.setItem(PERSISTENT_BACKUP_KEY, mergedJson);
+            localStorage.setItem(STORAGE_KEY, adoptedJson);
+            localStorage.setItem(PERSISTENT_BACKUP_KEY, adoptedJson);
           } catch {}
-          return merged;
+          return adopted;
         });
       } else {
         setSyncStatus("connected");
@@ -224,7 +223,7 @@ export default function MainApp() {
       } catch {}
     }
 
-    // 1단계: 로컬 저장소 및 영구 백업 스냅샷에서 기존 시리얼 작업 데이터 우선 복원
+    // 1단계: 로컬 저장소 우선 복원
     const saved = loadSavedProjects();
     if (saved && saved.length > 0) {
       setProjects(saved);
@@ -238,15 +237,20 @@ export default function MainApp() {
       lastKnownCloudJson.current = JSON.stringify(saved);
     }
 
-    // 2단계: 클라우드에서 최신 데이터 가져와 안전 병합(Smart Merge) - 초기 로드는 가시성 체크 없이 강제 수행!
-    fetchCloudProjects(true).finally(() => {
-      // 로컬에 10개 등 프로젝트가 많다면 클라우드로 1회 확실하게 푸시하여 타 브라우저(엣지/모바일)로 전파
+    // 2단계: 클라우드에서 최신 데이터 무조건 1순위로 가져오기 (Cloud-First Sync)
+    fetchCloudProjects(true).then(() => {
+      // 만약 클라우드 조회가 끝났는데도 로컬에만 프로젝트가 6개 이상 많다면 클라우드로 즉시 업로드
       if (saved && saved.length > 5) {
-        pushProjectsToCloud(saved).catch(() => {});
+        pushProjectsToCloud(saved).then((r) => {
+          if (r.success) {
+            lastKnownCloudJson.current = JSON.stringify(saved);
+          }
+        }).catch(() => {});
       }
+    }).finally(() => {
       setTimeout(() => {
         isInitialLoadComplete.current = true;
-      }, 600);
+      }, 500);
     });
 
     // 화면 복귀, 탭 포커스 시 부드럽게 1회 확인 (최근 5초 로컬 편집 중일 시 무시)

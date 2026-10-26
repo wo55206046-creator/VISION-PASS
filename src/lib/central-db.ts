@@ -104,6 +104,7 @@ export async function pingCentralDb(): Promise<{
   cloudProjectCount?: number;
   cloudUpdatedTime?: string;
   cloudPjtCodes?: string[];
+  rlsWarning?: boolean;
 }> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     return { ok: false, latencyMs: 0, message: "Supabase 설정 누락 (오프라인 모드)" };
@@ -114,7 +115,7 @@ export async function pingCentralDb(): Promise<{
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(roomKey)}&select=data,updated_at&order=updated_at.desc&limit=1`,
+      `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(roomKey)}&select=id,data,updated_at&order=updated_at.desc&limit=1`,
       {
         method: "GET",
         headers: {
@@ -145,11 +146,19 @@ export async function pingCentralDb(): Promise<{
         ok: true,
         latencyMs,
         cloudProjectCount: 0,
-        message: `DB 연결 정상 (${latencyMs}ms) | 현재 [${roomKey}] 방에 저장된 데이터 없음 (0개)`,
+        message: `DB 연결 정상 (${latencyMs}ms) | 현재 [${roomKey}] 방에 저장된 데이터 없음 (신규 생성 대기)`,
       };
     }
     const errText = await res.text().catch(() => "");
-    return { ok: false, latencyMs, message: `DB 응답 오류: HTTP ${res.status} (${errText})` };
+    const isRls = errText.includes("row-level security") || res.status === 401 || res.status === 403;
+    return {
+      ok: false,
+      latencyMs,
+      rlsWarning: isRls,
+      message: isRls
+        ? `Supabase RLS(보안정책) 차단 오류 (HTTP ${res.status}): 테이블 쓰기 권한이 필요합니다.`
+        : `DB 응답 오류: HTTP ${res.status} (${errText})`,
+    };
   } catch (err: any) {
     const latencyMs = Math.round(performance.now() - start);
     return {
@@ -387,37 +396,64 @@ export async function saveCentralProjects(
         console.warn("Supabase check existing record error:", checkErr);
       }
 
-      let res: Response;
+      let res: Response | null = null;
+      let isSuccess = false;
+
+      // 2단계: 기존 행이 있으면 고유 id로 정확하게 수정 (PATCH)
       if (existingId !== null && existingId !== undefined) {
-        // 기존 행이 존재하면 해당 room_key 전체 행 덮어쓰기 (PATCH)
-        res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(payload.roomKey)}`, {
-          method: "PATCH",
-          headers: {
-            ...baseHeaders,
-            "Prefer": "return=representation",
-          },
-          body: rowJson,
-        });
-      } else {
-        // 기존 행이 없으면 신규 레코드 삽입 (POST)
+        try {
+          res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?id=eq.${encodeURIComponent(existingId)}`, {
+            method: "PATCH",
+            headers: {
+              ...baseHeaders,
+              "Prefer": "return=representation",
+            },
+            body: JSON.stringify({
+              data: payload,
+              updated_at: nowStr,
+            }),
+          });
+          if (res.ok) {
+            const patched = await res.json().catch(() => []);
+            if (Array.isArray(patched) && patched.length > 0) {
+              isSuccess = true;
+            }
+          }
+        } catch (patchErr) {
+          console.warn("PATCH failed, will fallback to POST", patchErr);
+        }
+      }
+
+      // 3단계: 기존 행이 없었거나, PATCH로 수정된 행이 0개인 경우 신규 생성 (POST)
+      if (!isSuccess) {
         res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync`, {
           method: "POST",
           headers: {
             ...baseHeaders,
             "Prefer": "return=representation",
           },
-          body: rowJson,
+          body: JSON.stringify({
+            room_key: payload.roomKey,
+            data: payload,
+            updated_at: nowStr,
+          }),
         });
+        if (res.ok) {
+          isSuccess = true;
+        }
       }
 
-      if (res.ok) {
+      if (isSuccess) {
         return { success: true, message: `Supabase 클라우드 실시간 저장 완료 (${projects.length}개 프로젝트)` };
       } else {
-        const errBody = await res.text().catch(() => "Unknown error");
-        console.warn("Supabase save error response:", res.status, errBody);
+        const errBody = res ? await res.text().catch(() => "Unknown error") : "저장 응답 없음";
+        const isRls = errBody.includes("row-level security") || res?.status === 401 || res?.status === 403;
+        console.warn("Supabase save error response:", res?.status, errBody);
         return {
           success: false,
-          message: `클라우드 DB 저장 실패 (HTTP ${res.status}): ${errBody}`,
+          message: isRls
+            ? `Supabase RLS 보안정책 오류: projects_sync 테이블의 RLS를 비활성화하거나 anon 쓰기 정책을 허용해주세요.`
+            : `클라우드 DB 저장 실패 (HTTP ${res?.status || "ERR"}): ${errBody}`,
         };
       }
     } catch (err: any) {

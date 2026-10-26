@@ -41,7 +41,7 @@ export const SyncModal: React.FC<SyncModalProps> = ({
   const [roomKey, setRoomKeyState] = useState<string>(() => getSyncRoomKey());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isTestingPing, setIsTestingPing] = useState<boolean>(false);
-  const [pingResult, setPingResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [pingResult, setPingResult] = useState<{ ok: boolean; message: string; rlsWarning?: boolean } | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
 
@@ -56,7 +56,7 @@ export const SyncModal: React.FC<SyncModalProps> = ({
     setPingResult(null);
     try {
       const res = await pingCentralDb();
-      setPingResult({ ok: res.ok, message: res.message });
+      setPingResult({ ok: res.ok, message: res.message, rlsWarning: res.rlsWarning });
     } catch (e: any) {
       setPingResult({ ok: false, message: e.message || "연결 테스트 실패" });
     } finally {
@@ -238,19 +238,46 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                 </button>
               </div>
               {pingResult && (
-                <div
-                  className={`mt-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-mono flex items-center gap-1.5 ${
-                    pingResult.ok
-                      ? "bg-emerald-950/60 text-emerald-300 border border-emerald-800/60"
-                      : "bg-red-950/60 text-red-300 border border-red-800/60"
-                  }`}
-                >
-                  {pingResult.ok ? (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                  ) : (
-                    <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                <div className="space-y-2 mt-1.5">
+                  <div
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-mono flex items-center gap-1.5 ${
+                      pingResult.ok
+                        ? "bg-emerald-950/60 text-emerald-300 border border-emerald-800/60"
+                        : "bg-red-950/60 text-red-300 border border-red-800/60"
+                    }`}
+                  >
+                    {pingResult.ok ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                    )}
+                    <span>{pingResult.message}</span>
+                  </div>
+
+                  {pingResult.rlsWarning && (
+                    <div className="p-2.5 rounded-lg bg-amber-950/60 border border-amber-700/60 text-[11px] text-amber-200 space-y-1.5">
+                      <div className="font-bold flex items-center gap-1 text-amber-300">
+                        <AlertCircle className="h-3.5 w-3.5 text-amber-400" />
+                        <span>Supabase RLS 보안정책 해제 필요</span>
+                      </div>
+                      <p className="text-[10px] text-amber-100/90 leading-relaxed">
+                        Supabase 대시보드 ➔ <strong>SQL Editor</strong>에 아래 1줄을 붙여넣고 <strong>Run</strong>을 누르면 실시간 동기화가 즉시 활성화됩니다:
+                      </p>
+                      <div className="flex items-center justify-between bg-black/60 px-2 py-1.5 rounded border border-amber-700/40 font-mono text-[10px] text-cyan-300">
+                        <code>ALTER TABLE projects_sync DISABLE ROW LEVEL SECURITY;</code>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText("ALTER TABLE projects_sync DISABLE ROW LEVEL SECURITY;");
+                            alert("SQL 복사 완료! Supabase SQL Editor에 붙여넣고 Run을 실행해주세요.");
+                          }}
+                          className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-[10px] cursor-pointer ml-2"
+                        >
+                          복사
+                        </button>
+                      </div>
+                    </div>
                   )}
-                  <span>{pingResult.message}</span>
                 </div>
               )}
             </div>
