@@ -337,38 +337,30 @@ export async function saveCentralProjects(
         updated_at: nowStr,
       });
 
-      // 1단계: PostgREST merge-duplicates Upsert 시도
-      let res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?on_conflict=room_key`, {
-        method: "POST",
+      // 1단계: 기존 room_key 레코드 PATCH(수정) 최우선 시도
+      let res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(payload.roomKey)}`, {
+        method: "PATCH",
         headers: {
           ...baseHeaders,
-          "Prefer": "resolution=merge-duplicates",
+          "Prefer": "return=representation",
         },
-        body: bodyPayload,
+        body: JSON.stringify({
+          data: payload,
+          updated_at: nowStr,
+        }),
       });
 
-      // 2단계: Upsert 실패 시(테이블 고유키 제약조건 차이 등), PATCH(수정) 시도
-      if (!res.ok) {
-        res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(payload.roomKey)}`, {
-          method: "PATCH",
+      // 2단계: 기존 행이 없어 0건 수정되었거나 오류인 경우 일반 INSERT 시도
+      const updatedRows = res.ok ? await res.json().catch(() => []) : [];
+      if (!res.ok || !Array.isArray(updatedRows) || updatedRows.length === 0) {
+        res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync`, {
+          method: "POST",
           headers: {
             ...baseHeaders,
             "Prefer": "return=representation",
           },
-          body: JSON.stringify({
-            data: payload,
-            updated_at: nowStr,
-          }),
+          body: bodyPayload,
         });
-
-        // 3단계: 기존 레코드가 없어 0건 수정되었거나 오류인 경우 일반 INSERT 시도
-        if (!res.ok) {
-          res = await fetch(`${SUPABASE_URL}/rest/v1/projects_sync`, {
-            method: "POST",
-            headers: baseHeaders,
-            body: bodyPayload,
-          });
-        }
       }
 
       if (res.ok) {
@@ -405,7 +397,7 @@ export async function fetchCentralProjects(
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(cleanRoom)}&select=*`,
+        `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(cleanRoom)}&select=*&order=updated_at.desc&limit=1`,
         {
           headers: {
             "apikey": SUPABASE_ANON_KEY,
@@ -443,16 +435,15 @@ export async function fetchCentralProjects(
           const cloudProjects = (payload.projects || []).filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
           const localProjects = directLocalProjects.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
 
-          // 🛡️ 로컬이 초기 기본 5개 프리셋 상태인지 확인 (새 PC 또는 스마트폰 첫 접속)
-          const isLocalInitialDefaults =
-            localProjects.length <= 5 &&
-            localProjects.every((p) => p.id && /^pjt-00[1-5]$/.test(p.id)) &&
-            countVerifiedSerials(localProjects) <= 5;
-
-          // forceOverwrite이거나 로컬이 초기 5개 프리셋인데 클라우드에 더 많은 최신 프로젝트가 있는 경우 전수 채택
+          // 🛡️ 핵심: 로컬과 클라우드 중 더 많은 프로젝트를 가진 쪽을 우선하여 누락 방지!
+          // 1. 클라우드에 10개가 있고 로컬에 5개만 있다면 (예: 엣지/모바일) -> 무조건 클라우드 10개 전수 채택!
+          // 2. 로컬에 10개가 있고 클라우드에 5개만 있다면 (예: 크롬) -> 로컬 10개 유지 및 즉시 클라우드로 10개 자동 업로드!
           let merged: ProjectMaster[];
-          if (forceOverwrite || (isLocalInitialDefaults && cloudProjects.length >= 5) || localProjects.length === 0) {
+          if (forceOverwrite || cloudProjects.length > localProjects.length || localProjects.length === 0) {
             merged = cloudProjects;
+          } else if (localProjects.length > cloudProjects.length) {
+            merged = localProjects;
+            saveCentralProjects(localProjects, roomKey).catch(() => {});
           } else {
             merged = mergeProjectLists(localProjects, cloudProjects, delKeys, delPartKeys);
           }
@@ -474,7 +465,7 @@ export async function fetchCentralProjects(
             const cp = cloudProjects.find((c: ProjectMaster) => c.id === lp.id || c.pjtCode === lp.pjtCode);
             return cp && new Date(lp.updatedAt || 0) > new Date(cp.updatedAt || 0);
           });
-          if (hasNewerLocal) {
+          if (hasNewerLocal && localProjects.length >= cloudProjects.length) {
             saveCentralProjects(merged, roomKey).catch(() => {});
           }
 
@@ -584,7 +575,7 @@ export function subscribeCentralRealtime(
       if (isUnsubscribed) return;
       try {
         const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(cleanRoom)}&select=data,updated_at`,
+          `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(cleanRoom)}&select=data,updated_at&order=updated_at.desc&limit=1`,
           {
             headers: {
               "apikey": SUPABASE_ANON_KEY,
@@ -608,14 +599,11 @@ export function subscribeCentralRealtime(
               const delKeys = getDeletedProjectKeys();
               const delPartKeys = getDeletedPartKeys();
               const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-              const isLocalInitial =
-                localProjects.length <= 5 &&
-                countVerifiedSerials(localProjects) <= 5;
 
-              // 다른 기기에서 보냈거나, 로컬이 초기 5개 프리셋인데 클라우드에 더 많은 프로젝트가 있는 경우
+              // 다른 기기에서 보냈거나, 클라우드에 로컬보다 더 많은 프로젝트가 있는 경우 즉각 전수 반영!
               if (
                 (updatedTime !== lastKnownTimestamp && isDifferentSender) ||
-                (isLocalInitial && incomingProjectsRaw.length > localProjects.length)
+                incomingProjectsRaw.length > localProjects.length
               ) {
                 lastKnownTimestamp = updatedTime;
                 if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
@@ -631,8 +619,8 @@ export function subscribeCentralRealtime(
 
                 const incomingProjects = incomingProjectsRaw.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
 
-                // 🛡️ 로컬이 초기 5개 프리셋이면 클라우드 프로젝트 전수 채택
-                const merged = (isLocalInitial && incomingProjects.length >= 5)
+                // 🛡️ 클라우드에 더 많은 프로젝트가 있으면 전수 채택
+                const merged = incomingProjects.length > localProjects.length
                   ? incomingProjects
                   : (localProjects && localProjects.length > 0
                       ? mergeProjectLists(localProjects, incomingProjects, delKeys, delPartKeys)

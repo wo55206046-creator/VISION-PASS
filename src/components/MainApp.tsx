@@ -180,16 +180,17 @@ export default function MainApp() {
         setProjects((prevProjects) => {
           const currentSanitized = prevProjects.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
           
-          // 🛡️ 로컬이 초기 5개 프리셋 상태인지 확인 (새 PC 또는 스마트폰)
-          const isLocalInitial =
-            currentSanitized.length <= 5 &&
-            currentSanitized.every((p) => p.id && /^pjt-00[1-5]$/.test(p.id)) &&
-            countVerifiedSerials(currentSanitized) <= 5;
-
-          // 로컬이 초기 5개이고 클라우드에 5개 이상의 유효한 프로젝트가 있는 경우 클라우드 데이터 전수 채택
-          const merged = (isLocalInitial && incomingSanitized.length >= 5)
-            ? incomingSanitized
-            : mergeProjectLists(currentSanitized, incomingSanitized, delKeys, delPartKeys);
+          // 🛡️ 핵심: 클라우드에 프로젝트가 더 많으면 무조건 클라우드 프로젝트 전수 채택! (엣지/스마트폰 동기화)
+          // 만약 로컬에 10개가 있고 클라우드에 5개만 있다면 로컬 10개 유지 및 즉시 클라우드로 10개 자동 업로드! (크롬 보정)
+          let merged: ProjectMaster[];
+          if (incomingSanitized.length > currentSanitized.length) {
+            merged = incomingSanitized;
+          } else if (currentSanitized.length > incomingSanitized.length) {
+            merged = currentSanitized;
+            pushProjectsToCloud(currentSanitized).catch(() => {});
+          } else {
+            merged = mergeProjectLists(currentSanitized, incomingSanitized, delKeys, delPartKeys);
+          }
 
           const mergedJson = JSON.stringify(merged);
           lastKnownCloudJson.current = mergedJson;
@@ -239,7 +240,10 @@ export default function MainApp() {
 
     // 2단계: 클라우드에서 최신 데이터 가져와 안전 병합(Smart Merge) - 초기 로드는 가시성 체크 없이 강제 수행!
     fetchCloudProjects(true).finally(() => {
-      // 초기 로드가 완전히 끝난 뒤에만 자동 푸시 활성화
+      // 로컬에 10개 등 프로젝트가 많다면 클라우드로 1회 확실하게 푸시하여 타 브라우저(엣지/모바일)로 전파
+      if (saved && saved.length > 5) {
+        pushProjectsToCloud(saved).catch(() => {});
+      }
       setTimeout(() => {
         isInitialLoadComplete.current = true;
       }, 600);
