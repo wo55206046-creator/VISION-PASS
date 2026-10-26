@@ -7,8 +7,6 @@ import {
   setSyncRoomKey,
   pushProjectsToCloud,
   pullProjectsFromCloud,
-  exportBackupFile,
-  importBackupFile,
   pingCentralDb,
 } from "@/lib/cloud-sync";
 import {
@@ -16,21 +14,13 @@ import {
   CloudUpload,
   CloudDownload,
   KeyRound,
-  Download,
-  Upload,
-  RotateCcw,
   CheckCircle2,
   AlertCircle,
   X,
   Smartphone,
-  Laptop,
-  ArrowRight,
   ShieldCheck,
-  RefreshCw,
-  QrCode,
   Copy,
   Check,
-  ExternalLink,
   Activity,
 } from "lucide-react";
 
@@ -39,7 +29,7 @@ interface SyncModalProps {
   onClose: () => void;
   projects: ProjectMaster[];
   onUpdateProjects: (newProjects: ProjectMaster[]) => void;
-  onResetDefault: () => void;
+  onResetDefault?: () => void;
 }
 
 export const SyncModal: React.FC<SyncModalProps> = ({
@@ -47,9 +37,7 @@ export const SyncModal: React.FC<SyncModalProps> = ({
   onClose,
   projects,
   onUpdateProjects,
-  onResetDefault,
 }) => {
-  const [activeTab, setActiveTab] = useState<"cloud" | "file" | "reset">("cloud");
   const [roomKey, setRoomKeyState] = useState<string>(() => getSyncRoomKey());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isTestingPing, setIsTestingPing] = useState<boolean>(false);
@@ -147,27 +135,6 @@ export const SyncModal: React.FC<SyncModalProps> = ({
     }
   };
 
-  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setStatusMsg(null);
-    const res = await importBackupFile(file);
-    if (res.success && res.projects) {
-      onUpdateProjects(res.projects);
-      setStatusMsg({
-        type: "success",
-        text: `백업 파일에서 ${res.projects.length}개 프로젝트를 정상 복원했습니다!`,
-      });
-    } else {
-      setStatusMsg({
-        type: "error",
-        text: res.message || "파일 복원 실패",
-      });
-    }
-    e.target.value = "";
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
@@ -198,57 +165,6 @@ export const SyncModal: React.FC<SyncModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-slate-800 bg-slate-950/50 px-4 pt-2 gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("cloud");
-              setStatusMsg(null);
-            }}
-            className={`pb-2 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "cloud"
-                ? "border-cyan-400 text-cyan-300"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Cloud className="h-3.5 w-3.5" />
-            <span>클라우드 동기화 (QR / 실시간)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("file");
-              setStatusMsg(null);
-            }}
-            className={`pb-2 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "file"
-                ? "border-cyan-400 text-cyan-300"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span>파일 백업/복원</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("reset");
-              setStatusMsg(null);
-            }}
-            className={`pb-2 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "reset"
-                ? "border-red-400 text-red-300"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            <span>초기화</span>
-          </button>
-        </div>
-
         {/* Body Content */}
         <div className="p-5 space-y-4 overflow-y-auto">
           {statusMsg && (
@@ -272,203 +188,132 @@ export const SyncModal: React.FC<SyncModalProps> = ({
             </div>
           )}
 
-          {/* TAB 1: 클라우드 실시간 동기화 + QR 코드 */}
-          {activeTab === "cloud" && (
-            <div className="space-y-4">
-              {/* 동기화 키 설정 박스 & DB 연결 테스트 */}
-              <div className="rounded-xl bg-slate-950 p-3.5 border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                    <KeyRound className="h-4 w-4 text-cyan-400" />
-                    <span>팀/설비 동기화 방 코드 (Sync Room Key)</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleTestConnection}
-                    disabled={isTestingPing}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition-all cursor-pointer"
-                    title="중앙 Supabase DB 연결 상태 즉시 진단"
-                  >
-                    <Activity className={`h-3 w-3 ${isTestingPing ? "animate-spin text-amber-400" : "text-cyan-400"}`} />
-                    <span>{isTestingPing ? "연결 확인 중..." : "DB 연결 진단"}</span>
-                  </button>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={roomKey}
-                    onChange={(e) => setRoomKeyState(e.target.value.toUpperCase())}
-                    placeholder="예: WITHTECH-VISIONPASS-2026"
-                    className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider focus:border-cyan-500 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveRoomKey}
-                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition-all cursor-pointer"
-                  >
-                    키 저장
-                  </button>
-                </div>
-                {pingResult && (
-                  <div
-                    className={`mt-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-mono flex items-center gap-1.5 ${
-                      pingResult.ok
-                        ? "bg-emerald-950/60 text-emerald-300 border border-emerald-800/60"
-                        : "bg-red-950/60 text-red-300 border border-red-800/60"
-                    }`}
-                  >
-                    {pingResult.ok ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                    ) : (
-                      <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
-                    )}
-                    <span>{pingResult.message}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* 📱 스마트폰 즉시 연결 QR 코드 & 링크 */}
-              <div className="rounded-xl bg-slate-950 p-3.5 border border-cyan-900/40 flex flex-col sm:flex-row items-center gap-4">
-                <div className="bg-white p-2 rounded-xl shadow-md shrink-0 flex items-center justify-center">
-                  <img
-                    src={qrCodeUrl}
-                    alt="스마트폰 연결용 QR 코드"
-                    className="w-24 h-24 sm:w-28 sm:h-28 object-contain"
-                  />
-                </div>
-                <div className="flex-1 space-y-2 text-center sm:text-left">
-                  <div className="flex items-center justify-center sm:justify-start gap-1.5 text-xs font-bold text-cyan-300">
-                    <Smartphone className="h-4 w-4 text-cyan-400" />
-                    <span>스마트폰 카메라로 QR 코드를 비추세요</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    스마트폰 카메라로 위 QR 코드를 스캔하면, PC와 동일한 동기화 방으로 즉시 접속되어 <strong>PC의 모든 프로젝트 데이터가 스마트폰에 실시간 표시</strong>됩니다.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleCopyLink}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-cyan-300 border border-slate-700 transition-all cursor-pointer"
-                  >
-                    {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                    <span>{copied ? "링크 복사 완료!" : "모바일 접속 링크 복사 (카톡/메신저 공유)"}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="grid grid-cols-2 gap-3 pt-1">
+          {/* 클라우드 실시간 동기화 + QR 코드 */}
+          <div className="space-y-4">
+            {/* 동기화 키 설정 박스 & DB 연결 테스트 */}
+            <div className="rounded-xl bg-slate-950 p-3.5 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <KeyRound className="h-4 w-4 text-cyan-400" />
+                  <span>팀/설비 동기화 방 코드 (Sync Room Key)</span>
+                </label>
                 <button
                   type="button"
-                  disabled={isSyncing}
-                  onClick={handleCloudPush}
-                  className="rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 p-3 text-xs font-bold text-slate-950 shadow-glow-cyan hover:opacity-95 disabled:opacity-50 transition-all cursor-pointer flex flex-col items-center justify-center gap-1"
+                  onClick={handleTestConnection}
+                  disabled={isTestingPing}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition-all cursor-pointer"
+                  title="중앙 Supabase DB 연결 상태 즉시 진단"
                 >
-                  <CloudUpload className="h-5 w-5" />
-                  <span>PC 데이터 ➔ 클라우드 저장</span>
-                  <span className="text-[10px] font-normal text-slate-900/80">(지금 작성한 내용 업로드)</span>
+                  <Activity className={`h-3 w-3 ${isTestingPing ? "animate-spin text-amber-400" : "text-cyan-400"}`} />
+                  <span>{isTestingPing ? "연결 확인 중..." : "DB 연결 진단"}</span>
                 </button>
-
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={roomKey}
+                  onChange={(e) => setRoomKeyState(e.target.value.toUpperCase())}
+                  placeholder="예: WITHTECH-VISIONPASS-2026"
+                  className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider focus:border-cyan-500 focus:outline-none"
+                />
                 <button
                   type="button"
-                  disabled={isSyncing}
-                  onClick={handleCloudPull}
-                  className="rounded-xl bg-slate-800 hover:bg-slate-750 border border-cyan-500/40 p-3 text-xs font-bold text-cyan-300 hover:text-cyan-200 disabled:opacity-50 transition-all cursor-pointer flex flex-col items-center justify-center gap-1 shadow-sm"
+                  onClick={handleSaveRoomKey}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition-all cursor-pointer"
                 >
-                  <CloudDownload className="h-5 w-5 text-cyan-400" />
-                  <span>클라우드 ➔ 스마트폰 내려받기</span>
-                  <span className="text-[10px] font-normal text-slate-400">(모바일에서 최신 데이터 수신)</span>
+                  키 저장
                 </button>
               </div>
-
-              {/* 💡 모바일 동기화 안내 및 문제 해결 */}
-              <div className="rounded-xl bg-slate-950/70 p-3 border border-slate-800 text-[11px] text-slate-400 space-y-1.5">
-                <div className="font-bold text-cyan-400 flex items-center gap-1">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  <span>스마트폰/모바일에서 5개만 보이고 동기화가 안 될 때:</span>
+              {pingResult && (
+                <div
+                  className={`mt-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-mono flex items-center gap-1.5 ${
+                    pingResult.ok
+                      ? "bg-emerald-950/60 text-emerald-300 border border-emerald-800/60"
+                      : "bg-red-950/60 text-red-300 border border-red-800/60"
+                  }`}
+                >
+                  {pingResult.ok ? (
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                  )}
+                  <span>{pingResult.message}</span>
                 </div>
-                <ul className="list-disc pl-4 space-y-1 text-slate-300">
-                  <li>
-                    <strong>모바일 웹 브라우저(권장):</strong> 스마트폰 기본 카메라로 상단 QR 코드를 비추어 열면 PC의 10개 프로젝트가 즉시 동기화됩니다.
-                  </li>
-                  <li>
-                    <strong>강제 새로고침:</strong> 모바일에서 위 <code>[클라우드 ➔ 스마트폰 내려받기]</code> 버튼을 누르면 클라우드의 최신 10개 프로젝트를 즉시 전수 반영합니다.
-                  </li>
-                  <li>
-                    <strong>APK 앱 사용 시:</strong> 스마트폰에 설치된 앱(APK)이 과거 빌드본인 경우, PC에서 <code>build-apk.bat</code>를 실행하여 최신 APK로 갱신해주세요.
-                  </li>
-                </ul>
-              </div>
+              )}
             </div>
-          )}
 
-          {/* TAB 2: 파일 백업 및 복원 */}
-          {activeTab === "file" && (
-            <div className="space-y-4">
-              <div className="rounded-xl bg-slate-950 p-4 border border-slate-800 space-y-3">
-                <div>
-                  <h4 className="text-xs font-bold text-slate-200">
-                    프로젝트 전체 데이터 백업 및 복원
-                  </h4>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    인터넷 연결이 없는 폐쇄망에서도 .json 파일로 프로젝트를 안전하게 보관하고 복구할 수 있습니다.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => exportBackupFile(projects)}
-                    className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-emerald-300 border border-emerald-700/50 flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm"
-                  >
-                    <Download className="h-4 w-4" />
-                    <span>백업 파일 (.json) 다운로드</span>
-                  </button>
-
-                  <label className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-cyan-300 border border-cyan-700/50 flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm text-center">
-                    <Upload className="h-4 w-4" />
-                    <span>백업 파일 불러오기</span>
-                    <input
-                      type="file"
-                      accept=".json"
-                      onChange={handleFileInputChange}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
+            {/* 📱 스마트폰 즉시 연결 QR 코드 & 링크 */}
+            <div className="rounded-xl bg-slate-950 p-3.5 border border-cyan-900/40 flex flex-col sm:flex-row items-center gap-4">
+              <div className="bg-white p-2 rounded-xl shadow-md shrink-0 flex items-center justify-center">
+                <img
+                  src={qrCodeUrl}
+                  alt="스마트폰 연결용 QR 코드"
+                  className="w-24 h-24 sm:w-28 sm:h-28 object-contain"
+                />
               </div>
-            </div>
-          )}
-
-          {/* TAB 3: 기본 데이터 초기화 */}
-          {activeTab === "reset" && (
-            <div className="rounded-xl bg-red-950/40 p-4 border border-red-900/60 space-y-3">
-              <div>
-                <h4 className="text-xs font-bold text-red-300">
-                  데이터 전체 초기화
-                </h4>
-                <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
-                  로컬에 저장된 프로젝트를 지우고, 기본 제공되는 표준 5개 반도체 설비 프로젝트(SKH 이천, 우시, SEC 평택 등)로 초기 복원합니다.
+              <div className="flex-1 space-y-2 text-center sm:text-left">
+                <div className="flex items-center justify-center sm:justify-start gap-1.5 text-xs font-bold text-cyan-300">
+                  <Smartphone className="h-4 w-4 text-cyan-400" />
+                  <span>스마트폰 카메라로 QR 코드를 비추세요</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  스마트폰 카메라로 위 QR 코드를 스캔하면, PC와 동일한 동기화 방으로 즉시 접속되어 <strong>PC의 모든 프로젝트 데이터가 스마트폰에 실시간 표시</strong>됩니다.
                 </p>
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-cyan-300 border border-slate-700 transition-all cursor-pointer"
+                >
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                  <span>{copied ? "링크 복사 완료!" : "모바일 접속 링크 복사 (카톡/메신저 공유)"}</span>
+                </button>
               </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button
+                type="button"
+                disabled={isSyncing}
+                onClick={handleCloudPush}
+                className="rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 p-3 text-xs font-bold text-slate-950 shadow-glow-cyan hover:opacity-95 disabled:opacity-50 transition-all cursor-pointer flex flex-col items-center justify-center gap-1"
+              >
+                <CloudUpload className="h-5 w-5" />
+                <span>PC 데이터 ➔ 클라우드 저장</span>
+                <span className="text-[10px] font-normal text-slate-900/80">(지금 작성한 내용 업로드)</span>
+              </button>
 
               <button
                 type="button"
-                onClick={() => {
-                  if (confirm("정말 기본 제공 5개 프로젝트로 초기화하시겠습니까?")) {
-                    onResetDefault();
-                    setStatusMsg({
-                      type: "info",
-                      text: "기본 5개 프로젝트로 초기화되었습니다.",
-                    });
-                  }
-                }}
-                className="w-full py-2.5 rounded-xl bg-red-900 hover:bg-red-800 text-xs font-bold text-white transition-all cursor-pointer flex items-center justify-center gap-2"
+                disabled={isSyncing}
+                onClick={handleCloudPull}
+                className="rounded-xl bg-slate-800 hover:bg-slate-750 border border-cyan-500/40 p-3 text-xs font-bold text-cyan-300 hover:text-cyan-200 disabled:opacity-50 transition-all cursor-pointer flex flex-col items-center justify-center gap-1 shadow-sm"
               >
-                <RotateCcw className="h-4 w-4" />
-                <span>기본 데이터로 전체 리셋</span>
+                <CloudDownload className="h-5 w-5 text-cyan-400" />
+                <span>클라우드 ➔ 스마트폰 내려받기</span>
+                <span className="text-[10px] font-normal text-slate-400">(모바일에서 최신 데이터 수신)</span>
               </button>
             </div>
-          )}
+
+            {/* 💡 모바일 동기화 안내 및 문제 해결 */}
+            <div className="rounded-xl bg-slate-950/70 p-3 border border-slate-800 text-[11px] text-slate-400 space-y-1.5">
+              <div className="font-bold text-cyan-400 flex items-center gap-1">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                <span>스마트폰/모바일에서 5개만 보이고 동기화가 안 될 때:</span>
+              </div>
+              <ul className="list-disc pl-4 space-y-1 text-slate-300">
+                <li>
+                  <strong>모바일 웹 브라우저(권장):</strong> 스마트폰 기본 카메라로 상단 QR 코드를 비추어 열면 PC의 10개 프로젝트가 즉시 동기화됩니다.
+                </li>
+                <li>
+                  <strong>강제 새로고침:</strong> 모바일에서 위 <code>[클라우드 ➔ 스마트폰 내려받기]</code> 버튼을 누르면 클라우드의 최신 10개 프로젝트를 즉시 전수 반영합니다.
+                </li>
+                <li>
+                  <strong>APK 앱 사용 시:</strong> 스마트폰에 설치된 앱(APK)이 과거 빌드본인 경우, PC에서 <code>build-apk.bat</code>를 실행하여 최신 APK로 갱신해주세요.
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
