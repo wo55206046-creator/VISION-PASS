@@ -205,6 +205,19 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
     setRegisteredTemplates(getRegisteredTemplates());
   }, [isPresetModalOpen]);
 
+  // 원격 디바이스/클라우드에서 템플릿 변경사항 수신 시 실시간 반영
+  React.useEffect(() => {
+    const handleRemoteTemplates = (e: any) => {
+      if (e.detail && Array.isArray(e.detail) && e.detail.length > 0) {
+        setRegisteredTemplates(e.detail);
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("VISION_PASS_TEMPLATES_UPDATED", handleRemoteTemplates);
+      return () => window.removeEventListener("VISION_PASS_TEMPLATES_UPDATED", handleRemoteTemplates);
+    }
+  }, []);
+
   React.useEffect(() => {
     setQuantityInput(String(project.quantity || 1));
   }, [project.quantity]);
@@ -397,22 +410,26 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
       currentPjtCode = parsed.pjtCode || currentPjtCode;
       currentEquipmentName = parsed.equipmentName || currentEquipmentName;
 
-      const matchedTpl = findMatchingTemplate(currentEquipmentName, currentPjtCode, registeredTemplates);
+      // ★ 사용자가 '양식 변경' 모달을 통해 이미 양식을 지정한 경우 자동 매칭으로 덮어쓰지 않음
+      const hasExplicitTemplate = Boolean(project.templateName);
       let updatedUnits = project.equipmentUnits || [];
       let templateName = project.templateName;
 
-      if (matchedTpl && matchedTpl.parts?.length > 0) {
-        templateName = matchedTpl.modelName;
-        const templateParts = matchedTpl.parts.map((p) => ({
-          ...p,
-          id: generateId(),
-          detectedSerial: "",
-          isVerified: false,
-        }));
-        updatedUnits = updatedUnits.map((u) => ({
-          ...u,
-          parts: templateParts.map((p) => ({ ...p, id: generateId() })),
-        }));
+      if (!hasExplicitTemplate) {
+        const matchedTpl = findMatchingTemplate(currentEquipmentName, currentPjtCode, registeredTemplates);
+        if (matchedTpl && matchedTpl.parts?.length > 0) {
+          templateName = matchedTpl.modelName;
+          const templateParts = matchedTpl.parts.map((p) => ({
+            ...p,
+            id: generateId(),
+            detectedSerial: "",
+            isVerified: false,
+          }));
+          updatedUnits = updatedUnits.map((u) => ({
+            ...u,
+            parts: templateParts.map((p) => ({ ...p, id: generateId() })),
+          }));
+        }
       }
 
       onUpdate((prev) => ({
@@ -422,6 +439,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
         equipmentName: currentEquipmentName,
         templateName: templateName || prev.templateName,
         equipmentUnits: updatedUnits,
+        updatedAt: new Date().toISOString(),
       }));
     }
 
@@ -463,8 +481,9 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
       return {
         ...prev,
         templateName: template.modelName, // 선택된 모델 양식명 명시적 저장
-        equipmentName: prev?.equipmentName || template.modelName, // 모델명이 비어있을 경우 자동 채움
+        equipmentName: template.modelName, // 모델명을 해당 양식명으로 즉시 변경
         equipmentUnits: updatedUnits,
+        updatedAt: new Date().toISOString(),
       };
     });
     setIsPresetModalOpen(false);

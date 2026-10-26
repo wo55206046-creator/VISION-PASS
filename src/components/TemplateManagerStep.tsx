@@ -5,6 +5,7 @@ import { PjtModelTemplate, PartItem } from "@/types";
 import { PJT_MODEL_TEMPLATES } from "@/lib/default-presets";
 import { generateId } from "@/lib/utils";
 import { exportEquipmentReportExcel } from "@/lib/excel-export";
+import { saveCentralProjects, loadDirectLocalProjects } from "@/lib/cloud-sync";
 import {
   Layers,
   Plus,
@@ -37,11 +38,32 @@ export const TemplateManagerStep: React.FC = () => {
     return PJT_MODEL_TEMPLATES;
   });
 
-  // LocalStorage Auto-save
+  // 다른 디바이스/클라우드에서 템플릿 변경사항 수신 시 실시간 반영
+  useEffect(() => {
+    const handleRemoteTemplates = (e: any) => {
+      if (e.detail && Array.isArray(e.detail) && e.detail.length > 0) {
+        setTemplates(e.detail);
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("VISION_PASS_TEMPLATES_UPDATED", handleRemoteTemplates);
+      return () => window.removeEventListener("VISION_PASS_TEMPLATES_UPDATED", handleRemoteTemplates);
+    }
+  }, []);
+
+  // LocalStorage & Cloud Auto-save
   useEffect(() => {
     try {
       if (templates && templates.length > 0) {
         localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(templates));
+        // 클라우드로 즉시 업로드 (다른 PC/스마트폰으로 실시간 전파)
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("VISION_PASS_TEMPLATES_UPDATED", { detail: templates }));
+          const directProjects = loadDirectLocalProjects();
+          if (directProjects && directProjects.length > 0) {
+            saveCentralProjects(directProjects).catch(() => {});
+          }
+        }
       }
     } catch (e) {
       console.warn("Failed to save templates to localStorage", e);

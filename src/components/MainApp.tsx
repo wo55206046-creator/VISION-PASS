@@ -174,15 +174,6 @@ export default function MainApp() {
 
         setProjects((prevProjects) => {
           const currentSanitized = prevProjects.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-          const localSerials = countVerifiedSerials(currentSanitized);
-          const cloudSerials = countVerifiedSerials(incomingSanitized);
-
-          if (cloudSerials < localSerials) {
-            // 로컬에 작업 중인 시리얼이 더 많으므로 클라우드로 즉시 역동기화(Auto-heal)
-            pushProjectsToCloud(currentSanitized).catch(() => {});
-            return currentSanitized;
-          }
-
           // ★ 기존 로컬에 이미 입력된 시리얼 번호가 절대 사라지지 않도록 스마트 병합! (삭제된 프로젝트/부품 부활 배제)
           const merged = mergeProjectLists(currentSanitized, incomingSanitized, delKeys, delPartKeys);
           const mergedJson = JSON.stringify(merged);
@@ -254,11 +245,6 @@ export default function MainApp() {
         const cleanIncoming = incoming.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
         setProjects((prev) => {
           const cleanPrev = prev.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-          const localSerials = countVerifiedSerials(cleanPrev);
-          const incomingSerials = countVerifiedSerials(cleanIncoming);
-          if (incomingSerials < localSerials) {
-            return cleanPrev;
-          }
           const merged = mergeProjectLists(cleanPrev, cleanIncoming, delKeys, delPartKeys);
           const mergedJson = JSON.stringify(merged);
           if (mergedJson !== lastKnownCloudJson.current) {
@@ -282,11 +268,6 @@ export default function MainApp() {
         const cleanIncoming = incoming.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
         setProjects((prev) => {
           const cleanPrev = prev.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-          const localSerials = countVerifiedSerials(cleanPrev);
-          const incomingSerials = countVerifiedSerials(cleanIncoming);
-          if (incomingSerials < localSerials) {
-            return cleanPrev;
-          }
           const merged = mergeProjectLists(cleanPrev, cleanIncoming, delKeys, delPartKeys);
           const mergedJson = JSON.stringify(merged);
           if (mergedJson !== lastKnownCloudJson.current) {
@@ -399,7 +380,6 @@ export default function MainApp() {
       
       try {
         const nextJson = JSON.stringify(finalProjects);
-        lastKnownCloudJson.current = nextJson;
         localStorage.setItem(STORAGE_KEY, nextJson);
         localStorage.setItem(PERSISTENT_BACKUP_KEY, nextJson);
         const delKeys = getDeletedProjectKeys();
@@ -408,6 +388,15 @@ export default function MainApp() {
       } catch (e) {
         console.warn("Storage write error", e);
       }
+
+      // 클라우드 즉시/디바운스 동기화 (300ms) - 다른 PC/스마트폰으로 즉각 전파
+      if (syncPushTimeoutRef.current) clearTimeout(syncPushTimeoutRef.current);
+      syncPushTimeoutRef.current = setTimeout(async () => {
+        const res = await pushProjectsToCloud(finalProjects);
+        if (res.success) {
+          lastKnownCloudJson.current = JSON.stringify(finalProjects);
+        }
+      }, 300);
 
       return finalProjects;
     });

@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { PartPreset, PartItem, PjtModelTemplate } from "@/types";
 import { STANDARD_PART_PRESETS, PJT_MODEL_TEMPLATES } from "@/lib/default-presets";
 import { generateId } from "@/lib/utils";
+import { saveCentralProjects, loadDirectLocalProjects } from "@/lib/cloud-sync";
 import ExcelJS from "exceljs";
 import {
   X,
@@ -64,11 +65,29 @@ export const PresetModal: React.FC<PresetModalProps> = ({
     return PJT_MODEL_TEMPLATES;
   });
 
-  // Save templates to localStorage whenever modified
+  // 다른 디바이스/클라우드에서 템플릿 변경사항 수신 시 실시간 반영
+  useEffect(() => {
+    const handleRemoteTemplates = (e: any) => {
+      if (e.detail && Array.isArray(e.detail) && e.detail.length > 0) {
+        setTemplates(e.detail);
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("VISION_PASS_TEMPLATES_UPDATED", handleRemoteTemplates);
+      return () => window.removeEventListener("VISION_PASS_TEMPLATES_UPDATED", handleRemoteTemplates);
+    }
+  }, []);
+
+  // Save templates to localStorage & Supabase cloud whenever modified
   useEffect(() => {
     try {
       if (typeof window !== "undefined" && templates.length > 0) {
         localStorage.setItem(STORAGE_TEMPLATES_KEY, JSON.stringify(templates));
+        window.dispatchEvent(new CustomEvent("VISION_PASS_TEMPLATES_UPDATED", { detail: templates }));
+        const directProjects = loadDirectLocalProjects();
+        if (directProjects && directProjects.length > 0) {
+          saveCentralProjects(directProjects).catch(() => {});
+        }
       }
     } catch (e) {
       console.warn("Failed to save templates to localStorage", e);

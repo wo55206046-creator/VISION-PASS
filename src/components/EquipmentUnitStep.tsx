@@ -420,11 +420,12 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
             return {
               ...prev,
               templateName: template.modelName,
-              equipmentUnits: prev.equipmentUnits.map((u) =>
-                u.unitIndex === activeUnitIndex
-                  ? { ...u, parts: templateParts }
-                  : u
-              ),
+              equipmentName: template.modelName,
+              equipmentUnits: prev.equipmentUnits.map((u) => ({
+                ...u,
+                parts: templateParts.map((p) => ({ ...p, id: generateId() })),
+              })),
+              updatedAt: new Date().toISOString(),
             };
           });
         }}

@@ -1,4 +1,4 @@
-import { ProjectMaster } from "@/types";
+import { ProjectMaster, PjtModelTemplate } from "@/types";
 import { mergeProjectLists, countVerifiedSerials } from "./project-merger";
 import {
   getDeletedProjectKeys,
@@ -24,6 +24,7 @@ export interface CentralSyncPayload {
   updatedAt: string;
   senderDeviceId: string;
   projects: ProjectMaster[];
+  templates?: PjtModelTemplate[];
   deletedKeys?: string[];
   deletedPartKeys?: string[];
 }
@@ -177,10 +178,42 @@ export function subscribeLocalBroadcast(onUpdate: (projects: ProjectMaster[]) =>
 // ============================================================================
 let memoryCacheProjects: ProjectMaster[] | null = null;
 
+export const STORAGE_TEMPLATES_KEY = "VISION_PASS_PJT_TEMPLATES_V2";
+
+/**
+ * 💡 로컬에 저장된 사용자 커스텀/표준 템플릿 목록 로드
+ */
+export function loadDirectLocalTemplates(): PjtModelTemplate[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw =
+      localStorage.getItem(STORAGE_TEMPLATES_KEY) ||
+      localStorage.getItem("VISION_PASS_TEMPLATES_V2");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+/**
+ * 💾 클라우드에서 동기화된 템플릿 목록을 로컬 스토리지에 안전 반영 및 전파
+ */
+export function saveDirectLocalTemplates(templates: PjtModelTemplate[]): void {
+  if (typeof window === "undefined" || !Array.isArray(templates) || templates.length === 0) return;
+  try {
+    localStorage.setItem(STORAGE_TEMPLATES_KEY, JSON.stringify(templates));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("VISION_PASS_TEMPLATES_UPDATED", { detail: templates }));
+    }
+  } catch {}
+}
+
 /**
  * 🔍 로컬 브라우저에 저장된 최신 프로젝트 데이터 직접 조회
  */
-function loadDirectLocalProjects(): ProjectMaster[] | null {
+export function loadDirectLocalProjects(): ProjectMaster[] | null {
   if (typeof window === "undefined") return null;
   try {
     const raw =
@@ -199,7 +232,7 @@ function loadDirectLocalProjects(): ProjectMaster[] | null {
 }
 
 /**
- * 💾 프로젝트 데이터 저장 (Supabase 클라우드 실시간 저장 + LocalStorage 안전 보관)
+ * 💾 프로젝트 데이터 저장 (Supabase 클라우드 실시간 저장 + LocalStorage 안전 보관 + 템플릿 동기화)
  */
 export async function saveCentralProjects(
   projects: ProjectMaster[],
@@ -241,12 +274,15 @@ export async function saveCentralProjects(
 
   memoryCacheProjects = cleanProjects;
 
+  const localTemplates = loadDirectLocalTemplates();
+
   const payload: CentralSyncPayload = {
     version: 8,
     roomKey: (roomKey || DEFAULT_ROOM_KEY).toUpperCase(),
     updatedAt: nowStr,
     senderDeviceId: getDeviceId(),
     projects: cleanProjects,
+    templates: localTemplates && localTemplates.length > 0 ? localTemplates : undefined,
     deletedKeys: Array.from(delKeys),
     deletedPartKeys: Array.from(delPartKeys),
   };
@@ -349,6 +385,9 @@ export async function fetchCentralProjects(
           rows[0].data.projects.length > 0
         ) {
           const payload = rows[0].data;
+          if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
+            saveDirectLocalTemplates(payload.templates);
+          }
           const directLocalProjects = loadDirectLocalProjects() || [];
           if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
             markProjectsAsDeletedBulk(payload.deletedKeys, directLocalProjects);
@@ -381,8 +420,12 @@ export async function fetchCentralProjects(
             } catch {}
           }
 
-          // 로컬에 시리얼이 더 많이 입력되어 있다면 클라우드로 즉시 역동기화(Auto-heal)
-          if (localProjects && countVerifiedSerials(merged) > countVerifiedSerials(cloudProjects)) {
+          // 로컬에 더 최신 수정사항이 있는 경우에만 클라우드로 역동기화(Auto-heal)
+          const hasNewerLocal = localProjects && localProjects.some((lp: ProjectMaster) => {
+            const cp = cloudProjects.find((c: ProjectMaster) => c.id === lp.id || c.pjtCode === lp.pjtCode);
+            return cp && new Date(lp.updatedAt || 0) > new Date(cp.updatedAt || 0);
+          });
+          if (hasNewerLocal) {
             saveCentralProjects(merged, roomKey).catch(() => {});
           }
 
@@ -511,6 +554,11 @@ export function subscribeCentralRealtime(
               Array.isArray(payload.projects)
             ) {
               lastKnownTimestamp = updatedTime;
+              if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
+                saveDirectLocalTemplates(payload.templates);
+              }
+              const delKeys = getDeletedProjectKeys();
+              const delPartKeys = getDeletedPartKeys();
               const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
               if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
                 markProjectsAsDeletedBulk(payload.deletedKeys, localProjects);
@@ -518,8 +566,6 @@ export function subscribeCentralRealtime(
               if (payload.deletedPartKeys && Array.isArray(payload.deletedPartKeys)) {
                 markPartsAsDeletedBulk(payload.deletedPartKeys);
               }
-              const delKeys = getDeletedProjectKeys();
-              const delPartKeys = getDeletedPartKeys();
               cleanStorageFromDeleted(delKeys, delPartKeys);
 
               const incomingProjects = (payload.projects || []).filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
