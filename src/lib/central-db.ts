@@ -4,6 +4,7 @@ import {
   getDeletedProjectKeys,
   markProjectsAsDeletedBulk,
   isProjectDeleted,
+  unmarkProjectAsDeleted,
   getDeletedPartKeys,
   markPartsAsDeletedBulk,
   cleanStorageFromDeleted,
@@ -530,18 +531,23 @@ export async function fetchCentralProjects(
           const delPartKeys = getDeletedPartKeys();
           cleanStorageFromDeleted(delKeys, delPartKeys);
 
-          const cloudProjects = (payload.projects || []).filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+          const rawCloudProjects: ProjectMaster[] = Array.isArray(payload.projects) ? payload.projects : [];
+          // 🛡️ 핵심: 클라우드에 현재 적재되어 있는 프로젝트는 로컬 삭제 묘비(Tombstone)에서 즉시 사면/해제!
+          for (const cp of rawCloudProjects) {
+            if (cp) unmarkProjectAsDeleted(cp.id, cp.pjtCode);
+          }
+
+          const delKeys = getDeletedProjectKeys();
+          const delPartKeys = getDeletedPartKeys();
+          cleanStorageFromDeleted(delKeys, delPartKeys);
+
+          const cloudProjects = rawCloudProjects.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
           const localProjects = directLocalProjects.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
 
-          // 🛡️ 핵심: 로컬과 클라우드 중 더 많은 프로젝트를 가진 쪽을 우선하여 누락 방지!
-          // 1. 클라우드에 10개가 있고 로컬에 5개만 있다면 (예: 엣지/모바일) -> 무조건 클라우드 10개 전수 채택!
-          // 2. 로컬에 10개가 있고 클라우드에 5개만 있다면 (예: 크롬) -> 로컬 10개 유지 및 즉시 클라우드로 10개 자동 업로드!
+          // 🛡️ 핵심: 클라우드에 프로젝트가 1개라도 있다면 무조건 클라우드 프로젝트 전수 채택! (엣지/스마트폰 100% 동기화 보장)
           let merged: ProjectMaster[];
-          if (forceOverwrite || cloudProjects.length > localProjects.length || localProjects.length === 0) {
-            merged = cloudProjects;
-          } else if (localProjects.length > cloudProjects.length) {
-            merged = localProjects;
-            saveCentralProjects(localProjects, roomKey).catch(() => {});
+          if (forceOverwrite || cloudProjects.length >= localProjects.length || localProjects.length === 0) {
+            merged = cloudProjects.length > 0 ? cloudProjects : localProjects;
           } else {
             merged = mergeProjectLists(localProjects, cloudProjects, delKeys, delPartKeys);
           }
@@ -693,6 +699,11 @@ export function subscribeCentralRealtime(
             Array.isArray(incomingProjectsRaw) &&
             incomingProjectsRaw.length > 0
           ) {
+            // 🛡️ 핵심: 클라우드에서 내려온 프로젝트는 로컬 삭제 묘비(Tombstone)에서 즉시 사면/해제!
+            for (const ip of incomingProjectsRaw) {
+              if (ip) unmarkProjectAsDeleted(ip.id, ip.pjtCode);
+            }
+
             const delKeys = getDeletedProjectKeys();
             const delPartKeys = getDeletedPartKeys();
             const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
