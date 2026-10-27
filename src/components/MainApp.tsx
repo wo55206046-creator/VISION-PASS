@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { ProjectMaster } from "@/types";
-import { INITIAL_PROJECT_LIST, createBlankProject } from "@/lib/default-presets";
+import { createBlankProject } from "@/lib/default-presets";
 import { Header } from "@/components/Header";
 import { SyncModal } from "@/components/SyncModal";
 import { PjtListStep } from "@/components/PjtListStep";
@@ -56,15 +56,12 @@ const LEGACY_STORAGE_KEYS = [
   "VISION_PASS_PROJECTS",
 ];
 
+const LEGACY_DUMMY_CODES = new Set(["S26-15-10", "S26-15-12", "S26-01-04", "S26-01-05", "S26-45-01"]);
+
 function loadSavedProjects(): ProjectMaster[] {
-  if (typeof window === "undefined") return INITIAL_PROJECT_LIST;
+  if (typeof window === "undefined") return [];
 
   try {
-    const delKeys = getDeletedProjectKeys();
-    const delPartKeys = getDeletedPartKeys();
-    cleanStorageFromDeleted(delKeys, delPartKeys);
-
-    // 1. 현재 최신 V8 또는 영구 백업에 데이터가 이미 있으면 최우선 반환 (삭제된 프로젝트 제외)
     const primaryKeys = [STORAGE_KEY, PERSISTENT_BACKUP_KEY];
     for (const key of primaryKeys) {
       const raw = localStorage.getItem(key);
@@ -72,46 +69,21 @@ function loadSavedProjects(): ProjectMaster[] {
         try {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
-            const filtered = parsed.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-            if (filtered.length > 0) return filtered;
-          }
-        } catch {}
-      }
-    }
-
-    // 2. primaryKeys에 없는 경우에만 과거 레거시 버전 탐색
-    let bestCandidate: ProjectMaster[] | null = null;
-    let bestSerialCount = -1;
-
-    for (const key of LEGACY_STORAGE_KEYS) {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].pjtCode !== undefined || parsed[0].site !== undefined)) {
-            const filtered = parsed.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-            const serialCount = countVerifiedSerials(filtered);
-            if (!bestCandidate || serialCount > bestSerialCount) {
-              bestCandidate = filtered;
-              bestSerialCount = serialCount;
+            // 과거 5개 더미 프로젝트 프리셋만 저장되어 있는 레거시 스냅샷인 경우 빈 배열 반환하여 기본 틀로 돌아가지 않도록 보호
+            const isPureLegacyDummy = parsed.length <= 5 && parsed.every((p: ProjectMaster) => LEGACY_DUMMY_CODES.has(p.pjtCode) || p.id?.startsWith("pjt-00"));
+            if (isPureLegacyDummy) {
+              return [];
             }
+            return parsed;
           }
         } catch {}
       }
-    }
-
-    if (bestCandidate && bestCandidate.length > 0) {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(bestCandidate));
-        localStorage.setItem(PERSISTENT_BACKUP_KEY, JSON.stringify(bestCandidate));
-      } catch {}
-      return bestCandidate;
     }
   } catch (e) {
     console.warn("Failed to load projects from localStorage", e);
   }
 
-  return INITIAL_PROJECT_LIST;
+  return [];
 }
 
 export default function MainApp() {
@@ -132,16 +104,17 @@ export default function MainApp() {
       const saved = loadSavedProjects();
       if (saved && saved.length > 0) return saved;
     }
-    return INITIAL_PROJECT_LIST;
+    return [];
   });
 
   const [currentProjectId, setCurrentProjectId] = useState<string>(() => {
-    if (typeof window === "undefined") return INITIAL_PROJECT_LIST[0]?.id || "pjt-001";
+    if (typeof window === "undefined") return "";
     try {
       const savedId = localStorage.getItem(STORAGE_ACTIVE_PROJECT_ID);
       if (savedId && savedId.trim()) return savedId.trim();
     } catch {}
-    return INITIAL_PROJECT_LIST[0]?.id || "pjt-001";
+    const initialSaved = loadSavedProjects();
+    return initialSaved[0]?.id || "";
   });
 
   const [draftProject, setDraftProject] = useState<ProjectMaster | null>(null);
@@ -219,16 +192,7 @@ export default function MainApp() {
     }
 
     // 2단계: 클라우드에서 최신 데이터 무조건 1순위로 가져오기 (Cloud-First Sync)
-    fetchCloudProjects(true).then(() => {
-      // 만약 클라우드 조회가 끝났는데도 로컬에만 프로젝트가 6개 이상 많다면 클라우드로 즉시 업로드
-      if (saved && saved.length > 5) {
-        pushProjectsToCloud(saved).then((r) => {
-          if (r.success) {
-            lastKnownCloudJson.current = JSON.stringify(saved);
-          }
-        }).catch(() => {});
-      }
-    }).finally(() => {
+    fetchCloudProjects(true).finally(() => {
       setTimeout(() => {
         isInitialLoadComplete.current = true;
       }, 500);
@@ -606,7 +570,7 @@ export default function MainApp() {
         {/* Step 2: 프로젝트 입력 / 추가 */}
         {currentStep === 2 && (
           <ProjectMasterStep
-            project={draftProject || currentProject || INITIAL_PROJECT_LIST[0]}
+            project={draftProject || currentProject || createBlankProject("pjt-" + Date.now(), 1)}
             isDraft={Boolean(draftProject)}
             onUpdate={(updater) => {
               if (draftProject) {
@@ -731,12 +695,13 @@ export default function MainApp() {
           }
         }}
         onResetDefault={() => {
-          setProjects(INITIAL_PROJECT_LIST);
-          setCurrentProjectId(INITIAL_PROJECT_LIST[0]?.id || "pjt-001");
+          setProjects([]);
+          setCurrentProjectId("");
           try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_PROJECT_LIST));
-            localStorage.setItem(PERSISTENT_BACKUP_KEY, JSON.stringify(INITIAL_PROJECT_LIST));
+            localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem(PERSISTENT_BACKUP_KEY);
           } catch {}
+          fetchCloudProjects(true);
         }}
       />
     </div>
