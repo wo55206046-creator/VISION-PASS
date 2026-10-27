@@ -313,6 +313,8 @@ export async function saveCentralProjects(
   roomKey: string = getSyncRoomKey()
 ): Promise<{ success: boolean; message?: string }> {
   const cleanProjects = (projects || []).filter(Boolean);
+  const delKeys = getDeletedProjectKeys();
+  const delPartKeys = getDeletedPartKeys();
 
   // 1. 로컬 탭 즉시 전파 및 브라우저 로컬 스토리지 안전 저장 (스캔 데이터 즉시 보존)
   broadcastLocalUpdate(cleanProjects);
