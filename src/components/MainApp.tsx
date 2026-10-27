@@ -538,7 +538,7 @@ export default function MainApp() {
       />
 
       {/* Main Workspace View */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+      <main className="flex-1 w-full max-w-7xl 2xl:max-w-[1536px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
         {/* Step 1: PJT List (프로젝트 목록 관리) */}
         {currentStep === 1 && (
           <PjtListStep

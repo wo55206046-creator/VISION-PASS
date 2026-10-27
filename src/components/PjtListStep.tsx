@@ -272,8 +272,8 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
         </div>
       </div>
 
-      {/* PC 2열 그리드 & 모바일 1열 카드 배치 (PC 뷰에서 반반 2개 PJT 표시) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4">
+      {/* PC 3열 그리드 & 태블릿 2열 & 모바일 1열 카드 배치 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
         {sortedProjects.map((pjt) => {
           const isCurrent = pjt.id === currentProjectId;
           let totalParts = 0;
@@ -302,20 +302,20 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                 <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-nowrap overflow-hidden">
                   {/* 고객사 */}
                   <span
-                    className={`shrink-0 whitespace-nowrap text-xs sm:text-sm font-extrabold flex items-center gap-1.5 px-3 py-1 sm:py-1.5 rounded-xl border shadow-sm ${siteStyle.bg}`}
+                    className={`shrink-0 whitespace-nowrap text-xs sm:text-sm font-extrabold flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl border shadow-sm ${siteStyle.bg}`}
                   >
                     <Building2 className={`h-4 w-4 shrink-0 ${siteStyle.icon}`} />
                     <span>{pjt.site}</span>
                   </span>
 
                   {/* PJT CODE (사용자 요청: 폰트 확대 및 시인성 극대화) */}
-                  <span className="shrink-0 whitespace-nowrap font-mono font-black text-sm sm:text-base text-cyan-300 tracking-wider bg-slate-950 px-3.5 py-1 sm:py-1.5 rounded-xl border border-cyan-500/40 shadow-md shadow-cyan-950/30 ring-1 ring-cyan-500/20">
+                  <span className="shrink-0 whitespace-nowrap font-mono font-black text-xs sm:text-sm md:text-base text-cyan-300 tracking-wider bg-slate-950 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl border border-cyan-500/40 shadow-md shadow-cyan-950/30 ring-1 ring-cyan-500/20">
                     {pjt.pjtCode}
                   </span>
 
                   {/* 설비명 (밑으로 내려오지 않고 뒤에 1줄로 쭉 이어지며, 길이가 길면 ...으로 말줄임) */}
                   <h3
-                    className="min-w-0 flex-1 truncate whitespace-nowrap font-black text-white text-base sm:text-lg tracking-wide"
+                    className="min-w-0 flex-1 truncate whitespace-nowrap font-black text-white text-sm sm:text-base lg:text-lg tracking-wide"
                     title={pjt.equipmentName}
                   >
                     {pjt.equipmentName}
@@ -357,7 +357,7 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                 </div>
 
                 {/* 3. 하단 메타 정보 (수량 / 담당자 / 작성일 - 모바일/PC 1줄 배치) */}
-                <div className="flex items-center justify-between gap-1.5 sm:gap-3 text-[10px] sm:text-[11px] text-slate-400 font-mono px-0.5 whitespace-nowrap overflow-hidden">
+                <div className="flex items-center justify-between gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] text-slate-400 font-mono px-0.5 whitespace-nowrap overflow-hidden">
                   <span className="flex items-center gap-1 shrink-0">
                     <Layers className="h-3 w-3 text-slate-500 shrink-0" />
                     <span>
@@ -381,8 +381,8 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                 </div>
               </div>
 
-              {/* 4. 액션 버튼 4개: OCR 입력 (적정 크기), PJT 수정, Excel 다운로드, 삭제 */}
-              <div className="flex items-center gap-1.5 sm:gap-2 pt-2 border-t border-slate-800/60 mt-1">
+              {/* 4. 액션 버튼 4개: OCR 입력, PJT 수정, Excel 다운로드, 삭제 (3열 배치에 최적화된 패딩) */}
+              <div className="flex items-center gap-1 sm:gap-1.5 pt-2 border-t border-slate-800/60 mt-1">
                 {/* 1. OCR 입력 */}
                 <button
                   type="button"
@@ -390,19 +390,19 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                     e.stopPropagation();
                     onSelectProject(pjt.id || "", 3);
                   }}
-                  className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 py-2 px-2.5 sm:px-3 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap"
+                  className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 py-2 px-2 sm:px-2.5 rounded-xl text-xs shadow-glow-cyan hover:opacity-95 transition-all cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap min-w-0"
                   title="설비 부품 OCR 스캔 및 입력"
                 >
                   <Camera className="h-3.5 w-3.5 shrink-0" />
-                  <span>OCR 입력</span>
-                  <ArrowRight className="h-3 w-3 shrink-0 hidden sm:inline" />
+                  <span className="truncate">OCR 입력</span>
+                  <ArrowRight className="h-3 w-3 shrink-0 hidden xl:inline" />
                 </button>
 
                 {/* 2. PJT 수정 */}
                 <button
                   type="button"
                   onClick={(e: React.MouseEvent) => handleOpenEditModal(pjt, e)}
-                  className="px-2.5 sm:px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold transition-all flex items-center justify-center gap-1 border border-slate-700 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
+                  className="px-2 sm:px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold transition-all flex items-center justify-center gap-1 border border-slate-700 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
                   title="PJT 정보 및 Serial NO. 수정"
                 >
                   <Edit2 className="h-3.5 w-3.5 shrink-0" />
@@ -414,7 +414,7 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                   type="button"
                   disabled={isExportingId === pjt.id}
                   onClick={(e: React.MouseEvent) => handleExportExcel(pjt, e)}
-                  className="px-2.5 sm:px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-semibold transition-all flex items-center justify-center gap-1 border border-slate-700 cursor-pointer shadow-sm whitespace-nowrap shrink-0 disabled:opacity-50"
+                  className="px-2 sm:px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-semibold transition-all flex items-center justify-center gap-1 border border-slate-700 cursor-pointer shadow-sm whitespace-nowrap shrink-0 disabled:opacity-50"
                   title="제작완료 보고서 Excel 즉시 다운로드 (.xlsx)"
                 >
                   <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
@@ -428,7 +428,7 @@ export const PjtListStep: React.FC<PjtListStepProps> = ({
                     e.stopPropagation();
                     onDeleteProject(pjt.id || "");
                   }}
-                  className="px-2.5 sm:px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-red-950 text-slate-400 hover:text-red-400 text-xs font-medium transition-all flex items-center justify-center gap-1 border border-slate-800 hover:border-red-800/60 cursor-pointer whitespace-nowrap shrink-0"
+                  className="px-2 sm:px-2.5 py-2 rounded-xl bg-slate-800/80 hover:bg-red-950 text-slate-400 hover:text-red-400 text-xs font-medium transition-all flex items-center justify-center gap-1 border border-slate-800 hover:border-red-800/60 cursor-pointer whitespace-nowrap shrink-0"
                   title="PJT 삭제"
                 >
                   <Trash2 className="h-3.5 w-3.5 shrink-0" />
