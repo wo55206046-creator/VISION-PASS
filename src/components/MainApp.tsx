@@ -528,7 +528,11 @@ export default function MainApp() {
       <Header
         currentStep={currentStep}
         onStepChange={(step) => {
-          navigateToStep(step);
+          if (step === 2) {
+            handleCreateNewProject();
+          } else {
+            navigateToStep(step);
+          }
         }}
         pjtCode={currentProject?.pjtCode}
         equipmentName={currentProject?.equipmentName}
@@ -567,34 +571,34 @@ export default function MainApp() {
           />
         )}
 
-        {/* Step 2: 프로젝트 입력 / 추가 */}
+        {/* Step 2: 신규 PJT 입력 전용 (무조건 신규 프로젝트로만 사용) */}
         {currentStep === 2 && (
           <ProjectMasterStep
-            project={draftProject || currentProject || createBlankProject("pjt-" + Date.now(), 1)}
-            isDraft={Boolean(draftProject)}
+            project={
+              draftProject || (() => {
+                const fresh = createBlankProject();
+                fresh.id = "pjt-" + Date.now();
+                return fresh;
+              })()
+            }
+            isDraft={true}
             onUpdate={(updater) => {
               if (draftProject) {
                 setDraftProject(updater(draftProject));
               } else {
-                updateCurrentProject(updater);
+                const fresh = createBlankProject();
+                fresh.id = "pjt-" + Date.now();
+                setDraftProject(updater(fresh));
               }
             }}
             onNext={() => {
-              const pjtToSave = draftProject || currentProject;
-              if (pjtToSave) {
-                // 신규 생성이면 바로 3단계(설비 OCR)로 진입하여 연속 작업 지원, 기존 수정이면 1단계 목록으로 이동
-                handleSaveDraftProject(pjtToSave, draftProject ? 3 : 1);
-              } else {
-                navigateToStep(1);
-              }
+              const pjtToSave = draftProject || createBlankProject();
+              // 신규 생성이면 바로 3단계(설비 OCR)로 진입하여 연속 작업 지원
+              handleSaveDraftProject(pjtToSave, 3);
             }}
             onSaveAndGoList={() => {
-              const pjtToSave = draftProject || currentProject;
-              if (pjtToSave) {
-                handleSaveDraftProject(pjtToSave, 1);
-              } else {
-                navigateToStep(1);
-              }
+              const pjtToSave = draftProject || createBlankProject();
+              handleSaveDraftProject(pjtToSave, 1);
             }}
             onBackToPjtList={() => {
               setDraftProject(null);
@@ -634,7 +638,7 @@ export default function MainApp() {
                 key={item.num}
                 type="button"
                 onClick={() => {
-                  if (item.num === 2 && !draftProject) {
+                  if (item.num === 2) {
                     handleCreateNewProject();
                   } else {
                     navigateToStep(item.num);

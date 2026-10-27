@@ -222,104 +222,31 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
     setQuantityInput(String(project.quantity || 1));
   }, [project.quantity]);
 
-  // 모델명 직접 입력 시 4단계 양식과 실시간 자동 매칭
+  // 모델명 직접 입력 (순수 텍스트 입력 - 4단계 양식과 자동 매칭/호환하지 않음)
   const handleEquipmentNameChange = (val: string) => {
-    onUpdate((prev) => {
-      const matched = findMatchingTemplate(val, prev.pjtCode, registeredTemplates);
-      if (matched && matched.parts && matched.parts.length > 0 && matched.modelName !== prev.templateName) {
-        const templateParts = matched.parts.map((p) => ({
-          ...p,
-          id: generateId(),
-          detectedSerial: "",
-          isVerified: false,
-          scannedAt: undefined,
-          confidence: undefined,
-        }));
-        return {
-          ...prev,
-          equipmentName: val,
-          templateName: matched.modelName,
-          equipmentUnits: (prev.equipmentUnits || []).map((u) => ({
-            ...u,
-            parts: templateParts.map((p) => ({ ...p, id: generateId() })),
-          })),
-        };
-      }
-      return {
-        ...prev,
-        equipmentName: val,
-      };
-    });
+    onUpdate((prev) => ({
+      ...prev,
+      equipmentName: val,
+    }));
   };
 
-  // PJT CODE 직접 입력 시 모델명이 비어있을 경우 해당 코드의 양식 자동 추천
+  // PJT CODE 직접 입력 (순수 텍스트 입력 - 양식 자동 변경 없음)
   const handlePjtCodeChange = (val: string) => {
     const code = val.toUpperCase();
-    onUpdate((prev) => {
-      if (!prev.equipmentName?.trim()) {
-        const matched = findMatchingTemplate("", code, registeredTemplates);
-        if (matched && matched.parts && matched.parts.length > 0 && matched.modelName !== prev.templateName) {
-          const templateParts = matched.parts.map((p) => ({
-            ...p,
-            id: generateId(),
-            detectedSerial: "",
-            isVerified: false,
-          }));
-          return {
-            ...prev,
-            pjtCode: code,
-            templateName: matched.modelName,
-            equipmentName: matched.modelName,
-            equipmentUnits: (prev.equipmentUnits || []).map((u) => ({
-              ...u,
-              parts: templateParts.map((p) => ({ ...p, id: generateId() })),
-            })),
-          };
-        }
-      }
-      return {
-        ...prev,
-        pjtCode: code,
-      };
-    });
+    onUpdate((prev) => ({
+      ...prev,
+      pjtCode: code,
+    }));
   };
 
-  // 스마트 자동 분리 데이터 일괄 적용
+  // 스마트 자동 분리 데이터 일괄 적용 (텍스트 필드만 반영, 양식은 변경하지 않음)
   const applySmartParsedData = (parsed: { site?: string; pjtCode?: string; equipmentName?: string }) => {
-    const matchedTpl = findMatchingTemplate(parsed.equipmentName, parsed.pjtCode, registeredTemplates);
-
-    onUpdate((prev) => {
-      let updatedUnits = prev?.equipmentUnits || [];
-      let templateName = prev?.templateName;
-
-      if (matchedTpl && matchedTpl.parts?.length > 0) {
-        templateName = matchedTpl.modelName;
-        const templateParts = matchedTpl.parts.map((p) => ({
-          ...p,
-          id: generateId(),
-          detectedSerial: "",
-          isVerified: false,
-          scannedAt: undefined,
-          confidence: undefined,
-        }));
-        updatedUnits = updatedUnits.map((u) => ({
-          ...u,
-          parts: templateParts.map((p) => ({ ...p, id: generateId() })),
-        }));
-      }
-
-      return {
-        ...prev,
-        site: parsed.site !== undefined ? parsed.site : prev.site,
-        pjtCode: parsed.pjtCode !== undefined ? parsed.pjtCode : prev.pjtCode,
-        equipmentName: parsed.equipmentName !== undefined ? parsed.equipmentName : prev.equipmentName,
-        templateName: templateName || prev.templateName,
-        equipmentUnits: updatedUnits,
-      };
-    });
-
-    setSmartAutoFilled(true);
-    setTimeout(() => setSmartAutoFilled(false), 4500);
+    onUpdate((prev) => ({
+      ...prev,
+      site: parsed.site !== undefined ? parsed.site : prev.site,
+      pjtCode: parsed.pjtCode !== undefined ? parsed.pjtCode : prev.pjtCode,
+      equipmentName: parsed.equipmentName !== undefined ? parsed.equipmentName : prev.equipmentName,
+    }));
   };
 
   // 최근 설비 담당자 목록 및 최신 1순위 담당자 추출
@@ -410,35 +337,11 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
       currentPjtCode = parsed.pjtCode || currentPjtCode;
       currentEquipmentName = parsed.equipmentName || currentEquipmentName;
 
-      // ★ 사용자가 '양식 변경' 모달을 통해 이미 양식을 지정한 경우 자동 매칭으로 덮어쓰지 않음
-      const hasExplicitTemplate = Boolean(project.templateName);
-      let updatedUnits = project.equipmentUnits || [];
-      let templateName = project.templateName;
-
-      if (!hasExplicitTemplate) {
-        const matchedTpl = findMatchingTemplate(currentEquipmentName, currentPjtCode, registeredTemplates);
-        if (matchedTpl && matchedTpl.parts?.length > 0) {
-          templateName = matchedTpl.modelName;
-          const templateParts = matchedTpl.parts.map((p) => ({
-            ...p,
-            id: generateId(),
-            detectedSerial: "",
-            isVerified: false,
-          }));
-          updatedUnits = updatedUnits.map((u) => ({
-            ...u,
-            parts: templateParts.map((p) => ({ ...p, id: generateId() })),
-          }));
-        }
-      }
-
       onUpdate((prev) => ({
         ...prev,
         site: currentSite,
         pjtCode: currentPjtCode,
         equipmentName: currentEquipmentName,
-        templateName: templateName || prev.templateName,
-        equipmentUnits: updatedUnits,
         updatedAt: new Date().toISOString(),
       }));
     }
@@ -515,7 +418,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
             02
           </span>
           <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
-            {isDraft ? "신규 프로젝트 추가" : "프로젝트 정보 수정"}
+            신규 프로젝트 추가
           </h2>
         </div>
       </div>
@@ -612,17 +515,13 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
 
         {/* 2. 모델명 (인증명) */}
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-              <Cpu className="h-3.5 w-3.5 text-cyan-400" />
-              <span>모델명 (인증명)</span> <span className="text-cyan-400">*</span>
-            </label>
-            <span className="text-[10px] font-mono text-cyan-400">사양서 확인 / 4단계 양식 자동 추천</span>
-          </div>
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+            <Cpu className="h-3.5 w-3.5 text-cyan-400" />
+            <span>모델명 (인증명)</span> <span className="text-cyan-400">*</span>
+          </label>
           <div className="relative">
             <input
               type="text"
-              list="template-models-datalist"
               placeholder="예: NaVi-MG200, WOA-683 8P, Navi-WF301 24P"
               value={project.equipmentName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
@@ -632,14 +531,6 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
                   applySmartParsedData(parsed);
                 } else {
                   handleEquipmentNameChange(val);
-                }
-              }}
-              onBlur={() => {
-                if (project.equipmentName) {
-                  const matched = findMatchingTemplate(project.equipmentName, project.pjtCode, registeredTemplates);
-                  if (matched && matched.parts && matched.modelName !== project.templateName) {
-                    handleApplyTemplateToAllUnits(matched);
-                  }
                 }
               }}
               onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
@@ -652,14 +543,6 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               }}
               className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
-            {/* 4. 설비 부품 양식에 등록된 목록 자동완성 Datalist */}
-            <datalist id="template-models-datalist">
-              {registeredTemplates.map((t) => (
-                <option key={t.id} value={t.modelName}>
-                  {t.description ? `${t.description} (${t.parts?.length || 0}개 품목)` : `${t.parts?.length || 0}개 품목`}
-                </option>
-              ))}
-            </datalist>
           </div>
         </div>
 
@@ -835,9 +718,9 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               <span className="text-slate-400 text-[11px] shrink-0 font-bold">PJT 양식:</span>
               <span
                 className="font-bold text-cyan-300 font-mono truncate text-xs"
-                title={project.templateName || project.equipmentName || "표준 기본 양식"}
+                title={project.templateName || "기본 표준 양식"}
               >
-                {project.templateName || project.equipmentName || "표준 기본 양식"}
+                {project.templateName || "기본 표준 양식"}
               </span>
             </div>
 
