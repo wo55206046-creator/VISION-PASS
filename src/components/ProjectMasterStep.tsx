@@ -275,7 +275,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
     } catch (e) { }
 
     if (list.length === 0) {
-      list = ["김충환, 김태현", "김형태, 유병준", "손홍렬, 정재헌"];
+      list = ["김충환, 김태현", "김형태, 유병준", "유병준, 정재헌"];
       if (!latest) latest = "홍길동";
     }
 
@@ -383,8 +383,8 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
 
       return {
         ...prev,
-        templateName: template.modelName, // 선택된 모델 양식명 명시적 저장
-        equipmentName: template.modelName, // 모델명을 해당 양식명으로 즉시 변경
+        templateName: template.modelName, // 선택된 모델 양식명만 명시적 저장
+        // 모델명(equipmentName)은 사용자가 입력한 값을 그대로 보존!
         equipmentUnits: updatedUnits,
         updatedAt: new Date().toISOString(),
       };
@@ -513,41 +513,41 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
           </div>
         </div>
 
-        {/* 2. 모델명 (인증명) */}
-        <div className="space-y-1.5">
-          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-            <Cpu className="h-3.5 w-3.5 text-cyan-400" />
-            <span>모델명 (인증명)</span> <span className="text-cyan-400">*</span>
-          </label>
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="예: NaVi-MG200, WOA-683 8P, Navi-WF301 24P"
-              value={project.equipmentName}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                const val = e.target.value;
-                const parsed = parseCombinedPjtInput(val);
-                if (parsed) {
-                  applySmartParsedData(parsed);
-                } else {
-                  handleEquipmentNameChange(val);
-                }
-              }}
-              onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
-                const pasteText = e.clipboardData.getData("text");
-                const parsed = parseCombinedPjtInput(pasteText);
-                if (parsed) {
-                  e.preventDefault();
-                  applySmartParsedData(parsed);
-                }
-              }}
-              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-            />
-          </div>
-        </div>
-
-        {/* 3. 설비 담당자 (좌) & 검수일자 (우) */}
+        {/* 2. 모델명 (좌) & 설비 담당자 (우) */}
         <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
+          {/* 모델명 (인증명) */}
+          <div className="space-y-1.5 min-w-0">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+              <Cpu className="h-3.5 w-3.5 text-cyan-400" />
+              <span>모델명 (인증명)</span> <span className="text-cyan-400">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="예: NaVi-MG200, WOA-683 8P, Navi-WF301 24P"
+                value={project.equipmentName}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const val = e.target.value;
+                  const parsed = parseCombinedPjtInput(val);
+                  if (parsed) {
+                    applySmartParsedData(parsed);
+                  } else {
+                    handleEquipmentNameChange(val);
+                  }
+                }}
+                onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
+                  const pasteText = e.clipboardData.getData("text");
+                  const parsed = parseCombinedPjtInput(pasteText);
+                  if (parsed) {
+                    e.preventDefault();
+                    applySmartParsedData(parsed);
+                  }
+                }}
+                className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              />
+            </div>
+          </div>
+
           {/* 설비 담당자 */}
           <div className="space-y-1.5 min-w-0">
             <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
@@ -570,7 +570,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               ))}
             </datalist>
 
-            {/* 최근 설비 담당자 퀵 추천 태그 (오른쪽으로 ㅡ자 수평 1행 배치) */}
+            {/* 최근 설비 담당자 퀵 추천 태그 */}
             {recentInspectors.length > 0 && (
               <div className="flex items-center gap-1 overflow-x-auto no-scrollbar whitespace-nowrap pt-0.5">
                 <span className="text-[10px] text-slate-500 font-semibold shrink-0">최근:</span>
@@ -591,9 +591,83 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               </div>
             )}
           </div>
+        </div>
+
+        {/* 3. 설비 수량 (좌) & 검수일자 (우) */}
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
+          {/* 설비 수량 (호기 생성) */}
+          <div className="space-y-1.5 min-w-0">
+            <label className="flex items-center justify-between text-xs font-semibold text-slate-300">
+              <span className="flex items-center gap-1.5">
+                <Layers className="h-3.5 w-3.5 text-cyan-400" />
+                <span>설비 수량 (호기 생성)</span> <span className="text-cyan-400">*</span>
+              </span>
+              <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+                현재 {project.quantity}개 호기
+              </span>
+            </label>
+
+            <div className="flex items-center gap-2 max-w-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  const nextVal = Math.max(1, (project.quantity || 1) - 1);
+                  handleQuantityChange(nextVal);
+                  setQuantityInput(String(nextVal));
+                }}
+                disabled={(project.quantity || 1) <= 1}
+                className="flex h-9 w-10 items-center justify-center rounded-xl bg-slate-800 text-base font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+              >
+                -
+              </button>
+              <input
+                type="number"
+                min="1"
+                max="1000"
+                value={quantityInput}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const raw = e.target.value;
+                  setQuantityInput(raw);
+                  if (raw.trim() !== "") {
+                    const parsed = parseInt(raw, 10);
+                    if (!isNaN(parsed) && parsed >= 1 && parsed <= 1000) {
+                      handleQuantityChange(parsed);
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  const parsed = parseInt(quantityInput, 10);
+                  if (isNaN(parsed) || parsed < 1) {
+                    handleQuantityChange(1);
+                    setQuantityInput("1");
+                  } else if (parsed > 1000) {
+                    handleQuantityChange(1000);
+                    setQuantityInput("1000");
+                  } else {
+                    handleQuantityChange(parsed);
+                    setQuantityInput(String(parsed));
+                  }
+                }}
+                style={{ MozAppearance: "textfield" }}
+                className="w-full text-center rounded-xl bg-slate-950 border border-slate-700 py-1.5 text-sm font-bold font-mono text-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const nextVal = Math.min(1000, (project.quantity || 1) + 1);
+                  handleQuantityChange(nextVal);
+                  setQuantityInput(String(nextVal));
+                }}
+                disabled={(project.quantity || 1) >= 1000}
+                className="flex h-9 w-10 items-center justify-center rounded-xl bg-slate-800 text-base font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+              >
+                +
+              </button>
+            </div>
+          </div>
 
           {/* 검수일자 */}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
               <Calendar className="h-3.5 w-3.5 text-cyan-400" />
               <span>검수일자</span>
@@ -612,77 +686,6 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
               style={{ colorScheme: "dark" }}
               className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
             />
-          </div>
-        </div>
-
-        {/* 4. 설비 수량 (호기 생성) - 최대 1,000대 확장 및 안정적인 타이핑 지원 */}
-        <div className="space-y-1.5">
-          <label className="flex items-center justify-between text-xs font-semibold text-slate-300">
-            <span className="flex items-center gap-1.5">
-              <Layers className="h-3.5 w-3.5 text-cyan-400" />
-              <span>설비 수량 (호기 생성)</span> <span className="text-cyan-400">*</span>
-            </span>
-            <span className="text-[11px] text-slate-400 font-mono">
-              현재 {project.quantity}개 호기 (최대 1,000대 지원)
-            </span>
-          </label>
-
-          <div className="flex items-center gap-2 max-w-xs">
-            <button
-              type="button"
-              onClick={() => {
-                const nextVal = Math.max(1, (project.quantity || 1) - 1);
-                handleQuantityChange(nextVal);
-                setQuantityInput(String(nextVal));
-              }}
-              disabled={(project.quantity || 1) <= 1}
-              className="flex h-9 w-10 items-center justify-center rounded-xl bg-slate-800 text-base font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
-            >
-              -
-            </button>
-            <input
-              type="number"
-              min="1"
-              max="1000"
-              value={quantityInput}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                const raw = e.target.value;
-                setQuantityInput(raw);
-                if (raw.trim() !== "") {
-                  const parsed = parseInt(raw, 10);
-                  if (!isNaN(parsed) && parsed >= 1 && parsed <= 1000) {
-                    handleQuantityChange(parsed);
-                  }
-                }
-              }}
-              onBlur={() => {
-                const parsed = parseInt(quantityInput, 10);
-                if (isNaN(parsed) || parsed < 1) {
-                  handleQuantityChange(1);
-                  setQuantityInput("1");
-                } else if (parsed > 1000) {
-                  handleQuantityChange(1000);
-                  setQuantityInput("1000");
-                } else {
-                  handleQuantityChange(parsed);
-                  setQuantityInput(String(parsed));
-                }
-              }}
-              style={{ MozAppearance: "textfield" }}
-              className="w-full text-center rounded-xl bg-slate-950 border border-slate-700 py-1.5 text-sm font-bold font-mono text-cyan-300 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const nextVal = Math.min(1000, (project.quantity || 1) + 1);
-                handleQuantityChange(nextVal);
-                setQuantityInput(String(nextVal));
-              }}
-              disabled={(project.quantity || 1) >= 1000}
-              className="flex h-9 w-10 items-center justify-center rounded-xl bg-slate-800 text-base font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
-            >
-              +
-            </button>
           </div>
         </div>
       </div>
