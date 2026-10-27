@@ -298,9 +298,7 @@ export function loadDirectLocalProjects(): ProjectMaster[] | null {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const delKeys = getDeletedProjectKeys();
-        const filtered = parsed.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-        return filtered;
+        return parsed.filter(Boolean);
       }
     }
   } catch {}
@@ -314,9 +312,7 @@ export async function saveCentralProjects(
   projects: ProjectMaster[],
   roomKey: string = getSyncRoomKey()
 ): Promise<{ success: boolean; message?: string }> {
-  const delKeys = getDeletedProjectKeys();
-  const delPartKeys = getDeletedPartKeys();
-  const cleanProjects = (projects || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
+  const cleanProjects = (projects || []).filter(Boolean);
 
   // 1. 로컬 탭 즉시 전파 및 브라우저 로컬 스토리지 안전 저장 (스캔 데이터 즉시 보존)
   broadcastLocalUpdate(cleanProjects);

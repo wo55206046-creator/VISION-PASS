@@ -220,12 +220,8 @@ export default function MainApp() {
     const unsubscribeBroadcast = subscribeLocalBroadcast((incoming) => {
       if (Date.now() - lastLocalEditTimeRef.current < 5000) return;
       if (incoming && incoming.length > 0) {
-        const delKeys = getDeletedProjectKeys();
-        const delPartKeys = getDeletedPartKeys();
-        const cleanIncoming = incoming.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
         setProjects((prev) => {
-          const cleanPrev = prev.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-          const merged = mergeProjectLists(cleanPrev, cleanIncoming, delKeys, delPartKeys);
+          const merged = mergeProjectLists(prev, incoming);
           const mergedJson = JSON.stringify(merged);
           if (mergedJson !== lastKnownCloudJson.current) {
             lastKnownCloudJson.current = mergedJson;

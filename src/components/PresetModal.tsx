@@ -84,10 +84,6 @@ export const PresetModal: React.FC<PresetModalProps> = ({
       if (typeof window !== "undefined" && templates.length > 0) {
         localStorage.setItem(STORAGE_TEMPLATES_KEY, JSON.stringify(templates));
         window.dispatchEvent(new CustomEvent("VISION_PASS_TEMPLATES_UPDATED", { detail: templates }));
-        const directProjects = loadDirectLocalProjects();
-        if (directProjects && directProjects.length > 0) {
-          saveCentralProjects(directProjects).catch(() => {});
-        }
       }
     } catch (e) {
       console.warn("Failed to save templates to localStorage", e);

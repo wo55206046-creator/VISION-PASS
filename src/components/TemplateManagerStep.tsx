@@ -59,10 +59,6 @@ export const TemplateManagerStep: React.FC = () => {
         // 클라우드로 즉시 업로드 (다른 PC/스마트폰으로 실시간 전파)
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("VISION_PASS_TEMPLATES_UPDATED", { detail: templates }));
-          const directProjects = loadDirectLocalProjects();
-          if (directProjects && directProjects.length > 0) {
-            saveCentralProjects(directProjects).catch(() => {});
-          }
         }
       }
     } catch (e) {
