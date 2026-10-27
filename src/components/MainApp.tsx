@@ -172,33 +172,14 @@ export default function MainApp() {
       const res = await pullProjectsFromCloud();
       if (res.success && res.projects && res.projects.length > 0) {
         setSyncStatus("connected");
-        const delKeys = getDeletedProjectKeys();
-        const delPartKeys = getDeletedPartKeys();
-        cleanStorageFromDeleted(delKeys, delPartKeys);
-        const incomingSanitized = res.projects.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-
-        setProjects((prevProjects) => {
-          const currentSanitized = prevProjects.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-
-          // 🛡️ 핵심: 초기 로드이거나 클라우드에 데이터가 있으면 무조건 클라우드 최신 데이터를 전수 채택!
-          // (Edge, 스마트폰, 새 브라우저 접속 시 100% 동일한 프로젝트 즉각 공유 보장)
-          let adopted: ProjectMaster[];
-          if (isInitial || incomingSanitized.length >= currentSanitized.length) {
-            adopted = incomingSanitized;
-          } else {
-            // 로컬에 더 많은 프로젝트가 있고 초기 로드가 아닐 때만 로컬 유지 후 클라우드로 푸시
-            adopted = currentSanitized;
-            pushProjectsToCloud(currentSanitized).catch(() => {});
-          }
-
-          const adoptedJson = JSON.stringify(adopted);
-          lastKnownCloudJson.current = adoptedJson;
-          try {
-            localStorage.setItem(STORAGE_KEY, adoptedJson);
-            localStorage.setItem(PERSISTENT_BACKUP_KEY, adoptedJson);
-          } catch {}
-          return adopted;
-        });
+        // 🛡️ 핵심: 클라우드에서 최신 데이터를 가져왔으면, 어떠한 로컬 필터링도 없이 100% 화면에 전수 반영!
+        setProjects(res.projects);
+        const cloudJson = JSON.stringify(res.projects);
+        lastKnownCloudJson.current = cloudJson;
+        try {
+          localStorage.setItem(STORAGE_KEY, cloudJson);
+          localStorage.setItem(PERSISTENT_BACKUP_KEY, cloudJson);
+        } catch {}
       } else {
         setSyncStatus("connected");
       }
@@ -296,29 +277,17 @@ export default function MainApp() {
 
     // 2. ⚡ 초고속 실시간 클라우드 스트림 구독 (모든 기기 실시간 자동 공유)
     const unsubscribeRealtime = subscribeCloudRealtime((incoming) => {
-      if (Date.now() - lastLocalEditTimeRef.current < 3000) return;
+      if (Date.now() - lastLocalEditTimeRef.current < 2000) return;
       if (incoming && incoming.length > 0) {
-        const delKeys = getDeletedProjectKeys();
-        const delPartKeys = getDeletedPartKeys();
-        const cleanIncoming = incoming.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-        setProjects((prev) => {
-          const cleanPrev = prev.filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-          
-          // 🛡️ 클라우드 수량이 더 많으면 무조건 클라우드 데이터 전수 수용 (엣지/모바일 자동 공유)
-          const merged = cleanIncoming.length > cleanPrev.length
-            ? cleanIncoming
-            : mergeProjectLists(cleanPrev, cleanIncoming, delKeys, delPartKeys);
-
-          const mergedJson = JSON.stringify(merged);
-          if (mergedJson !== lastKnownCloudJson.current) {
-            lastKnownCloudJson.current = mergedJson;
-            try {
-              localStorage.setItem(STORAGE_KEY, mergedJson);
-              localStorage.setItem(PERSISTENT_BACKUP_KEY, mergedJson);
-            } catch {}
-          }
-          return merged;
-        });
+        const incomingJson = JSON.stringify(incoming);
+        if (incomingJson !== lastKnownCloudJson.current) {
+          lastKnownCloudJson.current = incomingJson;
+          setProjects(incoming); // 🛡️ 클라우드 최신 프로젝트 목록 100% 직통 반영!
+          try {
+            localStorage.setItem(STORAGE_KEY, incomingJson);
+            localStorage.setItem(PERSISTENT_BACKUP_KEY, incomingJson);
+          } catch {}
+        }
       }
     });
 

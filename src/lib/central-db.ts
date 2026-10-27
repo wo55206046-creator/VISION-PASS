@@ -517,45 +517,17 @@ export async function fetchCentralProjects(
           rows[0].data.projects.length > 0
         ) {
           const payload = rows[0].data;
+          const cloudProjects: ProjectMaster[] = payload.projects;
+
           if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
             saveDirectLocalTemplates(payload.templates);
           }
-          const directLocalProjects = loadDirectLocalProjects() || [];
-          if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
-            markProjectsAsDeletedBulk(payload.deletedKeys, directLocalProjects);
-          }
-          if (payload.deletedPartKeys && Array.isArray(payload.deletedPartKeys)) {
-            markPartsAsDeletedBulk(payload.deletedPartKeys);
-          }
-          const delKeys = getDeletedProjectKeys();
-          const delPartKeys = getDeletedPartKeys();
-          cleanStorageFromDeleted(delKeys, delPartKeys);
 
-          const rawCloudProjects: ProjectMaster[] = Array.isArray(payload.projects) ? payload.projects : [];
-          // 🛡️ 핵심: 클라우드에 현재 적재되어 있는 프로젝트는 로컬 삭제 묘비(Tombstone)에서 즉시 사면/해제!
-          for (const cp of rawCloudProjects) {
-            if (cp) unmarkProjectAsDeleted(cp.id, cp.pjtCode);
-          }
-
-          const delKeys = getDeletedProjectKeys();
-          const delPartKeys = getDeletedPartKeys();
-          cleanStorageFromDeleted(delKeys, delPartKeys);
-
-          const cloudProjects = rawCloudProjects.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-          const localProjects = directLocalProjects.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-
-          // 🛡️ 핵심: 클라우드에 프로젝트가 1개라도 있다면 무조건 클라우드 프로젝트 전수 채택! (엣지/스마트폰 100% 동기화 보장)
-          let merged: ProjectMaster[];
-          if (forceOverwrite || cloudProjects.length >= localProjects.length || localProjects.length === 0) {
-            merged = cloudProjects.length > 0 ? cloudProjects : localProjects;
-          } else {
-            merged = mergeProjectLists(localProjects, cloudProjects, delKeys, delPartKeys);
-          }
-
-          memoryCacheProjects = merged;
+          // 🛡️ 클라우드 데이터를 최우선 진실로 확정하여 로컬에 저장하고 100% 전수 반환!
+          memoryCacheProjects = cloudProjects;
           if (typeof window !== "undefined") {
             try {
-              const mJson = JSON.stringify(merged);
+              const mJson = JSON.stringify(cloudProjects);
               localStorage.setItem(STORAGE_PROJECTS_KEY, mJson);
               localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", mJson);
               if (payload.updatedAt) {
@@ -564,20 +536,11 @@ export async function fetchCentralProjects(
             } catch {}
           }
 
-          // 로컬에 더 최신 수정사항이 있는 경우에만 클라우드로 역동기화(Auto-heal)
-          const hasNewerLocal = localProjects && localProjects.some((lp: ProjectMaster) => {
-            const cp = cloudProjects.find((c: ProjectMaster) => c.id === lp.id || c.pjtCode === lp.pjtCode);
-            return cp && new Date(lp.updatedAt || 0) > new Date(cp.updatedAt || 0);
-          });
-          if (hasNewerLocal && localProjects.length >= cloudProjects.length) {
-            saveCentralProjects(merged, roomKey).catch(() => {});
-          }
-
           return {
             success: true,
-            projects: merged,
+            projects: cloudProjects,
             updatedAt: payload.updatedAt || rows[0].updated_at,
-            message: `Supabase 클라우드 데이터 동기화 완료 (${merged.length}개 프로젝트)`,
+            message: `Supabase 클라우드 데이터 동기화 완료 (${cloudProjects.length}개 프로젝트)`,
           };
         }
       }
@@ -699,54 +662,27 @@ export function subscribeCentralRealtime(
             Array.isArray(incomingProjectsRaw) &&
             incomingProjectsRaw.length > 0
           ) {
-            // 🛡️ 핵심: 클라우드에서 내려온 프로젝트는 로컬 삭제 묘비(Tombstone)에서 즉시 사면/해제!
-            for (const ip of incomingProjectsRaw) {
-              if (ip) unmarkProjectAsDeleted(ip.id, ip.pjtCode);
-            }
+            const incomingProjects = incomingProjectsRaw;
+            const incomingJson = JSON.stringify(incomingProjects);
+            const cachedJson = JSON.stringify(memoryCacheProjects || []);
 
-            const delKeys = getDeletedProjectKeys();
-            const delPartKeys = getDeletedPartKeys();
-            const localProjects = (loadDirectLocalProjects() || []).filter((p) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-
-            const isTimeChanged = updatedTime !== lastKnownTimestamp;
-            const isCountDifferent = incomingProjectsRaw.length !== localProjects.length;
-
-            // 1. 클라우드에 더 많은 데이터가 있거나 최신 업데이트인 경우 -> 로컬 전수 자동 반영!
-            if (
-              incomingProjectsRaw.length > localProjects.length ||
-              (isTimeChanged && incomingProjectsRaw.length >= localProjects.length)
-            ) {
+            // 🛡️ 클라우드 타임스탬프가 바뀌었거나 내용이 다르면 무조건 100% 화면 즉각 전수 반영!
+            if (updatedTime !== lastKnownTimestamp || incomingJson !== cachedJson) {
               lastKnownTimestamp = updatedTime;
+              memoryCacheProjects = incomingProjects;
+
               if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
                 saveDirectLocalTemplates(payload.templates);
               }
-              if (payload.deletedKeys && Array.isArray(payload.deletedKeys)) {
-                markProjectsAsDeletedBulk(payload.deletedKeys, localProjects);
+
+              if (typeof window !== "undefined") {
+                try {
+                  localStorage.setItem(STORAGE_PROJECTS_KEY, incomingJson);
+                  localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", incomingJson);
+                  localStorage.setItem(STORAGE_LAST_SYNC_KEY, updatedTime);
+                } catch {}
               }
-              if (payload.deletedPartKeys && Array.isArray(payload.deletedPartKeys)) {
-                markPartsAsDeletedBulk(payload.deletedPartKeys);
-              }
-              cleanStorageFromDeleted(delKeys, delPartKeys);
-
-              const incomingProjects = incomingProjectsRaw.filter((p: ProjectMaster) => p && !isProjectDeleted(p.id, p.pjtCode, delKeys));
-
-              const merged = incomingProjects.length >= localProjects.length
-                ? incomingProjects
-                : mergeProjectLists(localProjects, incomingProjects, delKeys, delPartKeys);
-
-              memoryCacheProjects = merged;
-              try {
-                const mJson = JSON.stringify(merged);
-                localStorage.setItem(STORAGE_PROJECTS_KEY, mJson);
-                localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", mJson);
-                localStorage.setItem(STORAGE_LAST_SYNC_KEY, updatedTime);
-              } catch {}
-              onUpdate(merged);
-            }
-            // 2. 만약 로컬에 10개가 있고 클라우드에 5개만 있는 경우 -> 클라우드로 10개 즉시 자동 업로드(Auto-Heal)!
-            else if (localProjects.length > incomingProjectsRaw.length && localProjects.length > 0) {
-              lastKnownTimestamp = new Date().toISOString();
-              saveCentralProjects(localProjects, cleanRoom).catch(() => {});
+              onUpdate(incomingProjects);
             }
           }
         }
