@@ -520,13 +520,6 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
         </div>
       </div>
 
-      {smartAutoFilled && (
-        <div className="flex items-center gap-2.5 rounded-xl bg-cyan-950/90 p-3.5 text-xs sm:text-sm text-cyan-300 border border-cyan-500/60 shadow-glow-cyan animate-fadeIn">
-          <Sparkles className="h-5 w-5 text-cyan-400 shrink-0" />
-          <span>✨ <strong>스마트 자동 분리 완료:</strong> 고객사 / PJT CODE / 모델명이 자동으로 분리 인식되어 입력되었습니다!</span>
-        </div>
-      )}
-
       {errorMsg && (
         <div className="flex items-center gap-2.5 rounded-xl bg-red-950/60 p-4 text-sm text-red-300 border border-red-800/60 animate-shake">
           <AlertCircle className="h-5 w-5 text-red-400 shrink-0" />
