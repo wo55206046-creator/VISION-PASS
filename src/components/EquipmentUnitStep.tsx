@@ -223,10 +223,11 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
           </button>
         </div>
 
-        {/* 2. 프로젝트 정보 표시 영역 */}
-        <div className="space-y-1.5 text-xs">
-          {/* 라인 1: [고객사 배지] PJT: <코드> (좌) & [PJT 수정] 버튼 (우) */}
-          <div className="flex items-center justify-between gap-2 flex-wrap">
+        {/* 2. 프로젝트 정보 및 Serial NO 2열 통합 영역 (PJT 수정 좌측, Serial NO 우측) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
+          {/* [좌측 카드] 프로젝트 정보 + PJT 수정 버튼 */}
+          <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80 flex flex-col justify-between space-y-2 text-xs">
+            {/* 1행: 고객사 배지 + PJT: <코드> + [PJT 수정] 버튼 */}
             <div className="flex items-center gap-2 flex-wrap">
               <span
                 className={`font-bold flex items-center gap-1 px-2.5 py-0.5 rounded-lg border shadow-sm ${getSiteBadgeStyle(project?.site || "").bg
@@ -239,116 +240,118 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
                 <span className="text-slate-400">PJT:</span>
                 <strong className="text-cyan-300 font-mono font-extrabold text-sm">{project?.pjtCode}</strong>
               </span>
-            </div>
 
-            {/* ✏️ 우측 상단 PJT 수정 버튼 */}
-            <button
-              type="button"
-              onClick={() => {
-                setEditingPjt(JSON.parse(JSON.stringify(project)));
-                setIsEditModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-950/80 px-2.5 py-1 text-[11px] font-bold text-cyan-300 border border-cyan-700/70 hover:bg-cyan-900 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer"
-              title="프로젝트 정보 및 호기별 Serial NO. 수정"
-            >
-              <Edit2 className="h-3 w-3" />
-              <span>PJT 수정</span>
-            </button>
-          </div>
-
-          {/* 라인 2: 설비명 한 줄 단독 표시 */}
-          <div className="flex items-center justify-between gap-2 text-slate-300 pt-0.5">
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="text-slate-400 font-medium shrink-0">설비명:</span>
-              <strong className="text-white font-bold truncate" title={project?.equipmentName}>
-                {project?.equipmentName || "미지정"}
-              </strong>
-              <span className="text-slate-400 font-mono text-[11px] shrink-0">
-                (총 {project?.quantity || 1}대)
-              </span>
-            </div>
-
-            {/* Replicate Template Button (호기 수가 2대 이상일 때만 표시) */}
-            {(project?.quantity || 1) > 1 && (
+              {/* ✏️ PJT 수정 버튼 (PJT 코드 바로 옆 왼쪽 배치) */}
               <button
                 type="button"
-                onClick={handleReplicateToAllUnits}
-                className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer"
-                title="1호기 부품 목록을 나머지 모든 호기에 일괄 복제"
+                onClick={() => {
+                  setEditingPjt(JSON.parse(JSON.stringify(project)));
+                  setIsEditModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-950/80 px-2.5 py-1 text-[11px] font-bold text-cyan-300 border border-cyan-700/70 hover:bg-cyan-900 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer ml-auto sm:ml-0"
+                title="프로젝트 정보 및 호기별 Serial NO. 수정"
               >
-                <Copy className="h-2.5 w-2.5" />
-                <span>1호기 부품 전체 복사</span>
+                <Edit2 className="h-3 w-3" />
+                <span>PJT 수정</span>
               </button>
-            )}
-          </div>
-        </div>
-
-        {/* 🔢 등록된 설비 Serial NO. 및 호기 선택 탭 (단일 통합) */}
-        <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80 space-y-2 text-xs">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <Barcode className="h-4 w-4 text-cyan-400 shrink-0" />
-              <span className="text-slate-400 font-bold shrink-0">Serial NO. :</span>
-              {formatSerialRangeForFilename(project.equipmentUnits) && (
-                <span className="font-mono font-extrabold text-cyan-300 bg-cyan-950/90 border border-cyan-600/60 px-2 py-0.5 rounded-md text-xs shadow-inner tracking-tight truncate">
-                  {formatSerialRangeForFilename(project.equipmentUnits)}
-                </span>
-              )}
             </div>
 
-            {/* 📑 우측 고정 [PJT 양식] 버튼 */}
-            <button
-              type="button"
-              onClick={() => setIsPresetModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-cyan-300 border border-cyan-700/60 shadow-sm transition-all cursor-pointer shrink-0 ml-auto"
-              title="PJT 모델별 표준 BOM 및 엑셀 양식 적용"
-            >
-              <Layers className="h-3.5 w-3.5 text-cyan-400" />
-              <span>PJT 양식</span>
-            </button>
-          </div>
-          <div className="flex items-center gap-2 font-mono overflow-x-auto no-scrollbar py-0.5 scroll-smooth -mx-1 px-1">
-            {project.equipmentUnits.map((u) => {
-              const isCurrent = u.unitIndex === activeUnitIndex;
-              const verified = u.parts.filter((p) => p.isVerified).length;
-              const total = u.parts.length;
-              const isAllPass = total > 0 && verified === total;
-              const displaySerial = u.equipmentSerial
-                ? u.equipmentSerial.length > 4
-                  ? u.equipmentSerial.slice(-4)
-                  : u.equipmentSerial
-                : "(미입력)";
+            {/* 2행: 설비명 및 일괄 복제 버튼 */}
+            <div className="flex items-center justify-between gap-2 text-slate-300 pt-0.5">
+              <div className="flex items-center gap-1.5 truncate">
+                <span className="text-slate-400 font-medium shrink-0">설비명:</span>
+                <strong className="text-white font-bold truncate" title={project?.equipmentName}>
+                  {project?.equipmentName || "미지정"}
+                </strong>
+                <span className="text-slate-400 font-mono text-[11px] shrink-0">
+                  (총 {project?.quantity || 1}대)
+                </span>
+              </div>
 
-              return (
+              {(project?.quantity || 1) > 1 && (
                 <button
-                  key={u.unitIndex}
                   type="button"
-                  onClick={() => setActiveUnitIndex(u.unitIndex)}
-                  title={u.equipmentSerial ? `${u.unitIndex}호기: ${u.equipmentSerial}` : `${u.unitIndex}호기 (시리얼 미입력)`}
-                  className={`px-3 py-2 sm:py-1.5 rounded-lg border text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-all shrink-0 ${isCurrent
-                      ? "bg-cyan-500 text-slate-950 font-bold border-cyan-400 shadow-glow-cyan"
-                      : "bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700"
-                    }`}
+                  onClick={handleReplicateToAllUnits}
+                  className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all shadow-sm shrink-0 cursor-pointer"
+                  title="1호기 부품 목록을 나머지 모든 호기에 일괄 복제"
                 >
-                  <span className={`font-bold ${isCurrent ? "text-slate-950" : "text-slate-300"}`}>
-                    {u.unitIndex}호기:
+                  <Copy className="h-2.5 w-2.5" />
+                  <span>1호기 부품 전체 복사</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* [우측 카드] Serial NO. 표시 및 호기 선택 탭 & PJT 양식 버튼 */}
+          <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80 flex flex-col justify-between space-y-2 text-xs">
+            {/* 1행: Serial NO. 범위 표기 & [PJT 양식] 버튼 */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Barcode className="h-4 w-4 text-cyan-400 shrink-0" />
+                <span className="text-slate-400 font-bold shrink-0">Serial NO. :</span>
+                {formatSerialRangeForFilename(project.equipmentUnits) && (
+                  <span className="font-mono font-extrabold text-cyan-300 bg-cyan-950/90 border border-cyan-600/60 px-2 py-0.5 rounded-md text-xs shadow-inner tracking-tight truncate">
+                    {formatSerialRangeForFilename(project.equipmentUnits)}
                   </span>
-                  <span className={`font-bold ${isCurrent ? "text-slate-950 font-extrabold" : "text-cyan-300"}`}>
-                    {displaySerial}
-                  </span>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold shrink-0 ${isCurrent
-                        ? "bg-slate-950 text-cyan-300"
-                        : isAllPass
-                          ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
-                          : "bg-slate-800 text-slate-400"
+                )}
+              </div>
+
+              {/* 📑 우측 [PJT 양식] 버튼 */}
+              <button
+                type="button"
+                onClick={() => setIsPresetModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-cyan-300 border border-cyan-700/60 shadow-sm transition-all cursor-pointer shrink-0 ml-auto"
+                title="PJT 모델별 표준 BOM 및 엑셀 양식 적용"
+              >
+                <Layers className="h-3.5 w-3.5 text-cyan-400" />
+                <span>PJT 양식</span>
+              </button>
+            </div>
+
+            {/* 2행: 호기 선택 버튼들 (가로 스크롤) */}
+            <div className="flex items-center gap-2 font-mono overflow-x-auto no-scrollbar py-0.5 scroll-smooth -mx-1 px-1">
+              {project.equipmentUnits.map((u) => {
+                const isCurrent = u.unitIndex === activeUnitIndex;
+                const verified = u.parts.filter((p) => p.isVerified).length;
+                const total = u.parts.length;
+                const isAllPass = total > 0 && verified === total;
+                const displaySerial = u.equipmentSerial
+                  ? u.equipmentSerial.length > 4
+                    ? u.equipmentSerial.slice(-4)
+                    : u.equipmentSerial
+                  : "(미입력)";
+
+                return (
+                  <button
+                    key={u.unitIndex}
+                    type="button"
+                    onClick={() => setActiveUnitIndex(u.unitIndex)}
+                    title={u.equipmentSerial ? `${u.unitIndex}호기: ${u.equipmentSerial}` : `${u.unitIndex}호기 (시리얼 미입력)`}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-all shrink-0 ${isCurrent
+                        ? "bg-cyan-500 text-slate-950 font-bold border-cyan-400 shadow-glow-cyan"
+                        : "bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700"
                       }`}
                   >
-                    {isAllPass ? "✓ 완료" : `${verified}/${total}`}
-                  </span>
-                </button>
-              );
-            })}
+                    <span className={`font-bold ${isCurrent ? "text-slate-950" : "text-slate-300"}`}>
+                      {u.unitIndex}호기:
+                    </span>
+                    <span className={`font-bold ${isCurrent ? "text-slate-950 font-extrabold" : "text-cyan-300"}`}>
+                      {displaySerial}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold shrink-0 ${isCurrent
+                          ? "bg-slate-950 text-cyan-300"
+                          : isAllPass
+                            ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
+                            : "bg-slate-800 text-slate-400"
+                        }`}
+                    >
+                      {isAllPass ? "✓ 완료" : `${verified}/${total}`}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
