@@ -275,7 +275,7 @@ export const ProjectMasterStep: React.FC<ProjectMasterStepProps> = ({
     } catch (e) { }
 
     if (list.length === 0) {
-      list = ["김충환, 김태현", "김형태, 유병준", "유병준, 정재헌"];
+      list = ["김충환, 김태현", "김형태, 유병준", "정재헌, 유병준"];
       if (!latest) latest = "홍길동";
     }
 
