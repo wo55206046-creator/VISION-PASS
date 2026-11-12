@@ -487,15 +487,26 @@ export const PartsTable: React.FC<PartsTableProps> = ({
           filteredParts.map((part, index) => {
             const isEditing = editingSerialId === part.id;
             const hasSerial = Boolean(part.detectedSerial && part.detectedSerial.trim());
+            const normSerial = (part.detectedSerial || "").trim().toUpperCase();
+            const isDuplicateSerial =
+              normSerial.length >= 3 &&
+              parts.some(
+                (other) =>
+                  other.id !== part.id &&
+                  other.detectedSerial &&
+                  other.detectedSerial.trim().toUpperCase() === normSerial
+              );
 
             return (
               <Fragment key={`m-${part.id}`}>
                 {/* 📋 모바일 부품 카드: 품명 + 세부사항/규격 + 시리얼 + OCR 버튼 + 원터치 순서 변경 버튼 */}
                 <div
                   className={`rounded-2xl border p-3 space-y-2 transition-all ${
-                    part.isVerified
-                      ? "bg-slate-900/95 border-emerald-500/40 shadow-sm"
-                      : "bg-slate-900/80 border-slate-800"
+                    isDuplicateSerial
+                      ? "bg-slate-900/95 border-amber-500/70 shadow-sm"
+                      : part.isVerified
+                        ? "bg-slate-900/95 border-emerald-500/40 shadow-sm"
+                        : "bg-slate-900/80 border-slate-800"
                   }`}
                 >
                   {/* 1행: [순번 + ▲▼ 이동 버튼 + 품명] & [우측 PASS + 상세 수정] */}
@@ -538,6 +549,14 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                       <span className="font-black text-white text-base sm:text-lg tracking-tight truncate ml-1" title={part.partName}>
                         {part.partName}
                       </span>
+                      {isDuplicateSerial && (
+                        <span
+                          className="text-[10px] font-extrabold text-amber-300 bg-amber-950/90 border border-amber-500/70 px-1.5 py-0.5 rounded-md shrink-0"
+                          title="이 호기의 다른 부품에 동일한 시리얼이 입력되어 있습니다"
+                        >
+                          ⚠️ 중복
+                        </span>
+                      )}
                     </div>
 
                     {/* 검증 버튼 & 관리 메뉴 */}

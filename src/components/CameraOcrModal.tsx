@@ -32,8 +32,10 @@ interface CameraOcrModalProps {
   targetPart: PartItem | null;
   unitIndex: number;
   equipmentSerial?: string;
+  allUnitParts?: PartItem[];
   onClose: () => void;
   onConfirm: (partId: string, serial: string, isVerified: boolean, confidence?: number) => void;
+  onSelectTargetPart?: (nextPart: PartItem) => void;
 }
 
 export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
@@ -41,8 +43,10 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   targetPart,
   unitIndex,
   equipmentSerial,
+  allUnitParts = [],
   onClose,
   onConfirm,
+  onSelectTargetPart,
 }) => {
   // Video & Stream State
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -188,15 +192,11 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     }
   }, [stream]);
 
-  // 모달 열림/닫힘 시 라이프사이클
+  // 모달 열림/닫힘 시 카메라 스트림 라이프사이클 (연속 촬영으로 targetPart가 바뀔 때는 카메라를 끄지 않고 그대로 유지!)
   useEffect(() => {
-    if (isOpen && targetPart) {
-      setSelectedSerial(targetPart.detectedSerial || "");
-      setIsVerifiedCheck(true);
-      setOcrResult(null);
-      setIsFrozen(false);
+    if (isOpen) {
       startCamera();
-      // 🚀 초고속 2초 시리얼 추출을 위한 백그라운드 Tesseract 워커 사전 로드 (지연 0ms)
+      // 🚀 초고속 1초 시리얼 추출을 위한 백그라운드 워커 사전 로드
       getOcrWorker().catch(console.warn);
     } else {
       stopCamera();
@@ -205,7 +205,20 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     return () => {
       stopCamera();
     };
-  }, [isOpen, targetPart]);
+  }, [isOpen, facingMode]);
+
+  // 대상 부품(targetPart)이 변경될 때 입력값 초기화 및 라이브 프리뷰 즉시 재개
+  useEffect(() => {
+    if (isOpen && targetPart) {
+      setSelectedSerial(targetPart.detectedSerial || "");
+      setIsVerifiedCheck(true);
+      setOcrResult(null);
+      setIsFrozen(false);
+      try {
+        videoRef.current?.play().catch(() => {});
+      } catch {}
+    }
+  }, [isOpen, targetPart?.id]);
 
   // 토치 토글
   const toggleTorch = async () => {
@@ -466,11 +479,53 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     }
   };
 
-  // 최종 저장 & 검증 완료
+  // 현재 호기 내 동일 시리얼 중복 여부 검사
+  const normalizedSelected = selectedSerial.trim().toUpperCase();
+  const duplicatePartIndex =
+    normalizedSelected.length >= 3 && targetPart
+      ? allUnitParts.findIndex(
+          (p) =>
+            p.id !== targetPart.id &&
+            p.detectedSerial &&
+            p.detectedSerial.trim().toUpperCase() === normalizedSelected
+        )
+      : -1;
+  const duplicatePart = duplicatePartIndex >= 0 ? allUnitParts[duplicatePartIndex] : null;
+
+  // 현재 부품 다음 순서의 미검증 부품 탐색 (연속 촬영용)
+  const currentPartIdx = targetPart ? allUnitParts.findIndex((p) => p.id === targetPart.id) : -1;
+  const nextUnverifiedPart: PartItem | null = (() => {
+    if (!targetPart || allUnitParts.length <= 1) return null;
+    const startIdx = currentPartIdx >= 0 ? currentPartIdx + 1 : 0;
+    for (let offset = 0; offset < allUnitParts.length; offset++) {
+      const idx = (startIdx + offset) % allUnitParts.length;
+      const cand = allUnitParts[idx];
+      if (cand && cand.id !== targetPart.id && (!cand.isVerified || !cand.detectedSerial?.trim())) {
+        return cand;
+      }
+    }
+    return null;
+  })();
+  const nextPartNumber = nextUnverifiedPart
+    ? allUnitParts.findIndex((p) => p.id === nextUnverifiedPart.id) + 1
+    : 0;
+
+  // 최종 저장 & 창 닫기
   const handleSave = () => {
     if (!targetPart) return;
     onConfirm(targetPart.id, selectedSerial.trim(), isVerifiedCheck, ocrResult?.confidence);
     onClose();
+  };
+
+  // 저장 후 카메라를 끄지 않고 곧바로 다음 미검증 부품으로 연속 이동
+  const handleSaveAndNext = () => {
+    if (!targetPart) return;
+    onConfirm(targetPart.id, selectedSerial.trim(), isVerifiedCheck, ocrResult?.confidence);
+    if (nextUnverifiedPart && onSelectTargetPart) {
+      onSelectTargetPart(nextUnverifiedPart);
+    } else {
+      onClose();
+    }
   };
 
   if (!isOpen || !targetPart) return null;
@@ -765,12 +820,16 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             <div className="relative">
               <input
                 type="text"
-                placeholder="시리얼 번호 (예: KSA7965797 또는 JHTBB-N94YW-9HGGV-78RD3-3PH23)"
+                placeholder="시리얼 번호 (예: KSA7965797 또는 230600231746059-A)"
                 value={selectedSerial}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setSelectedSerial(e.target.value.toUpperCase())
                 }
-                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 pr-10 text-xs sm:text-sm font-mono font-bold text-cyan-300 tracking-wider uppercase focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 break-all"
+                className={`w-full rounded-xl bg-slate-900 border px-3.5 py-2.5 pr-10 text-xs sm:text-sm font-mono font-bold tracking-wider uppercase focus:outline-none focus:ring-2 break-all ${
+                  duplicatePart
+                    ? "border-amber-500 text-amber-300 focus:border-amber-400 focus:ring-amber-500/30"
+                    : "border-slate-700 text-cyan-300 focus:border-cyan-400 focus:ring-cyan-500/30"
+                }`}
               />
               {selectedSerial && (
                 <button
@@ -783,6 +842,20 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                 </button>
               )}
             </div>
+
+            {/* 동일 호기 내 시리얼 중복 촬영 경고 배너 */}
+            {duplicatePart && (
+              <div className="rounded-xl bg-amber-950/85 border border-amber-500/80 px-3 py-2 flex items-center gap-2 text-amber-200 animate-fadeIn">
+                <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+                <p className="text-[11px] font-bold leading-snug">
+                  ⚠️ 중복 주의: 이 시리얼 번호는 이미{" "}
+                  <span className="text-amber-300 underline font-extrabold">
+                    #{duplicatePartIndex + 1} {duplicatePart.partName}
+                  </span>
+                  에 입력되어 있습니다!
+                </p>
+              </div>
+            )}
 
             {/* Serial Candidates Pills (다중 후보 원터치 선택: 라벨 기준 명칭 표시) */}
             {ocrResult && ocrResult.candidates && ocrResult.candidates.length > 0 && (
@@ -848,8 +921,8 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               </div>
             )}
 
-            {/* Verification Checkbox & Main Confirm Button (모바일/PC 동일 1행 나란히 배치) */}
-            <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
+            {/* Verification Checkbox & Main Confirm Buttons */}
+            <div className="pt-2.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
               <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 cursor-pointer select-none shrink-0">
                 <input
                   type="checkbox"
@@ -865,16 +938,41 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                 </span>
               </label>
 
-              {/* 🚀 [시리얼 확정 및 저장] 메인 버튼 */}
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={!selectedSerial.trim()}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-110 disabled:opacity-40 shadow-glow-emerald transition-all cursor-pointer shrink-0 whitespace-nowrap"
-              >
-                <CheckCircle2 className="h-4 w-4 stroke-[2.5] shrink-0" />
-                <span>시리얼 확정 및 저장</span>
-              </button>
+              <div className="flex items-center gap-1.5 ml-auto">
+                {/* 🚀 [시리얼 확정 및 저장] 버튼 */}
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={!selectedSerial.trim()}
+                  className="inline-flex items-center justify-center gap-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-emerald-500/50 px-3 py-2.5 text-xs font-extrabold text-emerald-300 disabled:opacity-40 transition-all cursor-pointer shrink-0 whitespace-nowrap"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5 stroke-[2.5] shrink-0" />
+                  <span>저장 후 닫기</span>
+                </button>
+
+                {/* 🚀 [저장 후 다음 부품 바로 촬영] 연속 스캔 버튼 */}
+                {nextUnverifiedPart && onSelectTargetPart ? (
+                  <button
+                    type="button"
+                    onClick={handleSaveAndNext}
+                    disabled={!selectedSerial.trim()}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-3.5 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-110 disabled:opacity-40 shadow-glow-emerald transition-all cursor-pointer shrink-0 whitespace-nowrap"
+                    title={`저장 후 #${nextPartNumber} ${nextUnverifiedPart.partName} 연속 촬영`}
+                  >
+                    <span>저장 후 다음 촬영 (#{nextPartNumber}) ➔</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={!selectedSerial.trim()}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-110 disabled:opacity-40 shadow-glow-emerald transition-all cursor-pointer shrink-0 whitespace-nowrap"
+                  >
+                    <CheckCircle2 className="h-4 w-4 stroke-[2.5] shrink-0" />
+                    <span>시리얼 확정 및 저장</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

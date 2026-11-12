@@ -142,15 +142,19 @@ export default function MainApp() {
       setSyncStatus("syncing");
       const res = await pullProjectsFromCloud();
       if (res.success && res.projects && res.projects.length > 0) {
+        const cloudProjects = res.projects;
         setSyncStatus("connected");
-        // 🛡️ 핵심: 클라우드에서 최신 데이터를 가져왔으면, 어떠한 로컬 필터링도 없이 100% 화면에 전수 반영!
-        setProjects(res.projects);
-        const cloudJson = JSON.stringify(res.projects);
-        lastKnownCloudJson.current = cloudJson;
-        try {
-          localStorage.setItem(STORAGE_KEY, cloudJson);
-          localStorage.setItem(PERSISTENT_BACKUP_KEY, cloudJson);
-        } catch {}
+        // 🛡️ 다중 작업자 동시 스캔 시 시리얼 유실 방지를 위해 스마트 병합(mergeProjectLists) 적용
+        setProjects((prev) => {
+          const merged = prev && prev.length > 0 ? mergeProjectLists(prev, cloudProjects) : cloudProjects;
+          const mergedJson = JSON.stringify(merged);
+          lastKnownCloudJson.current = mergedJson;
+          try {
+            localStorage.setItem(STORAGE_KEY, mergedJson);
+            localStorage.setItem(PERSISTENT_BACKUP_KEY, mergedJson);
+          } catch {}
+          return merged;
+        });
       } else {
         setSyncStatus("connected");
       }
@@ -233,19 +237,22 @@ export default function MainApp() {
       }
     });
 
-    // 2. ⚡ 초고속 실시간 클라우드 스트림 구독 (모든 기기 실시간 자동 공유)
+    // 2. ⚡ 초고속 실시간 클라우드 스트림 구독 (다중 작업자 동시 스캔 시 스마트 병합으로 유실 방지)
     const unsubscribeRealtime = subscribeCloudRealtime((incoming) => {
       if (Date.now() - lastLocalEditTimeRef.current < 2000) return;
       if (incoming && incoming.length > 0) {
-        const incomingJson = JSON.stringify(incoming);
-        if (incomingJson !== lastKnownCloudJson.current) {
-          lastKnownCloudJson.current = incomingJson;
-          setProjects(incoming); // 🛡️ 클라우드 최신 프로젝트 목록 100% 직통 반영!
-          try {
-            localStorage.setItem(STORAGE_KEY, incomingJson);
-            localStorage.setItem(PERSISTENT_BACKUP_KEY, incomingJson);
-          } catch {}
-        }
+        setProjects((prev) => {
+          const merged = prev && prev.length > 0 ? mergeProjectLists(prev, incoming) : incoming;
+          const mergedJson = JSON.stringify(merged);
+          if (mergedJson !== lastKnownCloudJson.current) {
+            lastKnownCloudJson.current = mergedJson;
+            try {
+              localStorage.setItem(STORAGE_KEY, mergedJson);
+              localStorage.setItem(PERSISTENT_BACKUP_KEY, mergedJson);
+            } catch {}
+          }
+          return merged;
+        });
       }
     });
 

@@ -365,27 +365,33 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
   const imgData = ctx.getImageData(0, 0, width, height);
   const data = imgData.data;
 
-  // 1단계: 노란색 라벨 스티커 픽셀 탐색 (붉은색 본체 및 주변 노이즈 엄격 필터링)
+  // 1단계: 화면 중앙부(15%~85%) 내 실제 고채도 노란색 라벨 스티커 픽셀만 엄격 탐색
+  // (배경의 나무 책상, 주황색 바닥, 구리 배선 등이 노란 라벨로 오인되어 명판이 잘리는 현상 원천 차단)
   const yellowCols = new Int32Array(width);
   const yellowRows = new Int32Array(height);
   let totalYellowPixels = 0;
 
-  for (let y = 0; y < height; y++) {
+  const xStart = Math.floor(width * 0.12);
+  const xEnd = Math.ceil(width * 0.88);
+  const yStart = Math.floor(height * 0.12);
+  const yEnd = Math.ceil(height * 0.88);
+
+  for (let y = yStart; y < yEnd; y++) {
     const rowOffset = y * width;
-    for (let x = 0; x < width; x++) {
+    for (let x = xStart; x < xEnd; x++) {
       const idx = (rowOffset + x) * 4;
       const r = data[idx];
       const g = data[idx + 1];
       const b = data[idx + 2];
 
-      // 노란색 스티커: R과 G가 모두 높고(|R - G| < 70), B가 현저히 낮음
+      // 순수 노란색 라벨 스티커: R, G가 모두 밝고 서로 비슷하며(|R - G| < 38), B가 낮음
       const isYellow =
-        r > 90 &&
-        g > 75 &&
-        Math.abs(r - g) < 70 &&
-        r - b > 30 &&
-        g - b > 20 &&
-        r + g > b * 2.1;
+        r > 165 &&
+        g > 150 &&
+        Math.abs(r - g) < 38 &&
+        b < 105 &&
+        r - b > 65 &&
+        g - b > 55;
 
       if (isYellow) {
         yellowCols[x]++;
@@ -395,25 +401,33 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
     }
   }
 
-  // 2단계: 노란색 라벨 군집(Clustering) 바운딩 박스 정밀 추출
-  if (totalYellowPixels >= 50) {
-    let minX = 0;
-    while (minX < width && yellowCols[minX] < 3) minX++;
+  // 2단계: 노란색 라벨이 충분한 면적과 밀도로 중앙에 존재할 때만 정밀 크롭 수행
+  if (totalYellowPixels >= 250) {
+    let minX = xStart;
+    while (minX < xEnd && yellowCols[minX] < 4) minX++;
 
-    let maxX = width - 1;
-    while (maxX > minX && yellowCols[maxX] < 3) maxX--;
+    let maxX = xEnd - 1;
+    while (maxX > minX && yellowCols[maxX] < 4) maxX--;
 
-    let minY = 0;
-    while (minY < height && yellowRows[minY] < 3) minY++;
+    let minY = yStart;
+    while (minY < yEnd && yellowRows[minY] < 4) minY++;
 
-    let maxY = height - 1;
-    while (maxY > minY && yellowRows[maxY] < 3) maxY--;
+    let maxY = yEnd - 1;
+    while (maxY > minY && yellowRows[maxY] < 4) maxY--;
 
     const detectedW = maxX - minX;
     const detectedH = maxY - minY;
+    const boxArea = Math.max(1, detectedW * detectedH);
+    const yellowDensity = totalYellowPixels / boxArea;
+    const centerX = (minX + maxX) / 2;
 
-    if (detectedW >= 25 && detectedH >= 8) {
-      // 키워드('SN:', 'SERIAL') 및 테두리가 잘리지 않도록 상하좌우 45% 안전 마진 확보
+    if (
+      detectedW >= 45 &&
+      detectedH >= 14 &&
+      yellowDensity >= 0.22 &&
+      centerX >= width * 0.2 &&
+      centerX <= width * 0.8
+    ) {
       const padX = Math.round(detectedW * 0.45);
       const padY = Math.round(detectedH * 0.7);
       const boxMinX = Math.max(0, minX - padX);
@@ -424,7 +438,6 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
       const cropW = boxMaxX - boxMinX;
       const cropH = boxMaxY - boxMinY;
 
-      // 🎯 [초고속 최적 스케일링]: 글자 높이 35~45px 유지하면서 Tesseract 연산량을 1/3로 축소 (1초 이내 완료!)
       const zoomCanvas = document.createElement("canvas");
       zoomCanvas.width = Math.min(960, Math.max(760, Math.round(cropW * 2.2)));
       zoomCanvas.height = Math.round(zoomCanvas.width * (cropH / cropW));
@@ -449,68 +462,116 @@ export function createYellowLabelBoostCanvas(sourceCanvas: HTMLCanvasElement): H
         const zData = zImgData.data;
         const totalZPixels = zoomCanvas.width * zoomCanvas.height;
 
-        // 🎯 [광학 채널 분리]: Green & Red 채널 합성으로 노란색 배경과 검은 글씨 대비를 극대화
-        // 노란색 배경 = R/G가 높아 약 210~240, 검은 글씨 = R/G가 낮아 약 20~50
         const opticalChannel = new Uint8Array(totalZPixels);
         for (let i = 0; i < totalZPixels; i++) {
           const idx = i * 4;
-          const r = zData[idx];
-          const g = zData[idx + 1];
-          opticalChannel[i] = Math.round(r * 0.5 + g * 0.5);
+          opticalChannel[i] = Math.round(zData[idx] * 0.5 + zData[idx + 1] * 0.5);
         }
 
-        // 🎯 [Otsu 최적 이진화]: 조명 밝기에 상관없이 글자와 배경을 완벽하게 분리하는 임계점 산출
         const otsuThreshold = computeOtsuThreshold(opticalChannel, totalZPixels);
-
-        // 글자 획 보존형 고대비 이진화 렌더링
         for (let i = 0; i < totalZPixels; i++) {
           const idx = i * 4;
           const val = opticalChannel[i];
-          
-          let finalVal: number;
-          if (val > otsuThreshold + 8) {
-            finalVal = 255;
-          } else if (val < otsuThreshold - 8) {
-            finalVal = 0;
-          } else {
-            finalVal = Math.round(((val - (otsuThreshold - 8)) / 16) * 255);
-          }
-
+          const finalVal =
+            val > otsuThreshold + 8
+              ? 255
+              : val < otsuThreshold - 8
+                ? 0
+                : Math.round(((val - (otsuThreshold - 8)) / 16) * 255);
           zData[idx] = finalVal;
           zData[idx + 1] = finalVal;
           zData[idx + 2] = finalVal;
         }
 
         zCtx.putImageData(zImgData, 0, 0);
-        console.log("🎯 [Yellow Optical Channel + Otsu] 전처리 완료. 크기:", zoomCanvas.width, "x", zoomCanvas.height, "임계값:", otsuThreshold);
         return zoomCanvas;
       }
     }
   }
 
-  // 노란 라벨이 특정되지 않은 경우: 최대 960px로 최적화하여 1초 이내 초고속 판독
-  const targetW = Math.min(width, 960);
-  const targetH = Math.round(targetW * (height / width));
+  // 3단계: 일반 명판(미쓰비시 흑색 명판, 은색 금속 명판, 백색 바코드 라벨 등) 초고속 고선명 전처리
+  // 다크 명판(검은 배경에 흰 글씨)을 자동 감지하여 흰 배경 + 검은 글씨로 반전하고 획 샤프닝 수행
+  const targetW = Math.min(width, 1024);
+  const targetH = Math.max(1, Math.round(targetW * (height / width)));
   const fastCanvas = document.createElement("canvas");
   fastCanvas.width = targetW;
   fastCanvas.height = targetH;
   const fCtx = fastCanvas.getContext("2d", { willReadFrequently: true });
   if (!fCtx) return outCanvas;
 
+  fCtx.imageSmoothingEnabled = true;
+  fCtx.imageSmoothingQuality = "high";
   fCtx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
   const fImgData = fCtx.getImageData(0, 0, targetW, targetH);
   const fData = fImgData.data;
   const totalFastPixels = targetW * targetH;
 
-  const grays = new Uint8Array(totalFastPixels);
-  for (let i = 0; i < totalFastPixels; i++) {
-    const idx = i * 4;
-    grays[i] = Math.round(0.299 * fData[idx] + 0.587 * fData[idx + 1] + 0.114 * fData[idx + 2]);
+  let grays: Uint8Array = new Uint8Array(totalFastPixels);
+  let centerSum = 0;
+  let centerCount = 0;
+  const cx0 = Math.floor(targetW * 0.2);
+  const cx1 = Math.ceil(targetW * 0.8);
+  const cy0 = Math.floor(targetH * 0.2);
+  const cy1 = Math.ceil(targetH * 0.8);
+
+  for (let y = 0; y < targetH; y++) {
+    const rowOff = y * targetW;
+    const inCenterY = y >= cy0 && y < cy1;
+    for (let x = 0; x < targetW; x++) {
+      const p = rowOff + x;
+      const idx = p * 4;
+      const lum = Math.round(0.299 * fData[idx] + 0.587 * fData[idx + 1] + 0.114 * fData[idx + 2]);
+      grays[p] = lum;
+      if (inCenterY && x >= cx0 && x < cx1) {
+        centerSum += lum;
+        centerCount++;
+      }
+    }
   }
-  const globalOtsu = computeOtsuThreshold(grays, totalFastPixels);
+
+  // 중앙 명판 영역이 어두운 배경(흑색/진회색 명판에 흰 글씨, 예: 미쓰비시 QX41)이면 자동 반전
+  const centerMean = centerCount > 0 ? centerSum / centerCount : 128;
+  if (centerMean < 122) {
+    for (let i = 0; i < totalFastPixels; i++) {
+      grays[i] = 255 - grays[i];
+    }
+  }
+
+  // 히스토그램 상하위 2% 대비 스트레칭으로 글자 선명도 극대화
+  const hist = new Int32Array(256);
+  for (let i = 0; i < totalFastPixels; i++) {
+    hist[grays[i]]++;
+  }
+  let minV = 0;
+  let maxV = 255;
+  let acc = 0;
+  for (let i = 0; i < 256; i++) {
+    acc += hist[i];
+    if (acc >= totalFastPixels * 0.02) {
+      minV = i;
+      break;
+    }
+  }
+  acc = 0;
+  for (let i = 255; i >= 0; i--) {
+    acc += hist[i];
+    if (acc >= totalFastPixels * 0.02) {
+      maxV = i;
+      break;
+    }
+  }
+  const range = Math.max(20, maxV - minV);
+  for (let i = 0; i < totalFastPixels; i++) {
+    const v = ((grays[i] - minV) * 255) / range;
+    grays[i] = v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+  }
+
+  // 3x3 샤프닝 필터로 '230600231746059-A' 등 미세 숫자/영문 획 분리
+  grays = applySharpenFilter(grays, targetW, targetH);
+
   for (let i = 0; i < totalFastPixels; i++) {
     const idx = i * 4;
-    const v = grays[i] > globalOtsu ? 255 : 0;
+    const v = grays[i];
     fData[idx] = v;
     fData[idx + 1] = v;
     fData[idx + 2] = v;

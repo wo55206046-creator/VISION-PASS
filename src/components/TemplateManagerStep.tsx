@@ -17,6 +17,8 @@ import {
   UploadCloud,
   Search,
   CheckCircle2,
+  ArrowUp,
+  ArrowDown,
   X,
 } from "lucide-react";
 
@@ -543,7 +545,7 @@ export const TemplateManagerStep: React.FC = () => {
               <div className="p-3.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-xs">
                   <span className="font-bold text-slate-300">
-                    부품 목록 (총 {selectedTemplate.parts.length}개 품목 / {new Set(selectedTemplate.parts.map((p) => p.category)).size}개 파트)
+                    부품 목록 (총 {selectedTemplate.parts.length}개 품목)
                   </span>
                 </div>
 
@@ -578,39 +580,22 @@ export const TemplateManagerStep: React.FC = () => {
                         </td>
                       </tr>
                     ) : (
-                      filteredParts.map((p, idx) => {
-                        const prevPart = idx > 0 ? filteredParts[idx - 1] : null;
-                        const showCategoryHeader = p.category && (!prevPart || prevPart.category !== p.category);
-
-                        return (
-                          <Fragment key={p.id || idx}>
-                            {showCategoryHeader && (
-                              <tr className="bg-slate-950/90 border-y border-slate-800">
-                                <td colSpan={4} className="py-2.5 px-4">
-                                  <div className="flex items-center gap-2 font-mono font-extrabold text-xs text-cyan-300">
-                                    <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-glow-cyan" />
-                                    <span>{p.category}</span>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                            <tr className="hover:bg-slate-900/60 transition-colors">
-                              <td className="p-3 text-center text-slate-500 font-mono font-bold text-xs">
-                                {idx + 1}
-                              </td>
-                              <td className="p-3 font-semibold text-slate-200">
-                                {p.partName}
-                              </td>
-                              <td className="p-3 text-slate-400">
-                                {p.subSpec || "-"}
-                              </td>
-                              <td className="p-3 font-mono text-[11px] text-slate-300">
-                                {p.spec || "-"}
-                              </td>
-                            </tr>
-                          </Fragment>
-                        );
-                      })
+                      filteredParts.map((p, idx) => (
+                        <tr key={p.id || idx} className="hover:bg-slate-900/60 transition-colors">
+                          <td className="p-3 text-center text-slate-500 font-mono font-bold text-xs">
+                            {idx + 1}
+                          </td>
+                          <td className="p-3 font-semibold text-slate-200">
+                            {p.partName}
+                          </td>
+                          <td className="p-3 text-slate-400">
+                            {p.subSpec || "-"}
+                          </td>
+                          <td className="p-3 font-mono text-[11px] text-slate-300">
+                            {p.spec || "-"}
+                          </td>
+                        </tr>
+                      ))
                     )}
                   </tbody>
                 </table>
@@ -745,7 +730,7 @@ export const TemplateManagerStep: React.FC = () => {
                 <table className="w-full text-left text-xs border-collapse">
                   <thead className="bg-slate-900 text-slate-400 font-semibold sticky top-0 z-10 border-b border-slate-800">
                     <tr>
-                      <th className="p-2.5 w-10 text-center">No</th>
+                      <th className="p-2.5 w-16 text-center">순서/No</th>
                       <th className="p-2.5 w-52">품명</th>
                       <th className="p-2.5 w-56">세부사항</th>
                       <th className="p-2.5">규격</th>
@@ -756,7 +741,47 @@ export const TemplateManagerStep: React.FC = () => {
                     {editorParts.map((p, idx) => (
                       <tr key={p.id || idx} className="hover:bg-slate-900/50">
                         <td className="p-2 text-center text-slate-500 font-mono font-bold">
-                          {idx + 1}
+                          <div className="flex items-center justify-center gap-1">
+                            <div className="flex flex-col">
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() =>
+                                  setEditorParts((prev) => {
+                                    if (idx <= 0) return prev;
+                                    const next = [...prev];
+                                    const temp = next[idx];
+                                    next[idx] = next[idx - 1];
+                                    next[idx - 1] = temp;
+                                    return next;
+                                  })
+                                }
+                                className="p-0.5 text-slate-400 hover:text-cyan-300 disabled:opacity-20 transition-colors"
+                                title="위로 이동"
+                              >
+                                <ArrowUp className="h-3 w-3" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === editorParts.length - 1}
+                                onClick={() =>
+                                  setEditorParts((prev) => {
+                                    if (idx >= prev.length - 1) return prev;
+                                    const next = [...prev];
+                                    const temp = next[idx];
+                                    next[idx] = next[idx + 1];
+                                    next[idx + 1] = temp;
+                                    return next;
+                                  })
+                                }
+                                className="p-0.5 text-slate-400 hover:text-cyan-300 disabled:opacity-20 transition-colors"
+                                title="아래로 이동"
+                              >
+                                <ArrowDown className="h-3 w-3" />
+                              </button>
+                            </div>
+                            <span>{idx + 1}</span>
+                          </div>
                         </td>
                         <td className="p-2">
                           <input

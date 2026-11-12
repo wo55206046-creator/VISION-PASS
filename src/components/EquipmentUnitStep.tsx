@@ -441,11 +441,13 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
         targetPart={ocrTargetPart}
         unitIndex={activeUnitIndex}
         equipmentSerial={currentUnit?.equipmentSerial}
+        allUnitParts={currentUnit?.parts || []}
         onClose={() => {
           setIsOcrModalOpen(false);
           setOcrTargetPart(null);
         }}
         onConfirm={handleConfirmOcr}
+        onSelectTargetPart={(nextPart) => setOcrTargetPart(nextPart)}
       />
 
       {/* Quick PJT Edit Modal (프로젝트 정보 및 Serial NO. 수정) */}

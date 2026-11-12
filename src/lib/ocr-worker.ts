@@ -225,6 +225,28 @@ const IGNORE_WORDS = new Set([
   "U6PRO",
   "U6",
   "PRO",
+  "QX41",
+  "QX42",
+  "QY41P",
+  "QY42P",
+  "MELSEC-Q",
+  "TOKYO",
+  "CORPORATION",
+  "GUIDELINES",
+  "INCLUDED",
+  "DIRECTIVE",
+  "JOINTEE",
+  "IND",
+  "CONT",
+  "80M1",
+  "4MA",
+  "24VDC",
+  "5VDC",
+  "0.08A",
+  "KCC",
+  "REI",
+  "MEK",
+  "100-8310",
 ]);
 
 /**
@@ -235,6 +257,10 @@ function isValidSerialFormat(candidate: string): boolean {
 
   const upper = candidate.toUpperCase();
   if (IGNORE_WORDS.has(upper)) return false;
+
+  // KC/전파 인증번호(KCC-..., MSIP-..., TD914...), 전압/전류/유량 사양, 우편번호(100-8310) 배제
+  if (/^(?:KCC|MSIP|R-R|R-C|TD914)/i.test(upper)) return false;
+  if (/^[0-9.]+(?:MA|VDC|VAC|V|A|W|HZ|LPM|MBAR|BAR|PSI|SCCM|SLM)$/i.test(upper)) return false;
 
   // 웹사이트 URL 또는 도메인 주소 필터링
   if (/\.COM|\.NET|\.CO\.KR|\.ORG|WWW\.|HTTP/i.test(candidate)) return false;
@@ -262,11 +288,23 @@ function disambiguateSerialToken(token: string): string {
     return token.toUpperCase();
   }
 
+  // 0-1. 미쓰비시/산업용 설비 명판 시리얼 (숫자 본체 + 하이픈 영문 리비전 접미사, 예: "230600231746059-A")
+  // 본체 숫자부의 O/I/l/S/B 오인식은 숫자로 복원하되, 하이픈 뒤 영문 접미사(-A, -B 등)는 그대로 대문자 보존!
+  const hyphenRevMatch = token.match(/^([0-9OoIl|Ss$Bb]{6,22})-([A-Za-z0-9]{1,3})$/);
+  if (hyphenRevMatch) {
+    const fixedBody = hyphenRevMatch[1]
+      .replace(/[Oo]/g, "0")
+      .replace(/[Il|]/g, "1")
+      .replace(/[Ss$]/g, "5")
+      .replace(/[Bb]/g, "8");
+    return `${fixedBody}-${hyphenRevMatch[2].toUpperCase()}`;
+  }
+
   // 1. 대부분 숫자로 구성된 시리얼 (예: "36OO25446", "O924O22O4O27", "673644", "25OO2481", "1312793O7")
   const digitsCount = (token.match(/[0-9]/g) || []).length;
   const lettersCount = (token.match(/[A-Za-z]/g) || []).length;
   
-  if (digitsCount >= 3 && lettersCount <= 4) {
+  if (digitsCount >= 3 && lettersCount <= 4 && !/-[A-Za-z]{1,2}$/.test(token)) {
     let corrected = token;
 
     // 만약 문자 부분이 O, o, I, l, |, S, s, $, B, b 로만 구성되어 있다면 전량 숫자로 스마트 치환
@@ -300,9 +338,13 @@ function disambiguateSerialToken(token: string): string {
   // 2. 산업용 하이픈 복합 시리얼 패턴 (예: "25X-0049H", "TM1L-HK26-1007", "KD26030201-013")
   if (token.includes("-")) {
     const parts = token.split("-");
-    const fixedParts = parts.map((p) => {
+    const fixedParts = parts.map((p, idx) => {
+      // 마지막 파트가 1~2자리 순수 알파벳(예: -A, -B)이면 리비전 기호이므로 그대로 보존
+      if (idx === parts.length - 1 && /^[A-Za-z]{1,2}$/.test(p)) {
+        return p.toUpperCase();
+      }
       const pDigits = (p.match(/[0-9]/g) || []).length;
-      if (pDigits >= 2 && p.length <= 6) {
+      if (pDigits >= 2 && p.length <= 20) {
         return p.replace(/[Oo]/g, "0").replace(/[Il|]/g, "1");
       }
       return p;
@@ -520,13 +562,26 @@ export function extractSerialCandidates(
           continue;
         }
 
-        // 모델명 접미사(-PRO, U6-PRO, -PRC 등)나 규격 블랙리스트가 아닌 경우 15,000점 부여!
+        // 모델명 접미사(-PRO, U6-PRO, -PRC 등)나 규격 블랙리스트가 아닌 경우 15,000~18,000점 부여!
         if (!IGNORE_WORDS.has(upper) && !/(?:-PRO|-PRC|-PLUS|-MAX|-MINI|-LITE|-REV|-VER)$/i.test(upper)) {
-          const score = /^[0-9]{6,14}$/.test(disambiguated) || /^[0-9]{6}-[0-9]{1,4}$/.test(disambiguated) ? 15000 : 14000;
+          const isHighConfidenceFormat =
+            /^[0-9]{6,22}(?:-[A-Z0-9]{1,3})?$/i.test(disambiguated) ||
+            /^[0-9]{6}-[0-9]{1,4}$/.test(disambiguated);
+          const score = isHighConfidenceFormat ? 18000 : 15000;
           scoredMap.set(disambiguated, score);
           labelOriginMap.set(disambiguated, matchedLabel);
         }
       }
+    }
+  }
+
+  // 0-2) 미쓰비시/산업용 장문 숫자+하이픈 리비전 고유 시리얼 (예: 230600231746059-A) (16,500점)
+  const longIndSerialMatch = rawText.match(/\b([0-9OoIl|Ss]{10,20}-[A-Za-z0-9]{1,2})\b/);
+  if (longIndSerialMatch && longIndSerialMatch[1]) {
+    const fixedLong = disambiguateSerialToken(longIndSerialMatch[1]);
+    if (!scoredMap.has(fixedLong) || (scoredMap.get(fixedLong) || 0) < 16500) {
+      scoredMap.set(fixedLong, 16500);
+      labelOriginMap.set(fixedLong, "SERIAL");
     }
   }
 
@@ -593,10 +648,10 @@ export function extractSerialCandidates(
       defaultLabel = "PC S/N";
     }
 
-    // 5. 6~14자리 순수 숫자 시리얼 (예: 360025389, 360025446, 26022540) - 제조사 고유 일련번호: 최우선 가산점!
-    if (/^[0-9]{6,14}$/.test(cleaned)) {
-      baseScore += 2500;
-      defaultLabel = "SN";
+    // 5. 6~22자리 숫자(+선택적 하이픈 리비전) 시리얼 (예: 230600231746059-A, 360025389) - 제조사 고유 일련번호: 최우선 가산점!
+    if (/^[0-9]{6,22}(?:-[A-Z0-9]{1,2})?$/i.test(cleaned)) {
+      baseScore += 3500;
+      defaultLabel = cleaned.includes("-") ? "SERIAL" : "SN";
     }
 
     // 6. 산업용 하이픈 복합 시리얼 (예: 25X-0049H, TM1L-HK26-1007, 260225-40)
@@ -968,13 +1023,12 @@ export async function performInMemoryOcr(
   // 1. 하드웨어 가속 Native BarcodeDetector 병렬 실행 (0.005초 초고속 바코드 감지)
   const nativeBarcodePromise = scanNativeBarcode(canvas);
 
-  // 2. 산업용 라벨 듀얼 채널(노란색 라벨 분리 + 고대비 샤프닝) 생성
+  // 2. 다크 명판 자동 반전 + 고대비 샤프닝 전처리 캔버스 (1024px 최적화)
   const yellowBoosted = createYellowLabelBoostCanvas(canvas);
-  const enhancedGray = preprocessCanvas(canvas, DEFAULT_PREPROCESSING_OPTIONS);
 
   const worker = await getOcrWorker(onProgress);
 
-  // 1차 스트림: 노란색 라벨 광학 채널 분리 + Otsu 최적 이진화 (PSM 6: 단일 텍스트 블록 모드)
+  // 1차 스트림: 고대비 샤프닝 (PSM 6: 단일 텍스트 블록 모드)
   await worker.setParameters({
     tessedit_pageseg_mode: "6" as any,
   });
@@ -983,56 +1037,38 @@ export async function performInMemoryOcr(
   let confidence = Math.round(pass1.data.confidence || 0);
   const words = [...((pass1.data as any).words || [])];
 
-  console.log("📄 [OCR 스트림 1 (Otsu Binarized)] 추출 텍스트:\n", rawText);
-
-  // 1차 패스에서 유효한 명판 시리얼(SN:, S/N: 인접 번호 또는 6~14자리 고유 번호)이 포착되었는지 검사
-  let quickTest = extractSerialCandidates(rawText, context);
+  // 1차 패스에서 유효한 명판 시리얼이 포착되었는지 검사
+  const quickTest = extractSerialCandidates(rawText, context);
   const hasDefinitiveMatch =
     quickTest.candidates.length > 0 &&
     (
       /(?:S[\/\\|\-.;:]?\s*N|SN|5N|SERIAL|SER)\s*[:.\-|=;#~_*\s]*[0-9A-Za-z\-_]{4,}/i.test(rawText) ||
-      /^[0-9]{6,14}$/.test(quickTest.bestSerial) ||
-      quickTest.bestSerial.length >= 6
+      /^[0-9]{6,22}(?:-[A-Z0-9]{1,2})?$/i.test(quickTest.bestSerial) ||
+      quickTest.bestSerial.length >= 5
     );
 
-  // 🎯 1차 패스에서 이미 확실한 시리얼이 검출된 경우: 2차 패스를 건너뛰고 1초 만에 즉시 완료!
-  // 오직 시리얼이 미검출되었거나 텍스트가 부족한 경우에만 스트림 2(적응형 대비) 결합
+  // 🎯 1차 패스에서 이미 확실한 시리얼이 검출된 경우: 2차/회전 패스를 건너뛰고 1초 만에 즉시 완료!
   if (!hasDefinitiveMatch) {
-    onProgress?.(70, "⚡ 듀얼 광학 앙상블(스트림 B) 결합 정밀 판독 중...");
+    onProgress?.(75, "⚡ 보조 광학 스트림 정밀 판독 중...");
+    const enhancedGray = preprocessCanvas(canvas, DEFAULT_PREPROCESSING_OPTIONS);
     try {
       await worker.setParameters({
-        tessedit_pageseg_mode: "3" as any, // Fully automatic page segmentation
+        tessedit_pageseg_mode: "3" as any,
       });
       const pass2 = await worker.recognize(enhancedGray);
       const pass2Text = pass2.data.text || "";
       if (pass2Text) {
-        console.log("📄 [OCR 스트림 2 (Enhanced Gray)] 추출 텍스트:\n", pass2Text);
         rawText += "\n" + pass2Text;
         confidence = Math.max(confidence, Math.round(pass2.data.confidence || 0));
         words.push(...((pass2.data as any).words || []));
       }
-    } catch {}
-
-    // 회전 라벨(세로 인쇄 등)에 대한 90도 회전 보조 패스
-    quickTest = extractSerialCandidates(rawText, context);
-    if (quickTest.candidates.length === 0 || rawText.length < 8) {
-      try {
-        const rotatedYellow = rotateCanvas(yellowBoosted, 90);
-        const passRot = await worker.recognize(rotatedYellow);
-        const rotText = passRot.data.text || "";
-        if (rotText) {
-          rawText += "\n" + rotText;
-          confidence = Math.max(confidence, Math.round(passRot.data.confidence || 0));
-          words.push(...((passRot.data as any).words || []));
-        }
-        disposeCanvas(rotatedYellow);
-      } catch {}
+    } catch {} finally {
+      disposeCanvas(enhancedGray);
     }
   }
 
   // 메모리 정리
   disposeCanvas(yellowBoosted);
-  disposeCanvas(enhancedGray);
 
   // 화면 정가운데 거리 좌표 계산 (화면 중심 = 0.0, 모서리 = 1.0+)
   const imgWidth = canvas.width || 1280;
