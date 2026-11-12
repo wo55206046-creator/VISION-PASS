@@ -308,8 +308,8 @@ export const EquipmentUnitStep: React.FC<EquipmentUnitStepProps> = ({
               </button>
             </div>
 
-            {/* 2행: 호기 선택 버튼들 (가로 스크롤) */}
-            <div className="flex items-center gap-2 font-mono overflow-x-auto no-scrollbar py-0.5 scroll-smooth -mx-1 px-1">
+            {/* 2행: 호기 선택 버튼들 (가로 스크롤바 표시) */}
+            <div className="flex items-center gap-2 font-mono overflow-x-auto pb-1.5 pt-0.5 scroll-smooth -mx-1 px-1">
               {project.equipmentUnits.map((u) => {
                 const isCurrent = u.unitIndex === activeUnitIndex;
                 const verified = u.parts.filter((p) => p.isVerified).length;

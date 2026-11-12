@@ -401,15 +401,15 @@ export const PartsTable: React.FC<PartsTableProps> = ({
   return (
     <div className="space-y-3">
       {/* 🔍 1. 상태 필터 & 부품 추가 툴바 */}
-      <div className="rounded-2xl bg-slate-900/80 p-3 sm:p-3.5 border border-slate-800 space-y-2.5 shadow-md">
-        {/* 1행: [좌측 상태 필터 (전체/완료/미검증)] & [우측 + 부품 추가 버튼] */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
+      <div className="rounded-2xl bg-slate-900/80 p-2.5 sm:p-3.5 border border-slate-800 shadow-md">
+        {/* 1행: [좌측 상태 필터 (전체/완료/미검증)] & [우측 + 부품 추가 버튼 (한 줄 고정)] */}
+        <div className="flex items-center justify-between gap-1.5 sm:gap-2 flex-nowrap">
           {/* 상태 필터 (전체 / 검증완료 / 미검증) */}
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
+          <div className="flex items-center gap-0.5 sm:gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 min-w-0">
             <button
               type="button"
               onClick={() => setStatusFilter("ALL")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${statusFilter === "ALL"
+              className={`px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${statusFilter === "ALL"
                   ? "bg-cyan-500 text-slate-950 font-bold"
                   : "text-slate-400 hover:text-white"
                 }`}
@@ -419,7 +419,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
             <button
               type="button"
               onClick={() => setStatusFilter("VERIFIED")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${statusFilter === "VERIFIED"
+              className={`px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${statusFilter === "VERIFIED"
                   ? "bg-emerald-500 text-slate-950 font-bold"
                   : "text-slate-400 hover:text-white"
                 }`}
@@ -429,7 +429,7 @@ export const PartsTable: React.FC<PartsTableProps> = ({
             <button
               type="button"
               onClick={() => setStatusFilter("UNVERIFIED")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${statusFilter === "UNVERIFIED"
+              className={`px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${statusFilter === "UNVERIFIED"
                   ? "bg-amber-500 text-slate-950 font-bold"
                   : "text-slate-400 hover:text-white"
                 }`}
@@ -442,56 +442,15 @@ export const PartsTable: React.FC<PartsTableProps> = ({
           <button
             type="button"
             onClick={() => {
-              if (categoryFilter && categoryFilter !== "ALL") {
-                setNewCategory(categoryFilter);
-              } else if (availableCategories.length > 0) {
-                setNewCategory(availableCategories[0]);
-              } else {
-                setNewCategory("[ MAIN ]");
-              }
+              setNewCategory("[ MAIN ]");
               setIsAddModalOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 shadow-glow-cyan transition-all cursor-pointer shrink-0"
+            className="inline-flex items-center gap-1 sm:gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 px-2.5 sm:px-3.5 py-1.5 text-[11px] sm:text-xs font-extrabold text-slate-950 shadow-glow-cyan transition-all cursor-pointer shrink-0 whitespace-nowrap"
           >
             <Plus className="h-3.5 w-3.5 stroke-[3]" />
             <span>부품 추가</span>
           </button>
         </div>
-
-        {/* 2행: 카테고리/모듈 필터 탭 (구분선 및 여유 공간 적용) */}
-        {availableCategories.length > 0 && (
-          <div className="pt-2.5 pb-0.5 border-t border-slate-800/80">
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-0.5 text-xs">
-              <span className="text-slate-400 font-bold text-[11px] shrink-0 mr-1 flex items-center gap-1">
-                <SlidersHorizontal className="h-3 w-3 text-cyan-400" />
-                모듈:
-              </span>
-              <button
-                type="button"
-                onClick={() => setCategoryFilter("ALL")}
-                className={`px-3 py-1 rounded-lg border text-xs font-medium transition-all shrink-0 cursor-pointer ${categoryFilter === "ALL"
-                    ? "bg-cyan-950 text-cyan-300 border-cyan-500 font-bold shadow-glow-cyan"
-                    : "bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200"
-                  }`}
-              >
-                전체 모든
-              </button>
-              {availableCategories.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setCategoryFilter(cat)}
-                  className={`px-3 py-1 rounded-lg border text-xs font-medium transition-all shrink-0 cursor-pointer ${categoryFilter === cat
-                      ? "bg-cyan-950 text-cyan-300 border-cyan-500 font-bold shadow-glow-cyan"
-                      : "bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200"
-                    }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* 📱 모바일 최적화: 한눈에 보이는 시리얼 + OCR 원터치 카드 뷰 (md:hidden) */}
@@ -529,47 +488,9 @@ export const PartsTable: React.FC<PartsTableProps> = ({
             const isEditing = editingSerialId === part.id;
             const hasSerial = Boolean(part.detectedSerial && part.detectedSerial.trim());
 
-            // 모듈 카테고리 구분 헤더 및 진행률 계산
-            const prevPart = index > 0 ? filteredParts[index - 1] : null;
-            const currentCat = part.category || "[ MAIN ]";
-            const prevCat = prevPart ? prevPart.category || "[ MAIN ]" : null;
-            const showCategoryHeader = !prevPart || currentCat !== prevCat;
-
-            const catParts = parts.filter((p) => (p.category || "[ MAIN ]") === currentCat);
-            const totalCatCount = catParts.length;
-            const verifiedCatCount = catParts.filter((p) => p.isVerified).length;
-            const isCatAllVerified = totalCatCount > 0 && verifiedCatCount === totalCatCount;
-
             return (
               <Fragment key={`m-${part.id}`}>
-                {/* 🏷️ 모듈 구분 배너 및 완료/총 부품 수 진행도 */}
-                {showCategoryHeader && (
-                  <div className="pt-3 pb-1.5 flex items-center justify-between gap-2">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black tracking-wide border shadow-md ${getCategoryBadgeStyle(
-                        part.category
-                      )}`}
-                    >
-                      <Layers className="h-3.5 w-3.5" />
-                      <span>{part.category || "[ MAIN ]"}</span>
-                    </span>
-                    <span
-                      className={`inline-flex items-center gap-1 font-mono text-xs font-bold px-2.5 py-0.5 rounded-lg border transition-all ${
-                        isCatAllVerified
-                          ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/70 shadow-glow-emerald/30"
-                          : "bg-slate-950 text-slate-200 border-slate-700/80"
-                      }`}
-                    >
-                      <span>(모듈 부품</span>
-                      <span className={verifiedCatCount > 0 ? "text-cyan-300 font-extrabold" : "text-slate-400"}>
-                        {verifiedCatCount}
-                      </span>
-                      <span className="text-slate-400">/{totalCatCount}개)</span>
-                    </span>
-                  </div>
-                )}
-
-                {/* 📋 모바일 부품 카드: 품명 + 규격 + 시리얼 + OCR 버튼 + 원터치 순서 변경 버튼 */}
+                {/* 📋 모바일 부품 카드: 품명 + 세부사항/규격 + 시리얼 + OCR 버튼 + 원터치 순서 변경 버튼 */}
                 <div
                   className={`rounded-2xl border p-3 space-y-2 transition-all ${
                     part.isVerified
@@ -667,22 +588,22 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                     </div>
                   </div>
 
-                  {/* 2행: 규격 (Spec) 및 세부 사양 (50:50 반반 고정 정렬 및 잘림 방지) */}
-                  <div className="grid grid-cols-2 items-start gap-2.5 text-xs px-1 py-1 rounded-lg bg-slate-950/60 border border-slate-800/70">
+                  {/* 2행: 좌측 세부 사양 (Sub Spec) / 우측 규격 (Spec) — 50:50 반반 고정 정렬 및 최대 2줄 표시 */}
+                  <div className="grid grid-cols-2 items-start gap-2.5 text-xs px-2 py-1.5 rounded-lg bg-slate-950/60 border border-slate-800/70">
                     <div className="min-w-0 pr-1">
                       <span
-                        className="block font-mono font-extrabold text-cyan-300 break-words leading-snug"
-                        title={part.spec}
+                        className="block text-slate-200 font-medium break-words leading-snug line-clamp-2"
+                        title={part.subSpec}
                       >
-                        {part.spec || "-"}
+                        {part.subSpec && part.subSpec !== "-" ? part.subSpec : "-"}
                       </span>
                     </div>
                     <div className="min-w-0 border-l border-slate-700/80 pl-2.5">
                       <span
-                        className="block text-slate-200 font-medium break-words leading-snug"
-                        title={part.subSpec}
+                        className="block font-mono font-extrabold text-cyan-300 break-words leading-snug line-clamp-2"
+                        title={part.spec}
                       >
-                        {part.subSpec && part.subSpec !== "-" ? part.subSpec : "-"}
+                        {part.spec || "-"}
                       </span>
                     </div>
                   </div>
@@ -825,52 +746,8 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                 const isEditing = editingSerialId === part.id;
                 const hasSerial = Boolean(part.detectedSerial && part.detectedSerial.trim());
 
-                // 모듈 카테고리 구분 헤더 표시 여부 계산 및 모듈별 진행률
-                const prevPart = index > 0 ? filteredParts[index - 1] : null;
-                const currentCat = part.category || "[ MAIN ]";
-                const prevCat = prevPart ? prevPart.category || "[ MAIN ]" : null;
-                const showCategoryHeader = !prevPart || currentCat !== prevCat;
-
-                const catParts = parts.filter((p) => (p.category || "[ MAIN ]") === currentCat);
-                const totalCatCount = catParts.length;
-                const verifiedCatCount = catParts.filter((p) => p.isVerified).length;
-                const isCatAllVerified = totalCatCount > 0 && verifiedCatCount === totalCatCount;
-
                 return (
                   <Fragment key={part.id}>
-                    {/* 🏷️ 모듈별 구분 상단 배너 행 */}
-                    {showCategoryHeader && (
-                      <tr className="bg-slate-950/95 border-y border-slate-800 shadow-sm">
-                        <td colSpan={8} className="py-2.5 px-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                              <span
-                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black tracking-wide border shadow-md ${getCategoryBadgeStyle(
-                                  part.category
-                                )}`}
-                              >
-                                <Layers className="h-3.5 w-3.5" />
-                                <span>{part.category || "[ MAIN ]"}</span>
-                              </span>
-                              <span
-                                className={`inline-flex items-center gap-1 font-mono text-xs font-bold px-2.5 py-0.5 rounded-lg border transition-all ${
-                                  isCatAllVerified
-                                    ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/70 shadow-glow-emerald/30"
-                                    : "bg-slate-900 text-slate-200 border-slate-700/80"
-                                }`}
-                              >
-                                <span>(모듈 부품</span>
-                                <span className={verifiedCatCount > 0 ? "text-cyan-300 font-extrabold" : "text-slate-400"}>
-                                  {verifiedCatCount}
-                                </span>
-                                <span className="text-slate-400">/{totalCatCount}개)</span>
-                              </span>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-
                     <tr
                       draggable
                       onDragStart={(e) => handleDragStart(e, part.id)}
@@ -1109,52 +986,6 @@ export const PartsTable: React.FC<PartsTableProps> = ({
 
             <form onSubmit={handleAddNewPartSubmit} className="space-y-3.5 text-xs">
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-slate-300 font-bold block">
-                    모듈 / 섹션 카테고리
-                  </label>
-                  <span className="text-[10px] text-cyan-400 font-normal">아래 추천 모듈 클릭 시 자동 선택</span>
-                </div>
-
-                {/* 🏷️ 현재 프로젝트 추천 모듈 빠른 선택 칩 */}
-                <div className="flex items-center gap-1.5 flex-wrap mb-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800">
-                  <span className="text-[11px] text-slate-500 font-bold shrink-0">추천:</span>
-                  {(availableCategories.length > 0
-                    ? availableCategories
-                    : ["[ MAIN ]", "[ MG ]", "[ WOA-683 ]", "[ COSMOS-100 ]", "[ PC ]", "[ OPTION ]"]
-                  ).map((cat) => {
-                    const isSelected = (newCategory || "").trim().toUpperCase() === cat.trim().toUpperCase();
-                    return (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setNewCategory(cat)}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
-                          isSelected
-                            ? "bg-cyan-500 text-slate-950 border-cyan-400 shadow-glow-cyan"
-                            : "bg-slate-900 border-slate-700/80 text-slate-300 hover:text-white hover:border-slate-500"
-                        }`}
-                      >
-                        <Layers className="h-3 w-3" />
-                        <span>{cat}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <input
-                  type="text"
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  placeholder="예: [ MAIN ], [ MG ], [ WOA-683 ] (직접 입력도 가능)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
-                />
-                <p className="text-[10px] text-slate-500 mt-1">
-                  💡 선택한 모듈 그룹의 맨 마지막 위치에 부품이 자동으로 정렬 추가됩니다.
-                </p>
-              </div>
-
-              <div>
                 <label className="text-slate-300 font-bold block mb-1">
                   품명 (Part Name) <span className="text-rose-400">*</span>
                 </label>
@@ -1247,53 +1078,6 @@ export const PartsTable: React.FC<PartsTableProps> = ({
             </div>
 
             <div className="space-y-3.5 text-xs">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-slate-300 font-bold block">
-                    모듈 / 섹션 카테고리
-                  </label>
-                  <span className="text-[10px] text-cyan-400 font-normal">추천 모듈 클릭 시 즉시 변경</span>
-                </div>
-
-                {/* 🏷️ 추천 모듈 빠른 선택 칩 */}
-                <div className="flex items-center gap-1.5 flex-wrap mb-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800">
-                  <span className="text-[11px] text-slate-500 font-bold shrink-0">추천:</span>
-                  {(availableCategories.length > 0
-                    ? availableCategories
-                    : ["[ MAIN ]", "[ MG ]", "[ WOA-683 ]", "[ COSMOS-100 ]", "[ PC ]", "[ OPTION ]"]
-                  ).map((cat) => {
-                    const isSelected = (editingPart.category || "").trim().toUpperCase() === cat.trim().toUpperCase();
-                    return (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() =>
-                          setEditingPart({ ...editingPart, category: cat })
-                        }
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
-                          isSelected
-                            ? "bg-cyan-500 text-slate-950 border-cyan-400 shadow-glow-cyan"
-                            : "bg-slate-900 border-slate-700/80 text-slate-300 hover:text-white hover:border-slate-500"
-                        }`}
-                      >
-                        <Layers className="h-3 w-3" />
-                        <span>{cat}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <input
-                  type="text"
-                  value={editingPart.category || ""}
-                  onChange={(e) =>
-                    setEditingPart({ ...editingPart, category: e.target.value })
-                  }
-                  placeholder="예: [ MAIN ], [ MG ]"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold focus:border-cyan-500 focus:outline-none"
-                />
-              </div>
-
               <div>
                 <label className="text-slate-300 font-bold block mb-1">
                   품명 (Part Name)
