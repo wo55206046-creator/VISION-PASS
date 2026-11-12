@@ -256,6 +256,16 @@ let memoryCacheProjects: ProjectMaster[] | null = null;
 
 export const STORAGE_TEMPLATES_KEY = "VISION_PASS_PJT_TEMPLATES_V2";
 
+let lastLocalTemplateEditTime = 0;
+
+export function recordLocalTemplateEdit(): void {
+  lastLocalTemplateEditTime = Date.now();
+}
+
+export function isRecentLocalTemplateEdit(windowMs: number = 6000): boolean {
+  return Date.now() - lastLocalTemplateEditTime < windowMs;
+}
+
 /**
  * 💡 로컬에 저장된 사용자 커스텀/표준 템플릿 목록 로드
  */
@@ -275,15 +285,38 @@ export function loadDirectLocalTemplates(): PjtModelTemplate[] {
 
 /**
  * 💾 클라우드에서 동기화된 템플릿 목록을 로컬 스토리지에 안전 반영 및 전파
+ * @param fromRemote true인 경우 최근 로컬 수정 중이면 덮어쓰지 않고 보호
  */
-export function saveDirectLocalTemplates(templates: PjtModelTemplate[]): void {
+export function saveDirectLocalTemplates(templates: PjtModelTemplate[], fromRemote: boolean = false): void {
   if (typeof window === "undefined" || !Array.isArray(templates) || templates.length === 0) return;
+  // 사용자가 로컬에서 양식을 수정한 직후(6초간)는 원격의 구버전 템플릿이 덮어쓰지 못하도록 차단
+  if (fromRemote && isRecentLocalTemplateEdit(6000)) {
+    return;
+  }
   try {
     localStorage.setItem(STORAGE_TEMPLATES_KEY, JSON.stringify(templates));
+    if (!fromRemote) {
+      recordLocalTemplateEdit();
+    }
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("VISION_PASS_TEMPLATES_UPDATED", { detail: templates }));
     }
   } catch {}
+}
+
+/**
+ * 💾 템플릿(설비 부품 양식) 저장 및 Supabase 클라우드 실시간 동기화
+ */
+export async function saveCentralTemplates(
+  templates: PjtModelTemplate[],
+  roomKey: string = getSyncRoomKey()
+): Promise<{ success: boolean; message?: string }> {
+  recordLocalTemplateEdit();
+  saveDirectLocalTemplates(templates, false);
+
+  // 최신 프로젝트 목록과 함께 Supabase에 영구 Upsert
+  const currentProjects = loadDirectLocalProjects() || memoryCacheProjects || [];
+  return await saveCentralProjects(currentProjects, roomKey);
 }
 
 /**
@@ -518,7 +551,7 @@ export async function fetchCentralProjects(
           const cloudProjects: ProjectMaster[] = payload.projects;
 
           if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
-            saveDirectLocalTemplates(payload.templates);
+            saveDirectLocalTemplates(payload.templates, true);
           }
 
           // 🛡️ 클라우드 데이터를 최우선 진실로 확정하여 로컬에 저장하고 100% 전수 반환!
@@ -670,7 +703,7 @@ export function subscribeCentralRealtime(
               memoryCacheProjects = incomingProjects;
 
               if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
-                saveDirectLocalTemplates(payload.templates);
+                saveDirectLocalTemplates(payload.templates, true);
               }
 
               if (typeof window !== "undefined") {

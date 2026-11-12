@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { PartPreset, PartItem, PjtModelTemplate } from "@/types";
 import { STANDARD_PART_PRESETS, PJT_MODEL_TEMPLATES } from "@/lib/default-presets";
 import { generateId } from "@/lib/utils";
-import { saveCentralProjects, loadDirectLocalProjects } from "@/lib/cloud-sync";
+import { saveCentralProjects, loadDirectLocalProjects, saveCentralTemplates } from "@/lib/cloud-sync";
 import ExcelJS from "exceljs";
 import {
   X,
@@ -47,6 +47,7 @@ export const PresetModal: React.FC<PresetModalProps> = ({
   onSelectTemplate,
   currentUnitParts = [],
 }) => {
+  const lastLocalEditTimeRef = useRef<number>(0);
   const [activeTab, setActiveTab] = useState<"TEMPLATES" | "EXCEL_UPLOAD" | "INDIVIDUAL">("TEMPLATES");
 
   // PJT Model Templates Dynamic State (Loaded from localStorage)
@@ -65,9 +66,10 @@ export const PresetModal: React.FC<PresetModalProps> = ({
     return PJT_MODEL_TEMPLATES;
   });
 
-  // 다른 디바이스/클라우드에서 템플릿 변경사항 수신 시 실시간 반영
+  // 다른 디바이스/클라우드에서 템플릿 변경사항 수신 시 실시간 반영 (최근 6초간 로컬 편집 중일 시 무시)
   useEffect(() => {
     const handleRemoteTemplates = (e: any) => {
+      if (Date.now() - lastLocalEditTimeRef.current < 6000) return;
       if (e.detail && Array.isArray(e.detail) && e.detail.length > 0) {
         setTemplates(e.detail);
       }
@@ -83,7 +85,6 @@ export const PresetModal: React.FC<PresetModalProps> = ({
     try {
       if (typeof window !== "undefined" && templates.length > 0) {
         localStorage.setItem(STORAGE_TEMPLATES_KEY, JSON.stringify(templates));
-        window.dispatchEvent(new CustomEvent("VISION_PASS_TEMPLATES_UPDATED", { detail: templates }));
       }
     } catch (e) {
       console.warn("Failed to save templates to localStorage", e);
@@ -220,15 +221,19 @@ export const PresetModal: React.FC<PresetModalProps> = ({
   // 4. 양식 삭제
   const handleDeleteTemplate = (id: string, name: string) => {
     if (confirm(`「${name}」 PJT 양식을 목록에서 삭제하시겠습니까?`)) {
-      setTemplates((prev) => prev.filter((t) => t.id !== id));
+      lastLocalEditTimeRef.current = Date.now();
+      const next = templates.filter((t) => t.id !== id);
+      setTemplates(next);
+      saveCentralTemplates(next).catch(console.warn);
     }
   };
 
   // 5. 기본 양식으로 초기화
   const handleResetTemplatesToDefault = () => {
     if (confirm("모든 양식을 초기 표준 5개 모델 양식으로 복원하시겠습니까?")) {
+      lastLocalEditTimeRef.current = Date.now();
       setTemplates(PJT_MODEL_TEMPLATES);
-      localStorage.removeItem(STORAGE_TEMPLATES_KEY);
+      saveCentralTemplates(PJT_MODEL_TEMPLATES).catch(console.warn);
     }
   };
 
@@ -244,15 +249,16 @@ export const PresetModal: React.FC<PresetModalProps> = ({
       return;
     }
 
+    lastLocalEditTimeRef.current = Date.now();
     // 모듈 수 계산
     const moduleSet = new Set(editorParts.map((p) => p.category || "[ MAIN ]"));
 
+    let nextTemplates: PjtModelTemplate[];
     if (editingTemplate) {
       // 기존 수정
-      setTemplates((prev) =>
-        prev.map((t) =>
-          t.id === editingTemplate.id
-            ? {
+      nextTemplates = templates.map((t) =>
+        t.id === editingTemplate.id
+          ? {
               ...t,
               modelName: editorModelName.trim(),
               description: editorDescription.trim(),
@@ -260,8 +266,7 @@ export const PresetModal: React.FC<PresetModalProps> = ({
               moduleCount: moduleSet.size,
               parts: editorParts,
             }
-            : t
-        )
+          : t
       );
     } else {
       // 신규 추가
@@ -274,9 +279,11 @@ export const PresetModal: React.FC<PresetModalProps> = ({
         parts: editorParts,
         isCustom: true,
       };
-      setTemplates((prev) => [...prev, newTpl]);
+      nextTemplates = [...templates, newTpl];
     }
 
+    setTemplates(nextTemplates);
+    saveCentralTemplates(nextTemplates).catch(console.warn);
     setIsEditorOpen(false);
   };
 

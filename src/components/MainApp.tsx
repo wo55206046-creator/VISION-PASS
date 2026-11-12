@@ -532,9 +532,6 @@ export default function MainApp() {
         }}
         pjtCode={currentProject?.pjtCode}
         equipmentName={currentProject?.equipmentName}
-        onOpenSyncModal={() => setIsSyncModalOpen(true)}
-        syncStatus={syncStatus}
-        projectCount={projects.length}
       />
 
       {/* Main Workspace View */}

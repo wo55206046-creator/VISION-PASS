@@ -5,7 +5,7 @@ import { PjtModelTemplate, PartItem } from "@/types";
 import { PJT_MODEL_TEMPLATES } from "@/lib/default-presets";
 import { generateId } from "@/lib/utils";
 import { exportEquipmentReportExcel } from "@/lib/excel-export";
-import { saveCentralProjects, loadDirectLocalProjects } from "@/lib/cloud-sync";
+import { saveCentralProjects, loadDirectLocalProjects, saveCentralTemplates } from "@/lib/cloud-sync";
 import {
   Layers,
   Plus,
@@ -22,6 +22,8 @@ import {
 const TEMPLATES_STORAGE_KEY = "VISION_PASS_PJT_TEMPLATES_V2";
 
 export const TemplateManagerStep: React.FC = () => {
+  const lastLocalEditTimeRef = useRef<number>(0);
+
   // 1. Templates State
   const [templates, setTemplates] = useState<PjtModelTemplate[]>(() => {
     try {
@@ -38,9 +40,10 @@ export const TemplateManagerStep: React.FC = () => {
     return PJT_MODEL_TEMPLATES;
   });
 
-  // 다른 디바이스/클라우드에서 템플릿 변경사항 수신 시 실시간 반영
+  // 다른 디바이스/클라우드에서 템플릿 변경사항 수신 시 실시간 반영 (최근 6초간 로컬 편집 중일 시 무시)
   useEffect(() => {
     const handleRemoteTemplates = (e: any) => {
+      if (Date.now() - lastLocalEditTimeRef.current < 6000) return;
       if (e.detail && Array.isArray(e.detail) && e.detail.length > 0) {
         setTemplates(e.detail);
       }
@@ -56,10 +59,6 @@ export const TemplateManagerStep: React.FC = () => {
     try {
       if (templates && templates.length > 0) {
         localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(templates));
-        // 클라우드로 즉시 업로드 (다른 PC/스마트폰으로 실시간 전파)
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("VISION_PASS_TEMPLATES_UPDATED", { detail: templates }));
-        }
       }
     } catch (e) {
       console.warn("Failed to save templates to localStorage", e);
@@ -158,14 +157,15 @@ export const TemplateManagerStep: React.FC = () => {
       return;
     }
 
+    lastLocalEditTimeRef.current = Date.now();
     const moduleSet = new Set(editorParts.map((p) => p.category || "[ MAIN ]"));
 
+    let updatedTemplates: PjtModelTemplate[];
     if (editingTemplate) {
       // Update existing
-      setTemplates((prev) =>
-        prev.map((t) =>
-          t.id === editingTemplate.id
-            ? {
+      updatedTemplates = templates.map((t) =>
+        t.id === editingTemplate.id
+          ? {
               ...t,
               modelName: editorModelName.trim(),
               description: editorDescription.trim(),
@@ -173,8 +173,7 @@ export const TemplateManagerStep: React.FC = () => {
               moduleCount: moduleSet.size,
               parts: editorParts,
             }
-            : t
-        )
+          : t
       );
     } else {
       // Create new
@@ -187,16 +186,21 @@ export const TemplateManagerStep: React.FC = () => {
         isCustom: true,
         parts: editorParts,
       };
-      setTemplates((prev) => [newTpl, ...prev]);
+      updatedTemplates = [newTpl, ...templates];
       setSelectedTemplateId(newTpl.id);
     }
 
+    setTemplates(updatedTemplates);
+    saveCentralTemplates(updatedTemplates).catch((err) => {
+      console.warn("양식 클라우드 동기화 실패:", err);
+    });
     setIsEditorOpen(false);
   };
 
   // Duplicate Template
   const handleDuplicateTemplate = (tpl: PjtModelTemplate, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    lastLocalEditTimeRef.current = Date.now();
     const dup: PjtModelTemplate = {
       ...tpl,
       id: `tpl-custom-${generateId()}`,
@@ -205,8 +209,10 @@ export const TemplateManagerStep: React.FC = () => {
       isCustom: true,
       parts: (tpl.parts || []).map((p) => ({ ...p, id: generateId(), detectedSerial: "", isVerified: false })),
     };
-    setTemplates((prev) => [dup, ...prev]);
+    const next = [dup, ...templates];
+    setTemplates(next);
     setSelectedTemplateId(dup.id);
+    saveCentralTemplates(next).catch(console.warn);
   };
 
   // Delete Template
@@ -217,11 +223,13 @@ export const TemplateManagerStep: React.FC = () => {
       return;
     }
     if (confirm(`「${modelName}」 양식을 삭제하시겠습니까?`)) {
+      lastLocalEditTimeRef.current = Date.now();
       const remaining = templates.filter((t) => t.id !== tplId);
       setTemplates(remaining);
       if (selectedTemplateId === tplId) {
         setSelectedTemplateId(remaining[0]?.id || "");
       }
+      saveCentralTemplates(remaining).catch(console.warn);
     }
   };
 

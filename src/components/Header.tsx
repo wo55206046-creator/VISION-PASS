@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React from "react";
 import { ShieldCheck, Zap } from "lucide-react";
@@ -9,9 +9,6 @@ interface HeaderProps {
   onStepChange: (step: number) => void;
   pjtCode?: string;
   equipmentName?: string;
-  onOpenSyncModal?: () => void;
-  syncStatus?: "connected" | "syncing" | "error" | "offline";
-  projectCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -19,9 +16,6 @@ export const Header: React.FC<HeaderProps> = ({
   onStepChange,
   pjtCode,
   equipmentName,
-  onOpenSyncModal,
-  syncStatus = "connected",
-  projectCount,
 }) => {
   const steps = [
     { num: 1, label: "1. PJT List" },
@@ -77,41 +71,6 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* System Badges & Zero-Storage Indicator */}
           <div className="flex items-center gap-2">
-            {/* Live Sync Clickable Badge */}
-            <button
-              type="button"
-              onClick={onOpenSyncModal}
-              className="flex items-center gap-1.5 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/80 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium text-cyan-300 border border-cyan-700/50 hover:border-cyan-400/80 transition-all cursor-pointer shadow-sm active:scale-95 group"
-              title="클라우드 동기화 상태 및 모바일 연동 QR 코드 열기"
-            >
-              <span className="relative flex h-2 w-2">
-                <span
-                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                    syncStatus === "syncing"
-                      ? "bg-amber-400"
-                      : syncStatus === "error"
-                      ? "bg-red-400"
-                      : "bg-cyan-400"
-                  }`}
-                ></span>
-                <span
-                  className={`relative inline-flex rounded-full h-2 w-2 ${
-                    syncStatus === "syncing"
-                      ? "bg-amber-500"
-                      : syncStatus === "error"
-                      ? "bg-red-500"
-                      : "bg-cyan-500"
-                  }`}
-                ></span>
-              </span>
-              <span className="font-semibold group-hover:text-cyan-200">Live Sync</span>
-              {projectCount !== undefined && (
-                <span className="rounded bg-cyan-500/20 px-1.5 py-0.5 text-[10px] font-mono text-cyan-200 border border-cyan-500/30">
-                  {projectCount}
-                </span>
-              )}
-            </button>
-
             <div className="hidden sm:flex items-center gap-1.5 rounded-lg bg-emerald-950/50 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium text-emerald-400 border border-emerald-800/50">
               <ShieldCheck className="h-3.5 w-3.5" />
               <span>Storage-Zero</span>
