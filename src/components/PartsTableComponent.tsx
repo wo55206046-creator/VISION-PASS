@@ -667,19 +667,24 @@ export const PartsTable: React.FC<PartsTableProps> = ({
                     </div>
                   </div>
 
-                  {/* 2행: 규격 (Spec) 및 세부 사양 (깔끔한 1줄 고선명 표출) */}
-                  <div className="flex items-center gap-2 text-xs px-0.5 min-w-0">
-                    <span className="font-mono font-extrabold text-cyan-300 truncate" title={part.spec}>
-                      {part.spec || "-"}
-                    </span>
-                    {part.subSpec && part.subSpec !== "-" && (
-                      <>
-                        <span className="text-slate-600 font-bold shrink-0">•</span>
-                        <span className="text-slate-200 font-medium truncate" title={part.subSpec}>
-                          {part.subSpec}
-                        </span>
-                      </>
-                    )}
+                  {/* 2행: 규격 (Spec) 및 세부 사양 (50:50 반반 고정 정렬 및 잘림 방지) */}
+                  <div className="grid grid-cols-2 items-start gap-2.5 text-xs px-1 py-1 rounded-lg bg-slate-950/60 border border-slate-800/70">
+                    <div className="min-w-0 pr-1">
+                      <span
+                        className="block font-mono font-extrabold text-cyan-300 break-words leading-snug"
+                        title={part.spec}
+                      >
+                        {part.spec || "-"}
+                      </span>
+                    </div>
+                    <div className="min-w-0 border-l border-slate-700/80 pl-2.5">
+                      <span
+                        className="block text-slate-200 font-medium break-words leading-snug"
+                        title={part.subSpec}
+                      >
+                        {part.subSpec && part.subSpec !== "-" ? part.subSpec : "-"}
+                      </span>
+                    </div>
                   </div>
 
                   {/* 3행: [시리얼 번호 인라인 입력/표시] + [📷 원터치 OCR 버튼] */}
