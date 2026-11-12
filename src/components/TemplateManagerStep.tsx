@@ -5,7 +5,7 @@ import { PjtModelTemplate, PartItem } from "@/types";
 import { PJT_MODEL_TEMPLATES } from "@/lib/default-presets";
 import { generateId } from "@/lib/utils";
 import { exportEquipmentReportExcel } from "@/lib/excel-export";
-import { parseExcelClipboardToParts, mergePastedPartsIntoList, PasteColumnField } from "@/lib/excel-paste";
+import { parseExcelClipboardToParts, mergePastedPartsIntoList, convertRowsToParts, PasteColumnField } from "@/lib/excel-paste";
 import { saveCentralProjects, loadDirectLocalProjects, saveCentralTemplates } from "@/lib/cloud-sync";
 import {
   Layers,
@@ -282,56 +282,12 @@ export const TemplateManagerStep: React.FC = () => {
         throw new Error("엑셀 파일에서 데이터를 읽을 수 없습니다.");
       }
 
-      const extracted: PartItem[] = [];
-      let currentCategory = "[ MAIN ]";
-      let lastPartName = "";
-      let lastSubSpec = "";
-
-      for (let i = 0; i < rawRows.length; i++) {
-        const row = rawRows[i];
-        if (!row || row.length === 0) continue;
-
-        const rowStr = row.map((c) => String(c || "").trim()).join(" ");
-        const catMatch = rowStr.match(/\[\s*([^\]]+)\s*\]/);
-        if (catMatch) {
-          currentCategory = `[ ${catMatch[1].trim()} ]`;
-          lastPartName = "";
-          lastSubSpec = "";
-          continue;
-        }
-
-        const rawPartName = String(row[1] || "").trim();
-        const rawSubSpec = String(row[2] || "").trim();
-        const rawSpec = String(row[3] || "").trim();
-        const rawSerial = String(row[4] || "").trim();
-
-        if (rawPartName && rawPartName.length > 0) {
-          lastPartName = rawPartName;
-        }
-        if (rawSubSpec && rawSubSpec.length > 0) {
-          lastSubSpec = rawSubSpec;
-        }
-
-        const finalPartName = lastPartName;
-        const finalSubSpec = lastSubSpec;
-
-        if (
-          (finalPartName || rawSpec) &&
-          !finalPartName.includes("품명") &&
-          !rawSpec.includes("규격") &&
-          !finalPartName.includes("Part Name")
-        ) {
-          extracted.push({
-            id: generateId(),
-            category: currentCategory,
-            partName: finalPartName || "표준 부품",
-            subSpec: finalSubSpec || "-",
-            spec: rawSpec || "-",
-            detectedSerial: rawSerial || "",
-            isVerified: false,
-          });
-        }
-      }
+      const converted = convertRowsToParts(
+        rawRows.map((r) => (r || []).map((c) => String(c ?? ""))),
+        "[ MAIN ]",
+        "partName"
+      );
+      const extracted: PartItem[] = converted?.parts || [];
 
       if (extracted.length === 0) {
         alert("엑셀 파일에서 유효한 부품 목록을 찾을 수 없습니다.");
@@ -340,7 +296,7 @@ export const TemplateManagerStep: React.FC = () => {
 
       setEditorParts(extracted);
       if (!editorModelName.trim()) {
-        const pureName = file.name.replace(/\.[^/.]+$/, "");
+        const pureName = converted?.detectedModelName || file.name.replace(/\.[^/.]+$/, "");
         setEditorModelName(pureName);
       }
       alert(`「${file.name}」에서 총 ${extracted.length}개 부품을 성공적으로 불러왔습니다!`);
@@ -790,9 +746,8 @@ export const TemplateManagerStep: React.FC = () => {
                   <thead className="bg-slate-900 text-slate-400 font-semibold sticky top-0 z-10 border-b border-slate-800">
                     <tr>
                       <th className="p-2.5 w-10 text-center">No</th>
-                      <th className="p-2.5 w-32">파트 구분</th>
-                      <th className="p-2.5 w-48">품명</th>
-                      <th className="p-2.5 w-44">세부사항</th>
+                      <th className="p-2.5 w-52">품명</th>
+                      <th className="p-2.5 w-56">세부사항</th>
                       <th className="p-2.5">규격</th>
                       <th className="p-2.5 w-12 text-center">삭제</th>
                     </tr>
@@ -806,23 +761,8 @@ export const TemplateManagerStep: React.FC = () => {
                         <td className="p-2">
                           <input
                             type="text"
-                            value={p.category}
-                            placeholder="[ MAIN ]"
-                            onPaste={(e) => handleCellPaste(e, idx, "category")}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                              const val = e.target.value;
-                              setEditorParts((prev) =>
-                                prev.map((item, i) => (i === idx ? { ...item, category: val } : item))
-                              );
-                            }}
-                            className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1 text-cyan-300 font-mono text-xs font-bold focus:border-cyan-500 focus:outline-none"
-                          />
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="text"
                             value={p.partName}
-                            placeholder="품명 입력"
+                            placeholder="품명 입력 (여기에 Ctrl+V 붙여넣기)"
                             onPaste={(e) => handleCellPaste(e, idx, "partName")}
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                               const val = e.target.value;

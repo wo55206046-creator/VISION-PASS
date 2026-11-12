@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { PartPreset, PartItem, PjtModelTemplate } from "@/types";
 import { STANDARD_PART_PRESETS, PJT_MODEL_TEMPLATES } from "@/lib/default-presets";
 import { generateId } from "@/lib/utils";
-import { parseExcelClipboardToParts, mergePastedPartsIntoList, PasteColumnField } from "@/lib/excel-paste";
+import { parseExcelClipboardToParts, mergePastedPartsIntoList, convertRowsToParts, PasteColumnField } from "@/lib/excel-paste";
 import { saveCentralProjects, loadDirectLocalProjects, saveCentralTemplates } from "@/lib/cloud-sync";
 import ExcelJS from "exceljs";
 import {
@@ -1042,10 +1042,9 @@ export const PresetModal: React.FC<PresetModalProps> = ({
                     <tr>
                       <th className="p-2 w-8 text-center" title="마우스로 잡고 드래그하여 순서 변경">이동</th>
                       <th className="p-2 w-8 text-center">No</th>
-                      <th className="p-2 w-28">모듈 구분</th>
-                      <th className="p-2 min-w-[120px]">품명</th>
-                      <th className="p-2 w-24">세부사항</th>
-                      <th className="p-2 min-w-[120px]">규격</th>
+                      <th className="p-2 min-w-[140px]">품명</th>
+                      <th className="p-2 min-w-[120px]">세부사항</th>
+                      <th className="p-2 min-w-[140px]">규격</th>
                       <th className="p-2 w-10 text-center">삭제</th>
                     </tr>
                   </thead>
@@ -1085,21 +1084,6 @@ export const PresetModal: React.FC<PresetModalProps> = ({
                         <td className="p-1">
                           <input
                             type="text"
-                            value={p.category || ""}
-                            onPaste={(e) => handleCellPaste(e, idx, "category")}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                              const val = e.target.value;
-                              setEditorParts((prev) =>
-                                prev.map((item, i) => (i === idx ? { ...item, category: val } : item))
-                              );
-                            }}
-                            placeholder="[ MAIN ]"
-                            className="w-full bg-slate-950 border border-slate-800 rounded p-1 text-cyan-300 font-mono font-bold focus:border-cyan-500 focus:outline-none"
-                          />
-                        </td>
-                        <td className="p-1">
-                          <input
-                            type="text"
                             value={p.partName || ""}
                             onPaste={(e) => handleCellPaste(e, idx, "partName")}
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1108,7 +1092,7 @@ export const PresetModal: React.FC<PresetModalProps> = ({
                                 prev.map((item, i) => (i === idx ? { ...item, partName: val } : item))
                               );
                             }}
-                            placeholder="품명 입력"
+                            placeholder="품명 입력 (Ctrl+V 붙여넣기)"
                             className="w-full bg-slate-950 border border-slate-800 rounded p-1 text-white font-semibold focus:border-cyan-500 focus:outline-none"
                           />
                         </td>
@@ -1123,7 +1107,7 @@ export const PresetModal: React.FC<PresetModalProps> = ({
                                 prev.map((item, i) => (i === idx ? { ...item, subSpec: val } : item))
                               );
                             }}
-                            placeholder="-"
+                            placeholder="세부사항 (-)"
                             className="w-full bg-slate-950 border border-slate-800 rounded p-1 text-slate-300 focus:border-cyan-500 focus:outline-none"
                           />
                         </td>
