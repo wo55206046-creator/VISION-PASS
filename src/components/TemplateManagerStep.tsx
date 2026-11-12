@@ -5,6 +5,7 @@ import { PjtModelTemplate, PartItem } from "@/types";
 import { PJT_MODEL_TEMPLATES } from "@/lib/default-presets";
 import { generateId } from "@/lib/utils";
 import { exportEquipmentReportExcel } from "@/lib/excel-export";
+import { parseExcelClipboardToParts, mergePastedPartsIntoList, PasteColumnField } from "@/lib/excel-paste";
 import { saveCentralProjects, loadDirectLocalProjects, saveCentralTemplates } from "@/lib/cloud-sync";
 import {
   Layers,
@@ -115,7 +116,31 @@ export const TemplateManagerStep: React.FC = () => {
   const [editorModelName, setEditorModelName] = useState("");
   const [editorDescription, setEditorDescription] = useState("");
   const [editorParts, setEditorParts] = useState<PartItem[]>([]);
+  const [pasteNotice, setPasteNotice] = useState<string | null>(null);
   const editorFileInputRef = useRef<HTMLInputElement>(null);
+
+  // 엑셀 셀 복사(Ctrl+C) 후 입력칸(파트 구분 / 품명 / 세부사항 / 규격)에 붙여넣기(Ctrl+V) 핸들러
+  const handleCellPaste = (
+    e: React.ClipboardEvent<HTMLInputElement>,
+    rowIdx: number,
+    field: PasteColumnField
+  ) => {
+    if (!e.clipboardData) return;
+    const baseCategory = editorParts[rowIdx]?.category || "[ MAIN ]";
+    const parsed = parseExcelClipboardToParts(e.clipboardData, baseCategory, field);
+    if (!parsed || parsed.parts.length === 0) {
+      // 일반 단일 텍스트 붙여넣기는 기본 input 동작 허용
+      return;
+    }
+
+    e.preventDefault();
+    setEditorParts((prev) => mergePastedPartsIntoList(prev, parsed.parts, rowIdx));
+    if (parsed.detectedModelName && !editorModelName.trim()) {
+      setEditorModelName(parsed.detectedModelName);
+    }
+    setPasteNotice(`엑셀 셀 ${parsed.parts.length}개 행이 각 칸에 자동 입력되었습니다.`);
+    setTimeout(() => setPasteNotice(null), 4000);
+  };
 
   // Open Create New Template
   const handleOpenCreate = () => {
@@ -166,13 +191,13 @@ export const TemplateManagerStep: React.FC = () => {
       updatedTemplates = templates.map((t) =>
         t.id === editingTemplate.id
           ? {
-              ...t,
-              modelName: editorModelName.trim(),
-              description: editorDescription.trim(),
-              partsCount: editorParts.length,
-              moduleCount: moduleSet.size,
-              parts: editorParts,
-            }
+            ...t,
+            modelName: editorModelName.trim(),
+            description: editorDescription.trim(),
+            partsCount: editorParts.length,
+            moduleCount: moduleSet.size,
+            parts: editorParts,
+          }
           : t
       );
     } else {
@@ -426,8 +451,8 @@ export const TemplateManagerStep: React.FC = () => {
                     key={tpl.id}
                     onClick={() => setSelectedTemplateId(tpl.id)}
                     className={`p-4 rounded-2xl border transition-all cursor-pointer group flex flex-col gap-2.5 relative ${isSelected
-                        ? "bg-slate-900/90 border-cyan-500/70 shadow-glow-cyan ring-1 ring-cyan-500/30"
-                        : "bg-slate-950/70 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900/50"
+                      ? "bg-slate-900/90 border-cyan-500/70 shadow-glow-cyan ring-1 ring-cyan-500/30"
+                      : "bg-slate-950/70 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900/50"
                       }`}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -435,8 +460,8 @@ export const TemplateManagerStep: React.FC = () => {
                         {/* 🔢 순번 뱃지 */}
                         <div
                           className={`flex h-8 w-8 items-center justify-center rounded-xl font-mono font-extrabold text-xs shrink-0 transition-all ${isSelected
-                              ? "bg-cyan-500 text-slate-950 shadow-sm"
-                              : "bg-slate-900 border border-slate-800 text-cyan-400 group-hover:border-cyan-500/40"
+                            ? "bg-cyan-500 text-slate-950 shadow-sm"
+                            : "bg-slate-900 border border-slate-800 text-cyan-400 group-hover:border-cyan-500/40"
                             }`}
                         >
                           {String(idx + 1).padStart(2, "0")}
@@ -704,11 +729,19 @@ export const TemplateManagerStep: React.FC = () => {
               </div>
 
               {/* Parts Header & Toolbar */}
-              <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-bold text-sm text-white">
                     포함 부품 목록 ({editorParts.length}개 품목)
                   </span>
+                  <span className="text-[11px] text-cyan-300/90 bg-cyan-950/60 border border-cyan-800/50 rounded-lg px-2 py-0.5">
+                    💡 엑셀에서 표 영역을 복사(Ctrl+C)한 뒤 아래 칸에 붙여넣기(Ctrl+V)하면 각 칸에 자동 입력됩니다
+                  </span>
+                  {pasteNotice && (
+                    <span className="text-[11px] font-bold text-emerald-300 bg-emerald-950/80 border border-emerald-700/60 rounded-lg px-2.5 py-0.5 animate-pulse">
+                      ✓ {pasteNotice}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -775,6 +808,7 @@ export const TemplateManagerStep: React.FC = () => {
                             type="text"
                             value={p.category}
                             placeholder="[ MAIN ]"
+                            onPaste={(e) => handleCellPaste(e, idx, "category")}
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                               const val = e.target.value;
                               setEditorParts((prev) =>
@@ -789,6 +823,7 @@ export const TemplateManagerStep: React.FC = () => {
                             type="text"
                             value={p.partName}
                             placeholder="품명 입력"
+                            onPaste={(e) => handleCellPaste(e, idx, "partName")}
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                               const val = e.target.value;
                               setEditorParts((prev) =>
@@ -803,6 +838,7 @@ export const TemplateManagerStep: React.FC = () => {
                             type="text"
                             value={p.subSpec}
                             placeholder="세부사항 (-)"
+                            onPaste={(e) => handleCellPaste(e, idx, "subSpec")}
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                               const val = e.target.value;
                               setEditorParts((prev) =>
@@ -817,6 +853,7 @@ export const TemplateManagerStep: React.FC = () => {
                             type="text"
                             value={p.spec}
                             placeholder="규격 입력"
+                            onPaste={(e) => handleCellPaste(e, idx, "spec")}
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                               const val = e.target.value;
                               setEditorParts((prev) =>
