@@ -8,7 +8,7 @@ import {
   disposeCanvas,
   DEFAULT_PREPROCESSING_OPTIONS,
 } from "@/lib/image-processing";
-import { performGeminiDeepOcr, getGeminiApiKey, setGeminiApiKey } from "@/lib/gemini-ocr";
+import { performGeminiDeepOcr } from "@/lib/gemini-ocr";
 import { scanNativeBarcode, quickScanLiveRoi, getOcrWorker } from "@/lib/ocr-worker";
 import { triggerScanFeedback } from "@/lib/utils";
 import {
@@ -68,7 +68,6 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   const [ocrResult, setOcrResult] = useState<OcrResult | null>(null);
   const [selectedSerial, setSelectedSerial] = useState("");
   const [isVerifiedCheck, setIsVerifiedCheck] = useState(true);
-  const [hasAiKey, setHasAiKey] = useState<boolean>(() => Boolean(getGeminiApiKey()));
 
   // Canvas Refs (In-Memory Only, Zero-Storage)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -163,11 +162,11 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       const isNotFound =
         err instanceof Error &&
         (err.name === "NotFoundError" || err.name === "DevicesNotFoundError");
-      
+
       if (!isNotFound) {
         console.warn("Camera access failed:", err);
       }
-      
+
       setHasCameraError(
         isNotFound
           ? "연결된 카메라 장치가 감지되지 않았습니다. PC에 웹캠이 연결되어 있는지 확인하시거나, 스마트폰 모바일 기기 또는 [이미지 파일 업로드]를 이용해주세요."
@@ -240,7 +239,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     setSelectedSerial("");
     try {
       videoRef.current?.play().catch(console.warn);
-    } catch {}
+    } catch { }
   };
 
 
@@ -368,10 +367,10 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         },
         targetPart
           ? {
-              partName: targetPart.partName,
-              spec: targetPart.spec,
-              subSpec: targetPart.subSpec,
-            }
+            partName: targetPart.partName,
+            spec: targetPart.spec,
+            subSpec: targetPart.subSpec,
+          }
           : undefined
       );
 
@@ -409,7 +408,7 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
     try {
       video.pause();
       setIsFrozen(true);
-    } catch {}
+    } catch { }
 
     const { roiCanvas, visibleFullCanvas } = extractViewfinderCanvases(video);
 
@@ -439,10 +438,10 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
         },
         targetPart
           ? {
-              partName: targetPart.partName,
-              spec: targetPart.spec,
-              subSpec: targetPart.subSpec,
-            }
+            partName: targetPart.partName,
+            spec: targetPart.spec,
+            subSpec: targetPart.subSpec,
+          }
           : undefined,
         visibleFullCanvas
       );
@@ -500,39 +499,13 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                const current = getGeminiApiKey();
-                const input = window.prompt(
-                  "Gemini AI API 키를 입력하세요 (스마트폰 브라우저에 안전하게 저장됩니다):",
-                  current
-                );
-                if (input !== null) {
-                  setGeminiApiKey(input);
-                  setHasAiKey(Boolean(getGeminiApiKey()));
-                }
-              }}
-              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all cursor-pointer flex items-center gap-1 ${
-                hasAiKey
-                  ? "bg-emerald-950/80 text-emerald-300 border-emerald-600/60"
-                  : "bg-amber-950/80 text-amber-300 border-amber-600/60 animate-pulse"
-              }`}
-              title="클릭하여 Gemini Vision AI API 키 확인 또는 입력"
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${hasAiKey ? "bg-emerald-400" : "bg-amber-400"}`} />
-              <span>{hasAiKey ? "AI 활성" : "AI 키 입력"}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer shrink-0"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer shrink-0"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         {/* Modal Body (컴팩트 스크롤 제로 뷰) */}
@@ -556,11 +529,10 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                   key={z}
                   type="button"
                   onClick={() => handleZoomChange(z as 1 | 2 | 3)}
-                  className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
-                    zoomLevel === z
+                  className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${zoomLevel === z
                       ? "bg-cyan-500 text-slate-950 shadow-glow-cyan font-extrabold"
                       : "text-slate-300 hover:text-cyan-300"
-                  }`}
+                    }`}
                   title={`${z}배 정밀 확대`}
                 >
                   {z}x
@@ -571,13 +543,12 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             {/* Industrial Viewfinder Crosshair & Guide Bounding Box */}
             <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-3">
               <div
-                className={`relative border-2 border-cyan-400/90 rounded-xl shadow-glow-cyan transition-all duration-300 ${
-                  guideMode === "vertical"
+                className={`relative border-2 border-cyan-400/90 rounded-xl shadow-glow-cyan transition-all duration-300 ${guideMode === "vertical"
                     ? "w-[58%] h-[84%]"
                     : guideMode === "full"
-                    ? "w-[96%] h-[92%]"
-                    : "w-[94%] h-[48%]"
-                }`}
+                      ? "w-[96%] h-[92%]"
+                      : "w-[94%] h-[48%]"
+                  }`}
               >
                 {/* 4 Corner Markers */}
                 <div className="absolute -top-1 -left-1 h-3.5 w-3.5 border-t-2 border-l-2 border-cyan-300" />
@@ -594,10 +565,10 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                   <div className="absolute inset-0 overflow-hidden rounded-xl bg-cyan-950/20 backdrop-blur-[1px]">
                     {/* Glowing Laser Sweep Beam */}
                     <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_15px_#22d3ee] animate-laserScan" />
-                    
+
                     {/* Subtle Holographic Grid */}
                     <div className="absolute inset-0 bg-[linear-gradient(to_right,#06b6d415_1px,transparent_1px),linear-gradient(to_bottom,#06b6d415_1px,transparent_1px)] bg-[size:16px_16px] animate-pulse" />
-                    
+
                     {/* Live Processing Indicator Badge */}
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="bg-slate-950/90 border border-cyan-400/60 px-3.5 py-1.5 rounded-full shadow-glow-cyan flex items-center gap-2">
@@ -641,11 +612,10 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               <button
                 type="button"
                 onClick={toggleTorch}
-                className={`p-2 rounded-xl backdrop-blur-md border text-xs transition-all cursor-pointer ${
-                  torchOn
+                className={`p-2 rounded-xl backdrop-blur-md border text-xs transition-all cursor-pointer ${torchOn
                     ? "bg-amber-500 text-slate-950 border-amber-400 font-bold"
                     : "bg-slate-900/80 text-white border-slate-700 hover:bg-slate-800"
-                }`}
+                  }`}
                 title="조명 플래시 토글"
               >
                 {torchOn ? <Zap className="h-4 w-4 fill-current" /> : <ZapOff className="h-4 w-4" />}
@@ -832,12 +802,12 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                       /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(cand)
                         ? "WIN11 S/N"
                         : /^KSA[0-9]{6,10}$/i.test(cand)
-                        ? "PC S/N"
-                        : /^[0-9]{6,14}$/.test(cand)
-                        ? "SN"
-                        : cand.includes("-")
-                        ? "S/N"
-                        : "SN"
+                          ? "PC S/N"
+                          : /^[0-9]{6,14}$/.test(cand)
+                            ? "SN"
+                            : cand.includes("-")
+                              ? "S/N"
+                              : "SN"
                     );
 
                     const isWin = sourceLabel.includes("WIN");
@@ -848,25 +818,24 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
                     const badgeStyle = selectedSerial === cand
                       ? "bg-slate-950 text-cyan-300 font-black ring-1 ring-cyan-400"
                       : isWin
-                      ? "bg-amber-950 text-amber-300 border border-amber-600/70 shadow-sm"
-                      : isPn
-                      ? "bg-blue-950 text-blue-300 border border-blue-600/70"
-                      : isBarcode
-                      ? "bg-purple-950 text-purple-300 border border-purple-600/70"
-                      : isSn
-                      ? "bg-cyan-950 text-cyan-300 border border-cyan-600/70 shadow-glow-cyan"
-                      : "bg-slate-900 text-slate-300 border border-slate-700";
+                        ? "bg-amber-950 text-amber-300 border border-amber-600/70 shadow-sm"
+                        : isPn
+                          ? "bg-blue-950 text-blue-300 border border-blue-600/70"
+                          : isBarcode
+                            ? "bg-purple-950 text-purple-300 border border-purple-600/70"
+                            : isSn
+                              ? "bg-cyan-950 text-cyan-300 border border-cyan-600/70 shadow-glow-cyan"
+                              : "bg-slate-900 text-slate-300 border border-slate-700";
 
                     return (
                       <button
                         key={idx}
                         type="button"
                         onClick={() => setSelectedSerial(cand)}
-                        className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 max-w-full text-left ${
-                          selectedSerial === cand
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 max-w-full text-left ${selectedSerial === cand
                             ? "bg-cyan-500 text-slate-950 shadow-glow-cyan font-bold ring-2 ring-cyan-300"
                             : "bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700"
-                        }`}
+                          }`}
                       >
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-black shrink-0 ${badgeStyle}`}>
                           {sourceLabel}

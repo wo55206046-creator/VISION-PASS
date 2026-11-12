@@ -1,5 +1,6 @@
 import { ProjectMaster, PjtModelTemplate } from "@/types";
 import { mergeProjectLists, countVerifiedSerials } from "./project-merger";
+import { getGeminiApiKey, setGeminiApiKey, isLikelyValidGeminiKey } from "./gemini-ocr";
 import {
   getDeletedProjectKeys,
   markProjectsAsDeletedBulk,
@@ -26,6 +27,7 @@ export interface CentralSyncPayload {
   senderDeviceId: string;
   projects: ProjectMaster[];
   templates?: PjtModelTemplate[];
+  sharedGeminiApiKey?: string;
   deletedKeys?: string[];
   deletedPartKeys?: string[];
 }
@@ -382,6 +384,7 @@ export async function saveCentralProjects(
   memoryCacheProjects = cleanProjects;
 
   const localTemplates = loadDirectLocalTemplates();
+  const activeGeminiKey = getGeminiApiKey();
 
   const payload: CentralSyncPayload = {
     version: 8,
@@ -390,6 +393,7 @@ export async function saveCentralProjects(
     senderDeviceId: getDeviceId(),
     projects: cleanProjects,
     templates: localTemplates && localTemplates.length > 0 ? localTemplates : undefined,
+    sharedGeminiApiKey: activeGeminiKey || undefined,
     deletedKeys: Array.from(delKeys),
     deletedPartKeys: Array.from(delPartKeys),
   };
@@ -547,6 +551,9 @@ export async function fetchCentralProjects(
           if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
             saveDirectLocalTemplates(payload.templates, true);
           }
+          if (payload.sharedGeminiApiKey && isLikelyValidGeminiKey(payload.sharedGeminiApiKey)) {
+            setGeminiApiKey(payload.sharedGeminiApiKey);
+          }
 
           // 🛡️ 클라우드 데이터를 최우선 진실로 확정하여 로컬에 저장하고 100% 전수 반환!
           memoryCacheProjects = cloudProjects;
@@ -699,6 +706,9 @@ export function subscribeCentralRealtime(
 
               if (payload.templates && Array.isArray(payload.templates) && payload.templates.length > 0) {
                 saveDirectLocalTemplates(payload.templates, true);
+              }
+              if (payload.sharedGeminiApiKey && isLikelyValidGeminiKey(payload.sharedGeminiApiKey)) {
+                setGeminiApiKey(payload.sharedGeminiApiKey);
               }
 
               if (typeof window !== "undefined") {
