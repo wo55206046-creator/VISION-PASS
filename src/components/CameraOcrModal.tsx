@@ -8,7 +8,7 @@ import {
   disposeCanvas,
   DEFAULT_PREPROCESSING_OPTIONS,
 } from "@/lib/image-processing";
-import { performGeminiDeepOcr } from "@/lib/gemini-ocr";
+import { performGeminiDeepOcr, getGeminiApiKey, setGeminiApiKey } from "@/lib/gemini-ocr";
 import { scanNativeBarcode, quickScanLiveRoi, getOcrWorker } from "@/lib/ocr-worker";
 import { triggerScanFeedback } from "@/lib/utils";
 import {
@@ -68,9 +68,11 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
   const [ocrResult, setOcrResult] = useState<OcrResult | null>(null);
   const [selectedSerial, setSelectedSerial] = useState("");
   const [isVerifiedCheck, setIsVerifiedCheck] = useState(true);
+  const [hasAiKey, setHasAiKey] = useState<boolean>(() => Boolean(getGeminiApiKey()));
 
   // Canvas Refs (In-Memory Only, Zero-Storage)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const nativeFileInputRef = useRef<HTMLInputElement>(null);
 
   const cycleGuideMode = () => {
     setGuideMode((prev) => (prev === "horizontal" ? "vertical" : prev === "vertical" ? "full" : "horizontal"));
@@ -114,14 +116,14 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
       let mediaStream: MediaStream | null = null;
 
-      // 1단계 시도: Full HD 후면 카메라 & 연속 자동초점
+      // 1단계 시도: QHD/Full HD 고해상도 후면 카메라 & 연속 자동초점
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: facingMode },
-            width: { ideal: 1920, min: 1280 },
-            height: { ideal: 1080, min: 720 },
-            advanced: [{ focusMode: "continuous" }] as any,
+            width: { ideal: 2560, min: 1280 },
+            height: { ideal: 1440, min: 720 },
+            advanced: [{ focusMode: "continuous" }, { exposureMode: "continuous" }] as any,
           },
           audio: false,
         });
@@ -244,77 +246,154 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
 
 
   /**
-   * 🔍 스마트 라벨 오토-타겟팅 & 고해상도 확대 캔버스 생성 (Smart Label Zoom)
-   * 전체 프레임에서 노란색 라벨의 위치를 0.002초 만에 탐색하여,
-   * 라벨이 화면 구석이나 아래에 있더라도 라벨 영역을 화면 중앙에 큼직하게 꽉 채워(1.8x 확대) AI에 전달
+   * 🎯 스마트폰 뷰파인더(object-cover)와 100% 일치하는 가시 영역 및 가이드 박스(ROI) 정밀 추출
+   * 화면 비율 차이로 인해 엉뚱한 배경이 찍히거나 노란 배선에 오작동하던 문제를 완전히 해결
    */
-  const getSmartTargetCanvas = (rawCanvas: HTMLCanvasElement, croppedCanvas: HTMLCanvasElement): HTMLCanvasElement => {
-    try {
-      const ctx = rawCanvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) return croppedCanvas;
-      const imgData = ctx.getImageData(0, 0, rawCanvas.width, rawCanvas.height);
-      const data = imgData.data;
+  const extractViewfinderCanvases = (
+    video: HTMLVideoElement
+  ): { roiCanvas: HTMLCanvasElement; visibleFullCanvas: HTMLCanvasElement } => {
+    const vw = video.videoWidth || 1920;
+    const vh = video.videoHeight || 1080;
+    const boxW = video.clientWidth || vw;
+    const boxH = video.clientHeight || vh;
 
-      let minX = rawCanvas.width, maxX = 0, minY = rawCanvas.height, maxY = 0;
-      let yellowCount = 0;
+    // 1. object-cover 에 의해 실제 화면에 보이는 비디오 영역 계산
+    const videoAspect = vw / vh;
+    const boxAspect = boxW / boxH;
 
-      // 4픽셀 간격 스킵 샘플링 (초고속 2ms 분석)
-      for (let y = 0; y < rawCanvas.height; y += 4) {
-        for (let x = 0; x < rawCanvas.width; x += 4) {
-          const idx = (y * rawCanvas.width + x) * 4;
-          const r = data[idx];
-          const g = data[idx + 1];
-          const b = data[idx + 2];
-          
-          // 노란색 스티커 판정 (붉은색 아크릴 및 주변 노이즈 배제)
-          const isYellow =
-            r > 90 &&
-            g > 75 &&
-            Math.abs(r - g) < 70 &&
-            r - b > 30 &&
-            g - b > 20 &&
-            r + g > b * 2.1;
+    let visibleW = vw;
+    let visibleH = vh;
+    let offsetX = 0;
+    let offsetY = 0;
 
-          if (isYellow) {
-            yellowCount++;
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
-          }
-        }
-      }
-
-      // 노란색 라벨이 선명하게 포착된 경우 (50샘플 이상 & 유효 크기)
-      if (yellowCount >= 45 && maxX > minX + 35 && maxY > minY + 12) {
-        const padX = Math.round((maxX - minX) * 0.6);
-        const padY = Math.round((maxY - minY) * 0.7);
-        const x1 = Math.max(0, minX - padX);
-        const y1 = Math.max(0, minY - padY);
-        const w = Math.min(rawCanvas.width - x1, (maxX - minX) + padX * 2);
-        const h = Math.min(rawCanvas.height - y1, (maxY - minY) + padY * 2);
-
-        const target = document.createElement("canvas");
-        target.width = Math.max(1024, Math.round(w * 2.2));
-        target.height = Math.round(target.width * (h / w));
-        const tCtx = target.getContext("2d");
-        if (tCtx) {
-          tCtx.imageSmoothingEnabled = true;
-          tCtx.imageSmoothingQuality = "high";
-          tCtx.drawImage(rawCanvas, x1, y1, w, h, 0, 0, target.width, target.height);
-          console.log("🎯 [Smart Label Zoom] 노란색 라벨 고해상도 확대 캔버스 생성 완료:", { w, h, targetW: target.width, targetH: target.height });
-          return target;
-        }
-      }
-    } catch (e) {
-      console.warn("Smart label detection fallback:", e);
+    if (videoAspect > boxAspect) {
+      // 비디오가 더 넓은 경우: 좌우가 잘림
+      visibleW = vh * boxAspect;
+      offsetX = (vw - visibleW) / 2;
+    } else {
+      // 비디오가 더 높은 경우: 상하가 잘림
+      visibleH = vw / boxAspect;
+      offsetY = (vh - visibleH) / 2;
     }
 
-    // 노란 라벨이 특정되지 않은 경우(금속 명판 등): 정밀 크롭 캔버스 사용
-    return croppedCanvas;
+    // 디지털 줌(scale)이 적용된 경우 중앙 기준으로 한 번 더 좁혀줌
+    if (!hardwareZoomSupported && zoomLevel > 1) {
+      const zoomedW = visibleW / zoomLevel;
+      const zoomedH = visibleH / zoomLevel;
+      offsetX += (visibleW - zoomedW) / 2;
+      offsetY += (visibleH - zoomedH) / 2;
+      visibleW = zoomedW;
+      visibleH = zoomedH;
+    }
+
+    // 가시 전체 프레임 캔버스 생성 (가이드 박스를 살짝 벗어난 긴 시리얼 보조 판독용)
+    const visibleFullCanvas = document.createElement("canvas");
+    const fullTargetW = Math.min(1920, Math.max(1280, Math.round(visibleW)));
+    const fullTargetH = Math.round(fullTargetW * (visibleH / visibleW));
+    visibleFullCanvas.width = fullTargetW;
+    visibleFullCanvas.height = fullTargetH;
+    const fCtx = visibleFullCanvas.getContext("2d");
+    if (fCtx) {
+      fCtx.imageSmoothingEnabled = true;
+      fCtx.imageSmoothingQuality = "high";
+      fCtx.drawImage(video, offsetX, offsetY, visibleW, visibleH, 0, 0, fullTargetW, fullTargetH);
+    }
+
+    // 2. 가이드 박스(horizontal / vertical / full) 비율에 맞춘 정밀 ROI 크롭 (여유 마진 포함)
+    let guideWFactor = 0.96;
+    let guideHFactor = 0.56;
+    if (guideMode === "vertical") {
+      guideWFactor = 0.66;
+      guideHFactor = 0.90;
+    } else if (guideMode === "full") {
+      guideWFactor = 0.98;
+      guideHFactor = 0.96;
+    }
+
+    const roiW = visibleW * guideWFactor;
+    const roiH = visibleH * guideHFactor;
+    const roiX = offsetX + (visibleW - roiW) / 2;
+    const roiY = offsetY + (visibleH - roiH) / 2;
+
+    const roiCanvas = document.createElement("canvas");
+    const targetRoiW = Math.min(2048, Math.max(1280, Math.round(roiW * 1.8)));
+    const targetRoiH = Math.round(targetRoiW * (roiH / roiW));
+    roiCanvas.width = targetRoiW;
+    roiCanvas.height = targetRoiH;
+    const rCtx = roiCanvas.getContext("2d");
+    if (rCtx) {
+      rCtx.imageSmoothingEnabled = true;
+      rCtx.imageSmoothingQuality = "high";
+      rCtx.drawImage(video, roiX, roiY, roiW, roiH, 0, 0, targetRoiW, targetRoiH);
+    }
+
+    return { roiCanvas, visibleFullCanvas };
   };
 
-  // 인메모리 원터치 셔터 캡처 & Gemini 2.0 AI OCR 수행 (Storage Zero: 사진 즉시 휘발)
+  // 스마트폰 기본 카메라 촬영 또는 고화질 사진 파일 선택 시 즉시 AI OCR 수행
+  const handleNativePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessing(true);
+    setOcrProgress(10);
+    setOcrStatusText("고화질 사진 로드 및 시리얼 정밀 분석 중...");
+
+    let imgCanvas: HTMLCanvasElement | null = null;
+    try {
+      const bitmap = await createImageBitmap(file);
+      imgCanvas = document.createElement("canvas");
+      const maxDim = 2200;
+      let w = bitmap.width;
+      let h = bitmap.height;
+      if (w > maxDim || h > maxDim) {
+        const scale = maxDim / Math.max(w, h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      imgCanvas.width = w;
+      imgCanvas.height = h;
+      const ctx = imgCanvas.getContext("2d");
+      if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(bitmap, 0, 0, w, h);
+      }
+
+      const result = await performGeminiDeepOcr(
+        imgCanvas,
+        (progress, status) => {
+          setOcrProgress(progress);
+          setOcrStatusText(status);
+        },
+        targetPart
+          ? {
+              partName: targetPart.partName,
+              spec: targetPart.spec,
+              subSpec: targetPart.subSpec,
+            }
+          : undefined
+      );
+
+      setOcrResult(result);
+      if (result.cleanedSerial) {
+        setSelectedSerial(result.cleanedSerial);
+        triggerScanFeedback();
+      } else {
+        setSelectedSerial("");
+      }
+    } catch (err) {
+      console.error("Native photo OCR error:", err);
+      setHasCameraError("사진 분석 중 오류가 발생했습니다. 다시 시도해주세요.");
+    } finally {
+      if (imgCanvas) disposeCanvas(imgCanvas);
+      if (nativeFileInputRef.current) nativeFileInputRef.current.value = "";
+      setOcrProgress(100);
+      setIsProcessing(false);
+    }
+  };
+
+  // 인메모리 원터치 셔터 캡처 & Gemini Flash Vision AI OCR 수행 (Storage Zero: 사진 즉시 휘발)
   const captureAndRecognize = async () => {
     setIsProcessing(true);
     setOcrProgress(5);
@@ -332,79 +411,28 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       setIsFrozen(true);
     } catch {}
 
-    const rawCanvas = document.createElement("canvas");
-    rawCanvas.width = video.videoWidth || 1280;
-    rawCanvas.height = video.videoHeight || 720;
-    const ctx = rawCanvas.getContext("2d");
-    if (!ctx) {
-      setIsProcessing(false);
-      return;
-    }
-    ctx.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
-
-    // ROI 타겟팅 정밀 크롭 (25자리 긴 윈도우 키 끝 글자가 잘리지 않도록 98% 넓은 화각 확보)
-    let baseRoiW: number;
-    let baseRoiH: number;
-
-    if (guideMode === "vertical") {
-      baseRoiW = rawCanvas.width * 0.60;
-      baseRoiH = rawCanvas.height * 0.90;
-    } else if (guideMode === "full") {
-      baseRoiW = rawCanvas.width * 0.98;
-      baseRoiH = rawCanvas.height * 0.96;
-    } else {
-      baseRoiW = rawCanvas.width * 0.98;
-      baseRoiH = rawCanvas.height * 0.58;
-    }
-
-    const roiWidth = hardwareZoomSupported
-      ? baseRoiW
-      : Math.max(baseRoiW / zoomLevel, rawCanvas.width * 0.90);
-    const roiHeight = hardwareZoomSupported
-      ? baseRoiH
-      : Math.max(baseRoiH / zoomLevel, rawCanvas.height * 0.40);
-
-    const roiX = (rawCanvas.width - roiWidth) / 2;
-    const roiY = (rawCanvas.height - roiHeight) / 2;
-
-    const croppedCanvas = cropCanvasROI(
-      rawCanvas,
-      {
-        x: Math.max(0, roiX),
-        y: Math.max(0, roiY),
-        width: Math.min(rawCanvas.width, roiWidth),
-        height: Math.min(rawCanvas.height, roiHeight),
-      },
-      2.2 // 고선명 2.2배 슈퍼샘플링
-    );
-
-    const colorCanvas = croppedCanvas;
+    const { roiCanvas, visibleFullCanvas } = extractViewfinderCanvases(video);
 
     // 1. 프리뷰 캔버스에 표시
     setOcrProgress(20);
-    setOcrStatusText("⚡ 듀얼 채널(Stream A/B) 광학 획 강화 생성 중...");
+    setOcrStatusText("⚡ 고선명 샤프닝 및 빛 반사 보정 이미지 생성 중...");
 
     if (previewCanvasRef.current) {
       const pCtx = previewCanvasRef.current.getContext("2d");
       if (pCtx) {
-        previewCanvasRef.current.width = colorCanvas.width;
-        previewCanvasRef.current.height = colorCanvas.height;
-        pCtx.drawImage(colorCanvas, 0, 0);
+        previewCanvasRef.current.width = roiCanvas.width;
+        previewCanvasRef.current.height = roiCanvas.height;
+        pCtx.drawImage(roiCanvas, 0, 0);
       }
     }
 
-    // 2. Gemini 2.0 Vision AI & 고정밀 광학 OCR 심층 실행
-    setOcrProgress(45);
-    setOcrStatusText("🤖 Gemini 2.0 Vision AI 라벨 확대 & 시리얼 분석 중...");
-
-    let targetCanvas: HTMLCanvasElement = rawCanvas;
+    // 2. Gemini Flash Vision AI & 고정밀 광학 OCR 심층 실행
+    setOcrProgress(40);
+    setOcrStatusText("🤖 Gemini Flash Vision AI 명판 시리얼 정밀 판독 중...");
 
     try {
-      // 🎯 스마트 라벨 오토 타겟팅: 노란 라벨을 화면 중앙에 큼직하게 꽉 채운 고해상도 확대 캔버스 생성
-      targetCanvas = getSmartTargetCanvas(rawCanvas, croppedCanvas);
-
       const result = await performGeminiDeepOcr(
-        targetCanvas,
+        roiCanvas,
         (progress, status) => {
           setOcrProgress(progress);
           setOcrStatusText(status);
@@ -415,13 +443,13 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
               spec: targetPart.spec,
               subSpec: targetPart.subSpec,
             }
-          : undefined
+          : undefined,
+        visibleFullCanvas
       );
 
       setOcrResult(result);
       if (result.cleanedSerial) {
         setSelectedSerial(result.cleanedSerial);
-        // 완료 즉각 햅틱 및 사운드 피드백
         triggerScanFeedback();
       } else {
         setSelectedSerial("");
@@ -431,11 +459,8 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
       setHasCameraError("OCR 인식 중 오류가 발생했습니다. 직접 입력하거나 다시 시도해주세요.");
     } finally {
       // 메모리 즉시 회수 (스토리지 제로)
-      disposeCanvas(rawCanvas);
-      if (croppedCanvas) disposeCanvas(croppedCanvas);
-      if (targetCanvas && targetCanvas !== rawCanvas && targetCanvas !== croppedCanvas) {
-        disposeCanvas(targetCanvas);
-      }
+      disposeCanvas(roiCanvas);
+      disposeCanvas(visibleFullCanvas);
 
       setOcrProgress(100);
       setIsProcessing(false);
@@ -475,13 +500,39 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer shrink-0"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const current = getGeminiApiKey();
+                const input = window.prompt(
+                  "Gemini AI API 키를 입력하세요 (스마트폰 브라우저에 안전하게 저장됩니다):",
+                  current
+                );
+                if (input !== null) {
+                  setGeminiApiKey(input);
+                  setHasAiKey(Boolean(getGeminiApiKey()));
+                }
+              }}
+              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                hasAiKey
+                  ? "bg-emerald-950/80 text-emerald-300 border-emerald-600/60"
+                  : "bg-amber-950/80 text-amber-300 border-amber-600/60 animate-pulse"
+              }`}
+              title="클릭하여 Gemini Vision AI API 키 확인 또는 입력"
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${hasAiKey ? "bg-emerald-400" : "bg-amber-400"}`} />
+              <span>{hasAiKey ? "AI 활성" : "AI 키 입력"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer shrink-0"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Body (컴팩트 스크롤 제로 뷰) */}
@@ -626,37 +677,69 @@ export const CameraOcrModal: React.FC<CameraOcrModalProps> = ({
             )}
           </div>
 
-          {/* Action Trigger Buttons (사용자가 [촬영] 버튼을 누를 때만 캡처 & 인식) */}
+          {/* Action Trigger Buttons (사용자가 [촬영] 버튼을 누를 때만 캡처 & 인식 + 초근접 고화질 사진 선택 지원) */}
+          <input
+            ref={nativeFileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleNativePhotoUpload}
+            className="hidden"
+          />
           <div className="flex gap-2">
             {!isFrozen ? (
-              <button
-                type="button"
-                disabled={isProcessing}
-                onClick={() => captureAndRecognize()}
-                className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 py-3.5 px-4 rounded-xl text-xs sm:text-sm shadow-glow-cyan hover:opacity-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
-              >
-                {isProcessing ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span>AI 시리얼/라벨 정밀 판독 중...</span>
-                  </>
-                ) : (
-                  <>
-                    <Camera className="h-4 w-4 stroke-[2.5]" />
-                    <span>📸 명판/라벨 촬영 & 시리얼 인식</span>
-                  </>
-                )}
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={() => captureAndRecognize()}
+                  className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-extrabold text-slate-950 py-3.5 px-4 rounded-xl text-xs sm:text-sm shadow-glow-cyan hover:opacity-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                >
+                  {isProcessing ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span>AI 시리얼/라벨 정밀 판독 중...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="h-4 w-4 stroke-[2.5]" />
+                      <span>📸 명판/라벨 촬영 & 시리얼 인식</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={() => nativeFileInputRef.current?.click()}
+                  className="bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 font-bold py-3.5 px-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0 active:scale-98"
+                  title="초소형 글씨나 접사가 필요할 때 스마트폰 기본 고화질 카메라로 촬영"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+                  <span>고화질 접사</span>
+                </button>
+              </>
             ) : (
-              <button
-                type="button"
-                disabled={isProcessing}
-                onClick={handleRetake}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold py-3.5 px-3 rounded-xl text-xs border border-slate-700 hover:border-cyan-500 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-98"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                <span>🔄 다시 촬영하기</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={handleRetake}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold py-3.5 px-3 rounded-xl text-xs border border-slate-700 hover:border-cyan-500 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-98"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span>🔄 다시 촬영하기</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={() => nativeFileInputRef.current?.click()}
+                  className="bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 font-bold py-3.5 px-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0 active:scale-98"
+                  title="스마트폰 기본 고화질 카메라로 다시 촬영"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+                  <span>고화질 접사</span>
+                </button>
+              </>
             )}
           </div>
 
