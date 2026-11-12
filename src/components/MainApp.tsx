@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { ProjectMaster } from "@/types";
 import { createBlankProject } from "@/lib/default-presets";
 import { Header } from "@/components/Header";
-import { SyncModal } from "@/components/SyncModal";
 import { PjtListStep } from "@/components/PjtListStep";
 import { ProjectMasterStep } from "@/components/ProjectMasterStep";
 import { EquipmentUnitStep } from "@/components/EquipmentUnitStep";
@@ -118,7 +117,6 @@ export default function MainApp() {
   });
 
   const [draftProject, setDraftProject] = useState<ProjectMaster | null>(null);
-  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"connected" | "syncing" | "error" | "offline">("connected");
 
   // 실시간 동기화 및 데이터 영구 보존 제어용 Refs
@@ -253,10 +251,11 @@ export default function MainApp() {
 
     // 3. 오프라인 작업 큐 리스너 활성화
     const cleanupOfflineQueue = initOfflineQueueListener(async (queuedProjects: ProjectMaster[]) => {
-      try {
-        await pushProjectsToCloud(queuedProjects);
-      } catch (e) {
-        console.warn("오프라인 큐 동기화 재시도 실패", e);
+      // 실패 시 반드시 throw 하여 큐가 삭제되지 않고 다음 주기에 재시도되도록 함
+      const res = await pushProjectsToCloud(queuedProjects);
+      if (!res.success) {
+        console.warn("오프라인 큐 동기화 재시도 실패", res.message);
+        throw new Error(res.message || "offline queue sync failed");
       }
     });
 
@@ -675,32 +674,6 @@ export default function MainApp() {
           </div>
         </div>
       </footer>
-
-      {/* PC ↔ 모바일 실시간 동기화 모달 */}
-      <SyncModal
-        isOpen={isSyncModalOpen}
-        onClose={() => setIsSyncModalOpen(false)}
-        projects={projects}
-        onUpdateProjects={(newProjects) => {
-          lastLocalEditTimeRef.current = Date.now();
-          setProjects(newProjects);
-          if (newProjects.length > 0) {
-            setCurrentProjectId((prev) => {
-              const exists = newProjects.some((p) => p.id === prev);
-              return exists ? prev : (newProjects[0].id || "pjt-001");
-            });
-          }
-        }}
-        onResetDefault={() => {
-          setProjects([]);
-          setCurrentProjectId("");
-          try {
-            localStorage.removeItem(STORAGE_KEY);
-            localStorage.removeItem(PERSISTENT_BACKUP_KEY);
-          } catch {}
-          fetchCloudProjects(true);
-        }}
-      />
     </div>
   );
 }

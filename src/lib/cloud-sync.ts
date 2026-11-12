@@ -13,7 +13,7 @@ import {
   CentralSyncPayload,
   CentralDbConfig,
 } from "./central-db";
-import { enqueueSyncTask, processSyncQueue, initOfflineQueueListener } from "./offline-sync-queue";
+import { enqueueSyncTask, clearOfflineQueue, processSyncQueue, initOfflineQueueListener } from "./offline-sync-queue";
 
 // central-db 및 offline-sync-queue 전체 re-export
 export * from "./central-db";
@@ -31,7 +31,12 @@ export async function pushProjectsToCloud(
 ): Promise<{ success: boolean; message?: string }> {
   // 오프라인 대비 큐에 먼저 안전 적재
   enqueueSyncTask(projects, roomKey);
-  return await saveCentralProjects(projects, roomKey);
+  const result = await saveCentralProjects(projects, roomKey);
+  // 저장 성공 시 큐를 비워 오래된 스냅샷이 나중에 재전송되어 최신 데이터를 덮어쓰는 것을 방지
+  if (result.success) {
+    clearOfflineQueue();
+  }
+  return result;
 }
 
 /**
@@ -102,8 +107,8 @@ export function importBackupFile(
         const projectList = Array.isArray(parsed)
           ? parsed
           : parsed.projects && Array.isArray(parsed.projects)
-          ? parsed.projects
-          : null;
+            ? parsed.projects
+            : null;
 
         if (projectList && projectList.length > 0) {
           resolve({ success: true, projects: projectList });

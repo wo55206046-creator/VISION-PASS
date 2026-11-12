@@ -3,20 +3,21 @@ import { performInMemoryOcr, scanNativeBarcode } from "./ocr-worker";
 
 const GEMINI_API_KEY_STORAGE = "VISION_PASS_GEMINI_API_KEY";
 
-function getDefaultKey(): string {
-  try {
-    const encoded = "QVEuQWI4Uk42THpVMG1qOTJwSFBHdnpZS3hZRVlOMVYwUkxyd3RqZWxGeTA5RzcyWl9DRWc=";
-    if (typeof atob !== "undefined") return atob(encoded);
-    if (typeof Buffer !== "undefined") return Buffer.from(encoded, "base64").toString("utf-8");
-  } catch {}
-  return "";
-}
+/**
+ * 사용할 Gemini 모델 우선순위 (앞에서부터 시도, 404/429/5xx 시 다음 모델로 폴백)
+ * ※ gemini-2.0-flash / gemini-1.5-flash 는 서비스 종료되어 404가 반환됨
+ */
+export const GEMINI_MODEL_CANDIDATES = ["gemini-3.8-flash", "gemini-3.5-flash"];
+
+/** Gemini 호출 타임아웃 (이미지 업로드 + 추론 시간을 고려해 충분히 확보) */
+const GEMINI_TIMEOUT_MS = 25000;
 
 export function isLikelyValidGeminiKey(key?: string | null): boolean {
   if (!key) return false;
   const trimmed = key.trim();
-  // Google AI Studio 정식 키는 'AIzaSy'로 시작하고 약 39자
-  return trimmed.startsWith("AIzaSy") && trimmed.length >= 35;
+  // Google AI Studio 키 형식: 기존 'AIzaSy...'(약 39자) 및 신규 'AQ.' 접두사 형식(약 53자) 모두 허용
+  if (/\s/.test(trimmed)) return false;
+  return (trimmed.startsWith("AIzaSy") || trimmed.startsWith("AQ.")) && trimmed.length >= 35;
 }
 
 export function getGeminiApiKey(): string {
@@ -71,45 +72,6 @@ const GEMINI_SYSTEM_PROMPT = `당신은 반도체, 디스플레이, 정밀 계�
 }`;
 
 /**
- * 브라우저 캔버스에서 Stream B(고대비/획 강화 이미지) 생성
- */
-function generateStreamBHighContrast(canvas: HTMLCanvasElement): string {
-  try {
-    const offscreen = document.createElement("canvas");
-    offscreen.width = canvas.width;
-    offscreen.height = canvas.height;
-    const ctx = offscreen.getContext("2d");
-    if (!ctx) return canvas.toDataURL("image/jpeg", 0.95).split(",")[1];
-
-    ctx.drawImage(canvas, 0, 0);
-    const imgData = ctx.getImageData(0, 0, offscreen.width, offscreen.height);
-    const data = imgData.data;
-
-    // Grayscale + Adaptive Contrast Stretching (Yellow tape & dark text boost)
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-      
-      let enhanced = gray;
-      if (gray > 170) enhanced = 255;
-      else if (gray < 85) enhanced = 0;
-      else enhanced = (gray - 85) * (255 / 85);
-
-      data[i] = enhanced;
-      data[i + 1] = enhanced;
-      data[i + 2] = enhanced;
-    }
-
-    ctx.putImageData(imgData, 0, 0);
-    return offscreen.toDataURL("image/jpeg", 0.95).split(",")[1];
-  } catch (e) {
-    return canvas.toDataURL("image/jpeg", 0.95).split(",")[1];
-  }
-}
-
-/**
  * 시리얼 접두사(S/N:, SN:, PC S/N:, WIN11 S/N: 등)만 깔끔하게 제거하고 획 자체는 100% 무왜곡 보존
  */
 export function cleanPrefixOnly(rawSerial: string): string {
@@ -154,8 +116,8 @@ export async function performGeminiDeepOcr(
   let parsed: any = null;
 
   if (apiKey) {
-    onProgress?.(35, "🤖 Gemini 2.0 Flash AI 정밀 시리얼 판독 중...");
-    const modelCandidates = ["gemini-2.0-flash", "gemini-1.5-flash"];
+    onProgress?.(35, "🤖 Gemini Flash AI 정밀 시리얼 판독 중...");
+    const modelCandidates = GEMINI_MODEL_CANDIDATES;
     const userText = `[대상 부품 정보]
 - 품명: ${context?.partName || "-"}
 - 규격: ${context?.spec || "-"}
@@ -167,11 +129,11 @@ export async function performGeminiDeepOcr(
 ★ 2. 윈도우 키(WIN11 S/N)가 있을 경우: 5개 블록 총 25자리('XXXXX-XXXXX-XXXXX-XXXXX-XXXXX')를 1순위, PC S/N('KSA7706705')을 2순위로 등록하십시오.`;
 
     for (const model of modelCandidates) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
       try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        // API 키는 URL 쿼리에 노출하지 않고 헤더(x-goog-api-key)로만 전달
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
         const requestBody = {
           system_instruction: {
@@ -205,11 +167,15 @@ export async function performGeminiDeepOcr(
           body: JSON.stringify(requestBody),
           signal: controller.signal,
         });
-        clearTimeout(timeoutId);
 
         if (res.ok) {
           const jsonRes = await res.json();
-          let rawContent = jsonRes?.candidates?.[0]?.content?.parts?.[0]?.text;
+          // thinking 모델은 사고(thought) 파트가 섞여 올 수 있으므로 thought 가 아닌 텍스트 파트만 합침
+          const parts: any[] = jsonRes?.candidates?.[0]?.content?.parts || [];
+          let rawContent: string = parts
+            .filter((p) => typeof p?.text === "string" && !p?.thought)
+            .map((p) => p.text)
+            .join("");
           if (rawContent) {
             rawContent = rawContent.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
             parsed = JSON.parse(rawContent);
@@ -219,12 +185,15 @@ export async function performGeminiDeepOcr(
         } else {
           const errText = await res.text();
           console.warn(`Gemini API [${model}] status ${res.status}:`, errText);
-          if (res.status === 400 || res.status === 403) {
+          // 키 오류/권한 오류는 다른 모델로 재시도해도 동일하므로 즉시 중단 (404는 모델 폐기이므로 다음 모델 시도)
+          if (res.status === 401 || res.status === 403) {
             break;
           }
         }
       } catch (e) {
         console.warn(`Gemini API [${model}] fetch error:`, e);
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
   }

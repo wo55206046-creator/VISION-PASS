@@ -71,7 +71,7 @@ export function setSyncRoomKey(key: string): void {
   try {
     const clean = key.trim().toUpperCase() || DEFAULT_ROOM_KEY;
     localStorage.setItem(STORAGE_ROOM_KEY, clean);
-  } catch {}
+  } catch { }
 }
 
 export function getCleanTopicKey(roomKey: string = getSyncRoomKey()): string {
@@ -219,7 +219,7 @@ let localBroadcastChannel: BroadcastChannel | null = null;
 if (typeof window !== "undefined" && "BroadcastChannel" in window) {
   try {
     localBroadcastChannel = new BroadcastChannel("VISION_PASS_CENTRAL_LOCAL_SYNC");
-  } catch {}
+  } catch { }
 }
 
 export function broadcastLocalUpdate(projects: ProjectMaster[]) {
@@ -231,11 +231,11 @@ export function broadcastLocalUpdate(projects: ProjectMaster[]) {
         updatedAt: new Date().toISOString(),
       });
     }
-  } catch {}
+  } catch { }
 }
 
 export function subscribeLocalBroadcast(onUpdate: (projects: ProjectMaster[]) => void) {
-  if (!localBroadcastChannel) return () => {};
+  if (!localBroadcastChannel) return () => { };
 
   const handler = (e: MessageEvent) => {
     if (e.data && e.data.type === "PROJECTS_UPDATED" && Array.isArray(e.data.projects)) {
@@ -279,7 +279,7 @@ export function loadDirectLocalTemplates(): PjtModelTemplate[] {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-  } catch {}
+  } catch { }
   return [];
 }
 
@@ -301,7 +301,7 @@ export function saveDirectLocalTemplates(templates: PjtModelTemplate[], fromRemo
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("VISION_PASS_TEMPLATES_UPDATED", { detail: templates }));
     }
-  } catch {}
+  } catch { }
 }
 
 /**
@@ -334,7 +334,7 @@ export function loadDirectLocalProjects(): ProjectMaster[] | null {
         return parsed.filter(Boolean);
       }
     }
-  } catch {}
+  } catch { }
   return null;
 }
 
@@ -404,12 +404,6 @@ export async function saveCentralProjects(
       };
 
       // 전송용 표준 행 데이터 페이로드
-      const rowData = {
-        room_key: payload.roomKey,
-        data: payload,
-        updated_at: nowStr,
-      };
-      // 전송용 표준 행 데이터
       const standardPayload = {
         room_key: payload.roomKey,
         data: payload,
@@ -564,7 +558,7 @@ export async function fetchCentralProjects(
               if (payload.updatedAt) {
                 localStorage.setItem(STORAGE_LAST_SYNC_KEY, payload.updatedAt);
               }
-            } catch {}
+            } catch { }
           }
 
           return {
@@ -601,7 +595,7 @@ export async function fetchCentralProjects(
           localStorage.removeItem("VISION_PASS_PROJECTS_V1");
           localStorage.removeItem("VISION_PASS_PROJECTS_V2");
           localStorage.removeItem("VISION_PASS_PROJECTS");
-        } catch {}
+        } catch { }
         return {
           success: true,
           projects: directLocal,
@@ -629,7 +623,7 @@ export async function fetchCentralProjects(
                 bestSerialCount = serialCount;
               }
             }
-          } catch {}
+          } catch { }
         }
       }
 
@@ -638,7 +632,7 @@ export async function fetchCentralProjects(
         const pJson = JSON.stringify(bestProjects);
         localStorage.setItem(STORAGE_PROJECTS_KEY, pJson);
         localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", pJson);
-        saveCentralProjects(bestProjects, roomKey).catch(() => {});
+        saveCentralProjects(bestProjects, roomKey).catch(() => { });
         return {
           success: true,
           projects: bestProjects,
@@ -646,7 +640,7 @@ export async function fetchCentralProjects(
           message: `로컬 레거시 데이터 복원 완료 (${bestProjects.length}개 프로젝트)`,
         };
       }
-    } catch {}
+    } catch { }
   }
 
   return { success: false, message: `[${cleanRoom}] 방에 저장된 데이터를 찾을 수 없습니다.` };
@@ -659,7 +653,7 @@ export function subscribeCentralRealtime(
   onUpdate: (projects: ProjectMaster[]) => void,
   roomKey: string = getSyncRoomKey()
 ): () => void {
-  if (typeof window === "undefined") return () => {};
+  if (typeof window === "undefined") return () => { };
 
   const cleanRoom = (roomKey || DEFAULT_ROOM_KEY).toUpperCase();
   let isUnsubscribed = false;
@@ -670,7 +664,8 @@ export function subscribeCentralRealtime(
   const checkUpdates = async () => {
     if (isUnsubscribed) return;
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
-
+    // 백그라운드 탭에서는 불필요한 2초 주기 네트워크 요청 방지
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
     try {
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/projects_sync?room_key=eq.${encodeURIComponent(cleanRoom)}&select=data,updated_at&order=updated_at.desc&limit=1`,
@@ -711,14 +706,14 @@ export function subscribeCentralRealtime(
                   localStorage.setItem(STORAGE_PROJECTS_KEY, incomingJson);
                   localStorage.setItem("VISION_PASS_PERMANENT_SERIALS_SNAPSHOT", incomingJson);
                   localStorage.setItem(STORAGE_LAST_SYNC_KEY, updatedTime);
-                } catch {}
+                } catch { }
               }
               onUpdate(incomingProjects);
             }
           }
         }
       }
-    } catch {}
+    } catch { }
   };
 
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
